@@ -1,0 +1,219 @@
+% Math
+\usepackage{amsmath,amssymb}
+
+\usepackage{mathtools}
+
+% Algorithmic primitives (for \algorithmicdo etc.)
+\usepackage[noend]{algpseudocode}
+
+% Colors (used by comments and \grayy)
+\usepackage{xcolor}
+\usepackage{amsthm}
+% Clever references (for \crefname{algo}{...}{...})
+\usepackage{cleveref}
+
+% Tabbing used in the algorithm body
+\usepackage{numbertabbing}
+
+% Custom "Algorithm" float named 'algo'
+\usepackage{float}
+\floatstyle{ruled}
+\newfloat{algo}{htbp}{algo}
+\floatname{algo}{Algorithm}
+
+% --- Custom commands (duplicates removed) ---
+\newcommand{\chain}{\ensuremath{\mathsf{ch}}}
+\newcommand{\lock}{\ensuremath{\mathsf{lock}}}
+\newcommand{\decide}{\ensuremath{\mathsf{decide}}}
+\newcommand{\status}{{\sf status}}
+\newcommand{\StatusCert}{\ensuremath{\mathcal{S}}}
+
+\newcommand{\MAJ}{\ensuremath{\mathsf{MAJ}}}
+\newcommand{\AC}{\ensuremath{\mathsf{AC}}}
+\newcommand{\BFT}{\ensuremath{\mathsf{BFT}}}
+\newcommand{\ARFG}{\ensuremath{\mathsf{ARFG}}}
+\newcommand{\FC}[0]{\ensuremath{\mathsf{FC}}}
+\newcommand{\Goldfish}{\ensuremath{\mathsf{GHOST\text{-}Eph}}}
+\newcommand{\B}[0]{\ensuremath{\mathcal{B}}}
+\newcommand{\daslot}[0]{\ensuremath{\operatorname{\mathrm{slot_\DA}}}}
+\newcommand{\txpool}[0]{\ensuremath{\mathit{txpool}}}
+\newcommand{\tx}[0]{\ensuremath{\mathit{tx}}}
+\newcommand{\chainava}[0]{\ensuremath{\mathsf{chFast}}}
+\newcommand{\chainfin}[0]{\ensuremath{\mathsf{chFin}}}
+\newcommand{\chainmaj}[0]{\ensuremath{\mathsf{chMaj}}}
+\newcommand{\chainconf}[0]{\ensuremath{\mathsf{Ch}}}
+\newcommand{\sync}[0]{\ensuremath{v_{\text{sync}}}}
+
+
+
+
+\newcommand{\C}[0]{\ensuremath{\mathcal{C}}}
+\newcommand{\T}[0]{\ensuremath{\mathcal{T}}}
+\newcommand{\J}[0]{\ensuremath{\mathcal{J}}}
+\newcommand{\M}[0]{\ensuremath{\mathcal{M}}}
+\newcommand{\calS}[0]{\ensuremath{\mathcal{S}}}
+\newcommand{\true}[0]{\ensuremath{\mathit{true}}}
+\newcommand{\GAT}[0]{\ensuremath{\mathsf{GAT}}}
+\newcommand{\GST}[0]{\ensuremath{\mathsf{GST}}}
+
+% Commands and macros
+\usepackage{amsthm}
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem*{theorem*}{Theorem}
+\newtheorem{corollary}{Corollary}
+ \newtheorem{lemma}{Lemma}
+ \newtheorem{proposition}{Proposition}
+ \newtheorem{conjecture}{Conjecture}
+
+
+\newcommand{\propose}{{\sf propose}}
+\newcommand{\synchronize}{{\sf synchronize}}
+\newcommand{\vote}{{\sf vote}}
+\newcommand{\syncmessage}{{\sf sync}}
+\newcommand{\fconf}{{\sf fconf}}
+
+
+\newcommand{\grayy}[1]{{\color{gray}#1}}
+
+% Algorithmic event environment (single definition)
+\algdef{SE}[EVENT]{Event}{EndEvent}[1]{\textbf{at}\ #1\ \algorithmicdo}{\algorithmicend\ \textbf{event}}
+\algtext*{EndEvent}
+
+\pagestyle{plain}
+
+\def\reviewing{}  % comment out before submitting
+
+
+\renewcommand{\paragraph}[1]{\vspace{7pt}\noindent\textbf{#1}}
+
+\newcommand{\block}{B}
+\newcommand{\slotinterface}{\mathsf{Slot}}
+\newcommand{\chaincanmfc}[0]{{\chain^{\mathsf{MFC}}}}
+\newcommand{\ViewNumber}{v}
+\newcommand{\CommitCert}{C}
+\newcommand{\Cert}{\CommitCert}
+\newcommand{\PC}{P_{pc}}
+
+\newcommand{\request}{{\sf request}}
+\newcommand{\notify}{{\sf notify}}
+\newcommand{\prepare}{{\sf prepare}}
+\newcommand{\votee}{{\sf vote2}}
+\newcommand{\moddd}{\text{ }{\sf mod}\text{ }}
+\newcommand{\wish}{{\sf wish}}
+
+\algrenewcommand\textproc{}
+
+\newcommand{\cur}{{\sf cur}}
+\newcommand{\safety}{{\sf s}}
+\newcommand{\liveness}{{\sf l}}
+\newcommand{\two}{{\sf 2}}
+\newcommand{\cand}{{\sf cand}}
+\newcommand{\prop}{{\sf prop}}
+\newcommand{\inp}{{\sf inp}}
+\newcommand{\out}{{\sf out}}
+\newcommand{\gazero}{\ensuremath{GA_{\safety}}}
+\newcommand{\predicate}{{\sf predicate}}
+\newcommand{\truee}{{\sf true}}
+\newcommand{\proposed}{{\sf proposed}}
+
+
+
+
+% Definition-style (non-italic header, roman text)
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+% Remark-style
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\heal}{\textsf{heal}}
+
+% ---- Macros used by the RLMD-GHOST snippet ----
+\newcommand{\genesis}{\ensuremath{B_{\mathrm{genesis}}}}
+\newcommand{\V}{\ensuremath{\mathcal{V}}}
+\newcommand{\Chain}{\ensuremath{\mathsf{Ch}}}
+\newcommand{\rlmdghost}{\ensuremath{\operatorname{\textsc{RLMD-GHOST}}}}
+\newcommand{\fastcands}{\ensuremath{\mathsf{fast}^{\mathrm{cands}}}}
+\newcommand{\fastcand}{\ensuremath{\mathsf{fast}^{\mathrm{cand}}}}
+\newcommand{\chaincanrlmd}{{\chain^{\mathsf{RLMD}}}}
+\newcommand{\ghost}[0]{\ensuremath{\operatorname{\mathsf{GHOST}}}}
+\newcommand{\FIL}[0]{\textsf{FIL}}
+\floatstyle{ruled}
+\newfloat{algo}{htbp}{algo}
+\floatname{algo}{Algorithm}
+
+\usepackage{boxedminipage}
+
+
+\usepackage{pifont}% http://ctan.org/pkg/pifont
+\newcommand{\concat}{\,\|\,}
+\newcommand{\Th}[0]{\ensuremath{T}}
+\newcommand{\Thorizon}[0]{\ensuremath{T_\mathsf{hor}}}
+
+\newcommand{\chainfrozen}[1][]{\ensuremath{\mathsf{ch}^{\mathrm{frozen}\ifthenelse{\equal{#1}{}}{}{,#1}}}}
+
+
+\newcommand{\lmdghost}[0]{\ensuremath{\operatorname{\textsc{LMD-GHOST}}}}
+
+\newcommand{\rlmd}[0]{\ensuremath{\operatorname{\textsc{RLMD}}}}
+\newcommand{\majority}[0]{\ensuremath{\operatorname{\textsc{MAJ}}}}
+\newcommand{\ghosteph}[0]{\ensuremath{\operatorname{\textsc{GHOST-Eph}}}}
+\newcommand{\hfc}[0]{\ensuremath{\operatorname{\textsc{HFC}}}}
+\newcommand{\ga}[0]{\ensuremath{\operatorname{\textsc{GA}}}}
+\newcommand{\mfc}[0]{\ensuremath{\operatorname{\textsc{MFC}}}}
+% \newcommand{\mfcvote}[1]{\ensuremath{\mfc^{\mathsf{vote}\ifthenelse{\equal{#1}{}}{}{,#1}}}}
+% \newcommand{\mfcvote}[1]{\ensuremath{\chain^{\mathsf{vote}\ifthenelse{\equal{#1}{}}{}{,#1}}}}
+% \newcommand{\mfcpropose}[1]{\ensuremath{\mfc^{\mathsf{propose},#1}}}
+% \newcommand{\mfcvote}[1]{\ensuremath{\chain^{\voting{#1}}}}
+% \newcommand{\mfcpropose}[1]{\ensuremath{\chain^{\proposing{#1}}}}
+\newcommand{\mfcvote}[1]{\ensuremath{\mfc^{\voting{#1}}}}
+\newcommand{\mfcpropose}[1]{\ensuremath{\mfc^{\proposing{#1}}}}
+\newcommand{\specifyExec}[2]{\overset{#1}{#2}{}}
+\newcommand{\mfcFFG}{\specifyExec{\FFGExec}{\mfc}{}}
+\newcommand{\mfcNoFFG}{\specifyExec{\NoFFGExec}{\mfc}{}}
+% \newcommand{\mfcvoteFFG}[1]{\ensuremath{\mfcFFG^{\mathsf{vote},#1}}}
+% \newcommand{\mfcproposeFFG}[1]{\ensuremath{\mfcFFG^{\mathsf{propose},#1}}}
+% \newcommand{\mfcvoteNoFFG}[1]{\ensuremath{\mfcNoFFG^{\mathsf{vote},#1}}}
+% \newcommand{\mfcproposeNoFFG}[1]{\ensuremath{\mfcNoFFG{}^{\mathsf{propose},#1}}}
+\newcommand{\mfcvoteFFG}[1]{\ensuremath{\mfcFFG^{\voting{#1}}}}
+\newcommand{\mfcproposeFFG}[1]{\ensuremath{\mfcFFG^{\proposing{#1}}}}
+\newcommand{\mfcvoteNoFFG}[1]{\ensuremath{\mfcNoFFG^{\voting{#1}}}}
+\newcommand{\mfcproposeNoFFG}[1]{\ensuremath{\mfcNoFFG{}^{\proposing{#1}}}}
+
+\newcommand{\mfcproposeExec}[2]{\ensuremath{\specifyExec{#1}{\mfc}^{\proposing{#2}}}}
+
+\newcommand{\rlmdvote}[1]{\ensuremath{\rlmd^{\voting{#1}}}}
+\newcommand{\rlmdpropose}[1]{\ensuremath{\rlmd^{\proposing{#1}}}}
+
+% \newcommand{\hfcvote}[1]{\ensuremath{\hfc^{\voting{#1}}}}
+% \newcommand{\hfcpropose}[1]{\ensuremath{\hfc^{\proposing{#1}}}}
+
+\newcommand{\hfcvp}[0]{\rlmdghost}
+\newcommand{\hfcvote}[1]{\ensuremath{\hfcvp^{\voting{#1}}}}
+\newcommand{\hfcpropose}[1]{\ensuremath{\hfcvp^{\proposing{#1}}}}
+
+\crefname{condition}{condition}{conditions}
+\newtheorem{condition}{Condition}
+
+
+%Test new macro for RLMD-GHOST
+% \newcommand{\hfcFFG}{\specifyExec{\FFGExec}{\hfc}{}}
+\newcommand{\hfcFFG}{\specifyExec{\FFGExec}{\rlmdghost}{}}
+\newcommand{\rlmdNoFFG}{\specifyExec{\NoFFGExec}{\rlmdghost}{}}
+\newcommand{\hfcvoteFFG}[1]{\ensuremath{\hfcFFG^{\mathsf{vote},#1}}}
+\newcommand{\hfcproposeFFG}[1]{\ensuremath{\hfcFFG^{\mathsf{propose},#1}}}
+\newcommand{\rlmdvoteNoFFG}[1]{\ensuremath{\rlmdNoFFG^{\mathsf{vote},#1}}}
+\newcommand{\rlmdproposeNoFFG}[1]{\ensuremath{\rlmdNoFFG{}^{\mathsf{propose},#1}}}
+
+\newcommand{\GJ}[0]{\ensuremath{\mathcal{GJ}}}
+\newcommand{\GJfrozen}[1][]{\ensuremath{\GJ^{\mathrm{frozen}\ifthenelse{\equal{#1}{}}{}{,#1}}}}
+\newcommand{\GF}[0]{\ensuremath{\mathcal{GF}}}
+\newcommand{\LJ}[0]{\ensuremath{\mathcal{LJ}}}
+\newcommand{\slot}[0]{\ensuremath{\operatorname{\mathrm{slot}}}}
+\newcommand{\wop}[0]{w.o.p.\xspace}
+\newcommand{\Vfrozen}[1][]{\ensuremath{\mathcal{V}^{\mathrm{frozen}\ifthenelse{\equal{#1}{}}{}{,#1}}}}
+
+\newcommand{\RS}[1]{{\color{red}RS: #1}}
+\newcommand{\RSfn}[1]{\footnote{\color{red}RS: #1}}

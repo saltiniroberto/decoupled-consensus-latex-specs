@@ -1,0 +1,830 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+
+\usepackage{graphicx}
+
+\usepackage[table]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+\definecolor{xlightgray}{HTML}{D1DBE4}
+\definecolor{xgreen}{HTML}{B9C89F}
+\definecolor{xred}{HTML}{F19F9E}
+\definecolor{xyellow}{HTML}{F6DA71}
+\definecolor{xblue}{HTML}{ACE7EF}
+\definecolor{xpurple}{HTML}{C3A4E7}
+\usepackage{todonotes}
+\newcommand{\francesco}[1]{\todo[inline, color=xred]{\textbf{Francesco:} #1}}
+\newcommand{\roberto}[1]{{\todo[inline, color=xblue]{\textbf{Roberto:} #1}}}
+\newcommand{\luca}[1]{{\todo[inline, color=xgreen]{\textbf{Luca:} #1}}}
+\newcommand{\yann}[1]{\todo[inline, color=xyellow]{\textbf{Yann:} #1}}
+\usepackage{booktabs,tabularx,makecell,hyperref}
+\definecolor{rowgray}{RGB}{246,246,246}
+
+\usepackage{pdflscape}
+\usepackage{environ}
+\NewEnviron{interface}{
+\vspace{0.5em}
+\par
+\begin{tikzpicture}
+\node[rectangle,minimum width=0.9\textwidth] (m) {\begin{minipage}{0.85\textwidth}\BODY\end{minipage}};
+\draw[dashed] (m.south west) rectangle (m.north east);
+\end{tikzpicture}
+}
+
+\usetikzlibrary{arrows.meta,positioning,fit,calc,decorations.pathmorphing}
+
+% Math
+\usepackage{amsmath,amssymb}
+\usepackage{mathtools}
+
+% Algorithmic
+\usepackage[noend]{algpseudocode}
+\usepackage{amsthm}
+\usepackage{cleveref}
+
+\usepackage{float}
+\floatstyle{ruled}
+\newfloat{algo}{htbp}{algo}
+\floatname{algo}{Algorithm}
+
+% --- Custom commands ---
+\newcommand{\chain}{\ensuremath{\mathsf{ch}}}
+\newcommand{\genesis}{\ensuremath{B_{\mathrm{genesis}}}}
+\newcommand{\V}{\ensuremath{\mathcal{V}}}
+\newcommand{\B}[0]{\ensuremath{\mathcal{B}}}
+\newcommand{\C}[0]{\ensuremath{\mathcal{C}}}
+\newcommand{\T}[0]{\ensuremath{\mathcal{T}}}
+\newcommand{\J}[0]{\ensuremath{\mathcal{J}}}
+\newcommand{\M}[0]{\ensuremath{\mathcal{M}}}
+\newcommand{\calS}[0]{\ensuremath{\mathcal{S}}}
+\newcommand{\true}[0]{\ensuremath{\mathit{true}}}
+\newcommand{\false}[0]{\ensuremath{\mathit{false}}}
+\newcommand{\GST}[0]{\ensuremath{\mathsf{GST}}}
+\newcommand{\slot}[0]{\ensuremath{\operatorname{\mathrm{slot}}}}
+
+\newcommand{\grayy}[1]{{\color{gray}#1}}
+
+% Algorithmic event environment
+\algdef{SE}[EVENT]{Event}{EndEvent}[1]{\textbf{at}\ #1\ \algorithmicdo}{\algorithmicend\ \textbf{event}}
+\algtext*{EndEvent}
+
+\pagestyle{plain}
+
+\renewcommand{\paragraph}[1]{\vspace{7pt}\noindent\textbf{#1}}
+
+\newcommand{\block}{B}
+\newcommand{\Block}{\mathsf{Block}}
+\newcommand{\BlockID}{\mathsf{BlockID}}
+\newcommand{\View}{\mathsf{View}}
+
+\algrenewcommand\textproc{}
+
+\usepackage{boxedminipage}
+
+% Theorem environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem*{theorem*}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+
+\title{Rooted Timeouts}
+
+\begin{document}
+\maketitle
+
+\section{Model and definitions}
+
+We consider a system of~$n$ validators of which at most~$f$ are adversarial, where $n \geq 3f + 1$.
+A \emph{quorum} is any set of at least $2n/3$ validators.
+Any two quorums overlap in at least $n/3 + 1 > f$ validators, so their intersection contains at least one honest validator.
+
+\begin{definition}[Height]\label{def:height}
+\emph{Height} is a counter for the finality gadget, decoupled from slots, rounds, and epochs.
+The genesis height is $0$.
+Height advances by exactly~$1$ via one of two mechanisms: justification (Definition~\ref{def:justification}) or notarization (of a timeout) (Definition~\ref{def:notarization}).
+\yann{Probably here we should just write notarization, and make justification a special case.}
+\end{definition}
+
+\begin{definition}[Block]\label{def:block}
+A \emph{block} has a \emph{parent} (another block) and contains a set of votes (Definition~\ref{def:vote}).
+The \emph{genesis block}~$B_{\mathrm{genesis}}$ has no parent.
+\end{definition}
+
+\begin{definition}[Chain and divergence]\label{def:chain}
+A \emph{chain} is a sequence of blocks forming a path from the genesis block, where each block's parent is its predecessor in the sequence.
+Two chains \emph{conflict} if neither is a prefix of the other.
+The \emph{divergence point} of two conflicting chains~$X$ and~$Y$ is the last block they share: the block~$B$ on both chains such that no child of~$B$ is on both chains.
+Blocks strictly after the divergence point are \emph{post-divergence}; blocks at or before it are \emph{pre-divergence}.
+\end{definition}
+
+Blocks form a tree rooted at~$B_{\mathrm{genesis}}$; each block has a unique path to the root.
+We write $B \preceq B'$ (equivalently $B' \succeq B$) when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \sim B'$ when $B$ and $B'$ are \emph{compatible}: $B \preceq B'$ or $B' \preceq B$.
+Among blocks on the same chain, \emph{higher} means further from genesis (i.e., $B' \succ B$).
+
+\begin{definition}[Vote]\label{def:vote}
+A \emph{vote} is a signed tuple $(\mathsf{validator},\; \mathsf{height},\; \mathsf{target},\; \mathsf{kind},\; \mathsf{finalize\_height})$ where:
+\begin{itemize}
+  \item $\mathsf{validator}$ identifies the signer,
+  \item $\mathsf{height}$ is a height,
+  \item $\mathsf{target}$ is a block,
+  \item $\mathsf{kind} \in \{\mathsf{primary},\, \mathsf{secondary}\}$ distinguishes the vote type,
+  \item $\mathsf{finalize\_height}$ is either a height or~$\bot$.
+\end{itemize}
+Both primary and secondary votes carry a target block.
+Primary votes participate in justification; secondary votes participate in notarization.
+Honest validators set $\mathsf{finalize\_height} < \mathsf{height}$ when not~$\bot$.
+Setting $\mathsf{finalize\_height} = h_j$ implicitly commits to finalize the unique block justified at~$h_j$ (Lemma~\ref{lem:uniqueness}), so no separate $\mathsf{finalize\_target}$ field is needed.
+A vote included on a chain is verified to reference a target that actually exists on that chain.
+\end{definition}
+\yann{I haven't fully digested the accountability proofs yet, but the fact that one doesn't have to add a finalization target is really nice.}
+\yann{One thing I learned, is that if we want to use XMSS signatures (as seeems to be the best candidate currently for PQ consensus), then signing twice wouldn't be possible. Wondering if this is where the one-round design could be helpful, since we only need to sign once.}
+
+
+\begin{definition}[State]\label{def:state}
+Each chain maintains a \emph{state} $(L,\; h,\; \mathsf{targets},\; \mathsf{secondaries},\; J,\; h_j,\; s_n,\; F,\; P)$.
+The \emph{head}~$L$ is the leaf block of the chain; a block~$B$ is on the chain iff $B \preceq L$.
+The \emph{current height}~$h$ is the finality gadget's counter.
+\begin{itemize}
+  \item $\mathsf{targets}[1..n]$: the \emph{primary target tracker}.
+        For each validator~$i$, the block that~$i$ voted for with a primary vote at the current height ($\mathsf{targets}[i] = \bot$ if~$i$ has not cast a primary vote).
+  \item $\mathsf{secondaries}[1..n]$: the \emph{secondary target tracker}.
+        For each validator~$i$, the block that~$i$ voted for with a secondary vote at the current height ($\mathsf{secondaries}[i] = \bot$ if~$i$ has not cast a secondary vote).
+  \item $J$: the \emph{justified block}, the highest justified block on this chain, justified at \emph{justified height}~$h_j$.
+  \item $s_n$: the \emph{notarized slot}, the slot of the most recently justified or notarized block. Used for monotonicity: if a justification or notarization targets a block with slot $\leq s_n$, the height advances but~$J$, $h_j$, and~$s_n$ are not updated.
+  \item $F$: the \emph{finalized block}, the most recently finalized block.
+  \item $P \subseteq \{1, \ldots, n\}$: the \emph{finality participation}, the set of validators who have cast a vote with $\mathsf{finalize\_height} = h_j$.
+\end{itemize}
+
+The genesis state has $L = B_{\mathrm{genesis}}$, $h = 0$, all $\mathsf{targets}[i] = \bot$, all $\mathsf{secondaries}[i] = \bot$, $J = F = B_{\mathrm{genesis}}$, $h_j = 0$, $s_n = 0$, and $P = \emptyset$.
+\end{definition}
+
+\yann{TO FIX: How to deal with the fact that there can be many secondary votes? In prefix-IC we can keep track of the highest, since it implies all lower targets. The current doc does the the same, e.g., it allows "prefix notarization of timeout". Not sure about this (and whether this is in the spirit of Francesco's suggestion, but this seems like a practical way to restrict secondaries to one vote per snapshot and per height? In any case not more are needed of course.}
+
+\yann{Sidenote: In the same vein as above, I am wondering if we would ever care about aggregating votes, and how this is captured in this document.}
+
+\begin{definition}[Justification]\label{def:justification}
+Justification is evaluated independently on each chain.
+A block~$T$ on a chain is \emph{justified at height~$h$} if at least $2n/3$ validators cast primary votes for~$T$:
+\[
+  \bigl|\{i \,:\, \mathsf{targets}[i] = T\}\bigr| \;\geq\; 2n/3.
+\]
+Only primary votes whose target is~$T$ itself contribute; votes for descendants of~$T$ do not count.
+A justification is also a notarization of~$T$.
+\end{definition}
+
+\begin{definition}[Notarization]\label{def:notarization}
+A block~$T$ on a chain is \emph{notarized at height~$h$} if at least $2n/3$ validators cast secondary votes for~$T$ or a descendant of~$T$:
+\[
+  \bigl|\{i \,:\, T \preceq \mathsf{secondaries}[i]\}\bigr| \;\geq\; 2n/3.
+\]
+Unlike justification, notarization uses prefix counting: votes for descendants of~$T$ contribute.
+A notarization advances the height but does not update the justified checkpoint~$(J, h_j)$ (subject to the monotonicity rule via~$s_n$).
+\end{definition}
+
+\begin{definition}[Finality]\label{def:finality}
+The justified block~$J$ is \emph{finalized} when $|P| \geq 2n/3$.
+We say $J$ is \emph{finalized at height~$h_j$}, where $h_j$ is the height at which~$J$ was justified.
+\end{definition}
+
+\begin{definition}[Slashing conditions]\label{def:slashing}
+A validator is \emph{slashable} (or an \emph{equivocator}) if it signed two votes~$a$, $b$ satisfying either condition:
+
+\emph{E1 (double primary):} both $a$ and $b$ are primary votes at the same height with different targets:
+\begin{align*}
+  &a.\mathsf{kind} = b.\mathsf{kind} = \mathsf{primary} \;\wedge\; a.\mathsf{height} = b.\mathsf{height} \;\wedge\; a.\mathsf{target} \neq b.\mathsf{target}.
+\end{align*}
+
+\emph{E2 (finalize--secondary conflict):} $b$ carries a finalize commitment and $a$ is a secondary vote at that height:
+\begin{align*}
+  &a.\mathsf{height} = b.\mathsf{finalize\_height} \;\wedge\; a.\mathsf{kind} = \mathsf{secondary}.
+\end{align*}
+
+E1 enforces \emph{justification uniqueness}: under $f < n/3$, at most one block can be justified per height (Lemma~\ref{lem:uniqueness}).
+E2 enforces \emph{finalization consistency}: a validator who commits to finalize at height~$h$ cannot also cast a secondary vote at height~$h$.
+\end{definition}
+
+\yann{I wonder how these relate to the concerns Terence \& Potuz had, need to check their concerns again.}
+
+\paragraph{Honest voting behavior.}
+An honest validator casts at most one primary vote per height (avoiding E1), does not aim to finalize a height for which it sent a secondary vote (avoiding E2), and sets $\mathsf{finalize\_height}$ only to the current~$h_j$ (committing to finalize the justified block~$J$ at~$h_j$).
+
+\paragraph{State transitions.}
+The state evolves by processing blocks.
+Each block extends the chain (updating the head~$L$), then its votes are processed, and finally finality, justification, and notarization are evaluated.
+
+\emph{Processing a vote.}
+When a vote~$v$ is processed:
+if $v.\mathsf{kind} = \mathsf{primary}$, $v.\mathsf{height} = h$, and $v.\mathsf{target} \preceq L$, then $\mathsf{targets}[v.\mathsf{validator}] \gets v.\mathsf{target}$.
+If $v.\mathsf{kind} = \mathsf{secondary}$, $v.\mathsf{height} = h$, and $v.\mathsf{target} \preceq L$, then $\mathsf{secondaries}[v.\mathsf{validator}] \gets v.\mathsf{target}$.
+Independently, if $v.\mathsf{finalize\_height} = h_j$, then the validator is added to~$P$.
+
+\emph{Height processing.}
+After processing all votes in a block, finality, justification, and notarization are evaluated in order.
+First, if $|P| \geq 2n/3$, the justified block is finalized: $F \gets J$.
+Then justification is checked: if some block~$T$ on the chain has $|\{i : \mathsf{targets}[i] = T\}| \geq 2n/3$, the height advances via justification.
+If $T.\slot > s_n$, the justified checkpoint is updated ($J \gets T$, $h_j \gets h$, $s_n \gets T.\slot$, $P \gets \emptyset$); 
+otherwise $J$, $h_j$, $s_n$, $P$ remain unchanged.
+In either case $h \gets h+1$ and all targets and secondaries are reset.
+If justification does not fire, notarization is checked: the chain is walked from~$L$ toward genesis, accumulating the count of secondary votes.
+The first block~$T$ where the cumulative count reaches $2n/3$ is the highest notarizable block.
+If found, the height advances.
+If $T.\slot > s_n$, then $s_n \gets T.\slot$ (but $J$, $h_j$, $P$ are \emph{unchanged}---only justifications move the justified checkpoint); otherwise $s_n$ remains unchanged.
+In either case $h \gets h+1$ and all targets and secondaries are reset.
+Because finality is checked before justification, a justified block can be finalized in the same round it is superseded.
+\yann{I haven't yet wrapped my head around why the last bit is needed.}
+
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{State:} $L \gets B_{\mathrm{genesis}}$, \; $h \gets 0$, \; $\mathsf{targets}[1..n] \gets \bot$, \; $\mathsf{secondaries}[1..n] \gets \bot$, \; $J \gets B_{\mathrm{genesis}}$, \; $h_j \gets 0$, \; $s_n \gets 0$, \; $F \gets B_{\mathrm{genesis}}$, \; $P \gets \emptyset$
+\vspace{3pt}
+
+\Function{$\textsf{processBlock}$}{$B$}
+  \State \textbf{assert} $B.\mathsf{parent} = L$ \Comment{$B$ extends the chain}
+  \State $L \gets B$
+  \For{each vote $v$ in $B$} $\textsf{processVote}(v)$ \EndFor
+  \State $\textsf{processHeight}()$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{processVote}$}{$v$}
+  \State $i \gets v.\mathsf{validator}$
+  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{primary}$ and $v.\mathsf{target} \preceq L$}
+    \State $\mathsf{targets}[i] \gets v.\mathsf{target}$
+  \EndIf
+  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{secondary}$ and $v.\mathsf{target} \preceq L$}
+    \State $\mathsf{secondaries}[i] \gets v.\mathsf{target}$
+  \EndIf
+  \If{$v.\mathsf{finalize\_height} = h_j$}
+    \State $P \gets P \cup \{i\}$
+  \EndIf
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{processHeight}$}{}
+  \If{$|P| \geq 2n/3$} \Comment{Finality}
+    \State $F \gets J$
+  \EndIf
+  \State $T^* \gets \arg\max_T |\{i : \mathsf{targets}[i] = T\}|$ \Comment{Most-voted primary target}
+  \If{$|\{i : \mathsf{targets}[i] = T^*\}| \geq 2n/3$} \Comment{Justification}
+    \If{$T^*.\slot > s_n$} \Comment{Monotonicity check}
+      \State $J \gets T^*$, \; $h_j \gets h$, \; $s_n \gets T^*.\slot$, \; $P \gets \emptyset$
+    \EndIf
+    \State $h \gets h + 1$
+    \For{all $i$} $\mathsf{targets}[i] \gets \bot$, \; $\mathsf{secondaries}[i] \gets \bot$ \EndFor
+    \State \Return
+  \EndIf
+  \State $\mathsf{count} \gets 0$ \Comment{Notarization: walk from $L$ toward genesis}
+  \For{$B'$ from $L$ down to $B_{\mathrm{genesis}}$}
+    \State $\mathsf{count} \gets \mathsf{count} + |\{i : \mathsf{secondaries}[i] = B'\}|$
+    \If{$\mathsf{count} \geq 2n/3$} \Comment{Notarization fires}
+      \If{$B'.\slot > s_n$} \Comment{Monotonicity check}
+        \State $s_n \gets B'.\slot$
+      \EndIf
+      \State $h \gets h + 1$
+      \For{all $i$} $\mathsf{targets}[i] \gets \bot$, \; $\mathsf{secondaries}[i] \gets \bot$ \EndFor
+      \State \Return
+    \EndIf
+  \EndFor
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{doublePrimary}$}{$v_1, v_2$} \Comment{E1: different primary targets at same height}
+  \State \Return $v_1.\mathsf{kind} = \mathsf{primary} \;\wedge\; v_2.\mathsf{kind} = \mathsf{primary} \;\wedge\; v_1.\mathsf{height} = v_2.\mathsf{height} \;\wedge\; v_1.\mathsf{target} \neq v_2.\mathsf{target}$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{conflictsWithFinalize}$}{$v_1, v_2$} \Comment{E2: $v_1$ is secondary at $v_2$'s finalize height}
+  \State \Return $v_1.\mathsf{height} = v_2.\mathsf{finalize\_height} \;\wedge\; v_1.\mathsf{kind} = \mathsf{secondary}$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{isSlashable}$}{$v_1, v_2$}
+  \State \Return $v_1.\mathsf{validator} = v_2.\mathsf{validator}$
+  \Statex \hspace{3em}$\wedge\;\; (\textsf{doublePrimary}(v_1, v_2) \;\lor\; \textsf{conflictsWithFinalize}(v_1, v_2) \;\lor\; \textsf{conflictsWithFinalize}(v_2, v_1))$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+
+
+\section{Accountable safety}
+
+\begin{lemma}[Height progression]\label{lem:heightprog}
+For any chain~$Y$ to reach height~$h' > h$, chain~$Y$ must have advanced through every intermediate height.
+At each height $h'' \in \{h, \ldots, h'-1\}$, either justification or notarization reached a quorum on chain~$Y$.
+\end{lemma}
+
+\begin{proof}
+The $\textsf{processHeight}$ function only increments $h$ by~$1$ (in the justification and notarization branches).
+Reaching height~$h'$ from~$h$ therefore requires $h' - h$ successive increments, each requiring a justification or notarization quorum.
+\end{proof}
+
+\begin{lemma}[Checkpoint monotonicity]\label{lem:slotmono}
+On any single chain: $h$, $h_j$, $s_n$, $J$, and $F$ are all monotonically non-decreasing, and $F \preceq J$ at all times.
+Furthermore, $J$ and $h_j$ advance only on justification events (not on notarizations).
+\end{lemma}
+
+\begin{proof}
+$h$ increases by~$1$ on each justification or notarization event and is never decreased.
+$J$ is only reassigned via $J \gets T^*$ under the guard $T^*.\slot > s_n$; since $s_n$ is non-decreasing, $J$ moves only to blocks at strictly higher slots.
+$h_j$ is set to the current~$h$ at the same time as~$J$; since $h$ is non-decreasing, so is~$h_j$.
+$s_n$ is set to $\max(s_n, T.\slot)$ in both justification and notarization branches, so it is non-decreasing.
+The notarization branch modifies none of $J$, $h_j$, $P$.
+For $F \preceq J$: the only assignment to~$F$ is $F \gets J$, which gives $F = J$ at that moment; subsequently $J$ can only move to blocks at higher slots (hence not ancestors of~$F$), so $F \preceq J$ is maintained since both are on the same chain.
+\end{proof}
+
+\begin{lemma}[Justification uniqueness per height]\label{lem:uniqueness}
+Under $f < n/3$: at most one block can be justified at any given height across all chains.
+More precisely, if block~$T_1$ is justified at height~$h$ on chain~$X$ and block~$T_2$ is justified at height~$h$ on chain~$Y$, then $T_1 = T_2$.
+\end{lemma}
+
+\begin{proof}
+Justification of~$T_1$ at height~$h$ requires a quorum $Q_1$ ($|Q_1| \geq 2n/3$), each signing a primary vote $(\mathsf{height} = h,\; \mathsf{target} = T_1,\; \mathsf{kind} = \mathsf{primary})$.
+Justification of~$T_2$ at the same height requires a quorum $Q_2$ ($|Q_2| \geq 2n/3$), each signing a primary vote $(\mathsf{height} = h,\; \mathsf{target} = T_2,\; \mathsf{kind} = \mathsf{primary})$.
+By quorum intersection, $|Q_1 \cap Q_2| \geq n/3 > f$, so the intersection contains at least one honest validator.
+An honest validator casts at most one primary vote per height (avoiding E1), so $T_1 = T_2$.
+\end{proof}
+
+\begin{lemma}[Finalization excludes notarization]\label{lem:finexclude}
+Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$, then no chain can advance past height~$h$ via notarization.
+\end{lemma}
+
+\begin{proof}
+Finalization of~$C$ at height~$h$ requires a quorum $Q_F$ ($|Q_F| \geq 2n/3$) each signing $\mathsf{finalize\_height} = h$.
+A notarization at height~$h$ requires a quorum $Q_N$ ($|Q_N| \geq 2n/3$) each casting a secondary vote at height~$h$ ($\mathsf{height} = h$, $\mathsf{kind} = \mathsf{secondary}$).
+By quorum intersection, $|Q_F \cap Q_N| \geq n/3$.
+Each member of $Q_F \cap Q_N$ signed both a secondary vote $a$ at height~$h$ and a finalize vote $b$ with $b.\mathsf{finalize\_height} = h$.
+Since $a.\mathsf{height} = h = b.\mathsf{finalize\_height}$ and $a.\mathsf{kind} = \mathsf{secondary}$, the pair $(a,b)$ satisfies E2.
+\end{proof}
+
+\begin{lemma}[Any chain past a finalized height has $J \succeq C$]\label{lem:mainsafety}
+Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$, then any chain~$Y$ that progresses past height~$h$ has $J \succeq C$ at all heights $> h$.
+\end{lemma}
+
+\begin{proof}
+Finalization of~$C$ at height~$h$ means $C$ was the justified block at height~$h_j = h$ when a quorum $Q_F$ ($|Q_F| \geq 2n/3$) signed $\mathsf{finalize\_height} = h$ (Definition~\ref{def:finality}).
+In particular, $C$ is justified at height~$h$.
+
+Chain~$Y$ progresses past height~$h$, so it advanced through height~$h$ via either justification or notarization (Lemma~\ref{lem:heightprog}).
+
+\emph{Notarization case.}
+By Lemma~\ref{lem:finexclude}, a notarization at height~$h$ together with the finalize quorum at height~$h$ yields $\geq n/3$ slashable validators.
+
+\emph{Justification case.}
+Some block~$T$ was justified at height~$h$ on chain~$Y$.
+Since $C$ is also justified at height~$h$, uniqueness (Lemma~\ref{lem:uniqueness}) gives $T = C$.
+The justification branch sets $J \gets C$ if $C.\slot > s_n$; otherwise $J \succeq C$ already holds (since $s_n \geq C.\slot$ implies a prior justification or notarization at a slot $\geq C.\slot$, and by checkpoint monotonicity $J$ is already at a slot $\geq C.\slot$; since $C$ is on chain~$Y$ and $J$ is on chain~$Y$ at a slot $\geq C.\slot$, $J \succeq C$).
+Either way, $J \succeq C$ on chain~$Y$ after height~$h$.
+By checkpoint monotonicity (Lemma~\ref{lem:slotmono}), $J \succeq C$ is preserved at all subsequent heights.
+\end{proof}
+
+\begin{lemma}[Finalized blocks form a chain]\label{lem:finchain}
+Unless $\geq n/3$ validators are slashable: if $(C, h)$ and $(C', h')$ are finalized checkpoints with $h \leq h'$, then $C' \succeq C$.
+In other words, finalized checkpoints ordered by height are also ordered by ancestry.
+\end{lemma}
+
+\begin{proof}
+If $h = h'$: $C$ and $C'$ are both justified at height~$h$, so $C = C'$ by uniqueness (Lemma~\ref{lem:uniqueness}).
+If $h' > h$: the chain where $C'$ was finalized progressed past height~$h$ (Lemma~\ref{lem:heightprog}).
+By Lemma~\ref{lem:mainsafety}, $J \succeq C$ on that chain at all heights $> h$.
+Finalization of~$C'$ at height~$h'$ means $C'$ was the justified block on that chain when the finalize quorum formed, so $C' = J \succeq C$ at that point.
+\end{proof}
+
+\begin{theorem}[Accountable safety]\label{thm:safety}
+Unless $\geq n/3$ validators are slashable, no two conflicting blocks can be finalized.
+\end{theorem}
+
+\begin{proof}
+Immediate from Lemma~\ref{lem:finchain}: $C' \succeq C$ (or $C \succeq C'$) implies $C \sim C'$.
+\end{proof}
+
+\begin{remark}[Notarization safety]\label{rem:notarization-safety}
+Notarizations do not threaten safety: they never update~$J$, $h_j$, or~$P$ (Lemma~\ref{lem:slotmono}), so no new justifications or finalizations arise from the notarization itself.
+A chain may advance height via notarization indefinitely without changing its justified or finalized checkpoints.
+The finalize lock (E2) ensures that any height with a finalize quorum cannot also have a notarization quorum, unless $\geq n/3$ validators are slashable (Lemma~\ref{lem:finexclude}).
+\end{remark}
+
+
+\section{Fork-choice store}
+
+The previous section models finality as it evolves \emph{within} a chain.
+A node, however, may track multiple chains simultaneously and must select one to follow.
+The \emph{store} is the node-local data structure that mediates this selection.
+
+\begin{definition}[Store]\label{def:store}
+A node maintains a \emph{store} $(J_s,\; h_s,\; F_s,\; \mathcal{T})$ where:
+$J_s$ is the \emph{store-justified block} with \emph{store-justified height}~$h_s$,
+$F_s$ is the \emph{store-finalized block},
+and $\mathcal{T}$ is the \emph{block tree}---the set of all blocks the node has accepted.
+
+The genesis store has $J_s = F_s = B_{\mathrm{genesis}}$, $h_s = 0$, and $\mathcal{T} = \{B_{\mathrm{genesis}}\}$.
+\end{definition}
+
+The store is updated when a new block is received.
+The node runs the per-chain state transition to obtain the block's post-state, then updates the store's justified and finalized blocks.
+
+\emph{Accepting a block.}
+A block~$B$ is accepted into the store only if its parent is already in~$\mathcal{T}$ and it descends from~$F_s$.
+Blocks are processed in parent-first order: before calling $\textsf{onBlock}(B)$, all ancestors of~$B$ have already been accepted.
+After running the state transition, the block's post-state yields a candidate justified pair~$(J_B, h_B)$ and a candidate finalized block~$F_B$.
+
+\emph{Updating justified.}
+$\textsf{updateJustified}$ compares the block's justified pair~$(J_B, h_B)$ against the store's current $(J_s, h_s)$.
+The store updates $J_s \gets J_B$, $h_s \gets h_B$ when both conditions hold:
+(i)~$(h_B, J_B.\mathsf{slot}, \mathsf{hash}(J_B)) > (h_s, J_s.\mathsf{slot}, \mathsf{hash}(J_s))$ lexicographically, and
+(ii)~$J_B \succeq F_s$.
+
+\emph{Updating finalized.}
+If $F_B \succ F_s$ and $F_B \preceq J_s$, then $F_s \gets F_B$.
+
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{Store:} $J_s \gets B_{\mathrm{genesis}}$, \; $h_s \gets 0$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$
+\vspace{3pt}
+
+\Function{$\textsf{onBlock}$}{$B$}
+  \State \textbf{assert} $B.\mathsf{parent} \in \mathcal{T}$ \Comment{Parent already accepted}
+  \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
+  \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
+  \State run state transition on~$B$; let $(J_B, h_B, F_B)$ be the post-state checkpoints
+  \State $\textsf{updateJustified}(J_B, h_B)$
+  \State $\textsf{updateFinalized}(F_B)$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{updateJustified}$}{$J_B, h_B$}
+  \If{$(h_B, J_B.\mathsf{slot}, \mathsf{hash}(J_B)) > (h_s, J_s.\mathsf{slot}, \mathsf{hash}(J_s))$ and $J_B \succeq F_s$}
+    \State $J_s \gets J_B$, \; $h_s \gets h_B$
+  \EndIf
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{updateFinalized}$}{$F_B$}
+  \If{$F_B \succ F_s$ and $F_B \preceq J_s$}
+    \State $F_s \gets F_B$
+  \EndIf
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+
+\begin{definition}[$\textsf{getHead}$]\label{def:gethead}
+The fork-choice function $\textsf{getHead}$ returns a block from the subtree of~$\mathcal{T}$ rooted at~$J_s$.
+The precise selection rule is unspecified; we require only that the output descends from~$J_s$ (the subtree always contains at least $J_s$ itself).
+\end{definition}
+
+\subsection{Store invariants and safety}
+
+\subsubsection*{Unconditional invariants}
+
+The following three results hold without any assumption on~$f$.
+
+\begin{theorem}[$F_s \preceq J_s$ unconditionally]\label{thm:fleqj}
+The store maintains $F_s \preceq J_s$ at all times.
+\end{theorem}
+
+\begin{proof}
+Initially $F_s = J_s = B_{\mathrm{genesis}}$.
+$\textsf{updateJustified}$ sets $J_s \gets J_B$ only when $J_B \succeq F_s$ (explicit guard), so $F_s \preceq J_s$ is preserved.
+$\textsf{updateFinalized}$ sets $F_s$ only to values $\preceq J_s$ (explicit guard), so $F_s \preceq J_s$ is preserved.
+\end{proof}
+
+\begin{theorem}[Local irreversibility of finality]\label{thm:finperm}
+Once a node sets $F_s = F$, the store-finalized block descends from~$F$ at all future times.
+\end{theorem}
+
+\begin{proof}
+$F_s$ is only updated in $\textsf{updateFinalized}$, which requires $F_B \succ F_s$.
+\end{proof}
+
+\begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
+Once a node sets $F_s = F$, $\textsf{getHead}$ returns a block descending from~$F$ at all future times.
+\end{theorem}
+
+\begin{proof}
+By Theorems~\ref{thm:finperm} and~\ref{thm:fleqj}, $F \preceq F_s \preceq J_s$, so $\textsf{getHead}$ (which returns a descendant of~$J_s$) descends from~$F$.
+\end{proof}
+
+\subsubsection*{Further properties under $f < n/3$}
+
+\begin{theorem}[Local acceptance of justification updates]\label{thm:justlive}
+Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by $\textsf{onBlock}$ with post-state justified pair $(J_B, h_B)$ where $h_B \geq h_s$, then $J_s = J_B$ after processing.
+\end{theorem}
+
+\begin{proof}
+We first show the finalization guard $J_B \succeq F_s$ passes.
+Let~$h_F$ be the height at which~$F_s$ was finalized.
+We claim $h_s \geq h_F$.
+Consider the $\textsf{onBlock}$ call that set~$F_s$: its chain's post-state had justified height $h_B' \geq h_F$ (Lemma~\ref{lem:slotmono}).
+The $\textsf{updateJustified}$ call in that $\textsf{onBlock}$ (which runs before $\textsf{updateFinalized}$) ensured $h_s \geq h_B' \geq h_F$.
+Since $h_s$ is non-decreasing, $h_s \geq h_F$ at all future times.
+
+Now $h_B \geq h_s \geq h_F$, so the chain producing~$J_B$ reached height~$h_B \geq h_F$.
+If $h_B = h_F$, uniqueness (Lemma~\ref{lem:uniqueness}) gives $J_B = F_s$.
+If $h_B > h_F$, Lemma~\ref{lem:mainsafety} gives $J_B \succeq F_s$.
+Either way, $J_B \succeq F_s$.
+
+If $h_B > h_s$: the lexicographic comparison passes, so $J_s \gets J_B$.
+If $h_B = h_s$: by uniqueness (Lemma~\ref{lem:uniqueness}), $J_B = J_s$ already.
+\end{proof}
+
+\begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
+Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by $\textsf{onBlock}$ and its post-state has finalized block~$F_B$, then after processing $F_s \succeq F_B$.
+\end{theorem}
+
+\begin{proof}
+If $F_s \succeq F_B$ already, the guard $F_B \succ F_s$ fails, and $F_s \succeq F_B$ is maintained.
+Otherwise, $F_s$ and $F_B$ are compatible (both finalized, so Theorem~\ref{thm:safety} applies), giving $F_s \prec F_B$.
+It suffices to show $F_B \preceq J_s$ after $\textsf{updateJustified}$ runs.
+
+By Lemma~\ref{lem:slotmono}, $J_B \succeq F_B$ on the chain ending at~$B$.
+Since $J_B \succeq F_B \succ F_s$, the guard $J_B \succeq F_s$ in $\textsf{updateJustified}$ is satisfied.
+After $\textsf{updateJustified}$, $h_s \geq h_B$.
+$F_B$ was finalized at some height~$h_F \leq h_B$, so $h_s \geq h_F$.
+If $h_s = h_F$, uniqueness gives $J_s = F_B$.
+If $h_s > h_F$, Lemma~\ref{lem:mainsafety} gives $J_s \succeq F_B$.
+Either way, $F_B \preceq J_s$.
+\end{proof}
+
+\begin{theorem}[Lock-in]\label{thm:lockin}
+Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~$h$ on any chain, and a node has processed a block whose post-state has $(F, h)$ as its justified checkpoint, then $J_s \succeq F$ at all future times.
+Consequently, $F$ is always on the node's canonical chain.
+\end{theorem}
+
+\begin{proof}
+If $h_B \geq h_s$: Theorem~\ref{thm:justlive} gives $J_s = F$ and $h_s = h$.
+If $h_B < h_s$: $h_s > h$ already.
+Either way $h_s \geq h$, and $h_s$ is non-decreasing, so $h_s \geq h$ at all future times.
+At any future time, $J_s$ is justified at height~$h_s \geq h$; by Lemma~\ref{lem:mainsafety}, $J_s \succeq F$.
+$\textsf{getHead}$ returns a descendant of~$J_s \succeq F$.
+\end{proof}
+
+\begin{theorem}[Order independence]\label{thm:orderindep}
+Unless $\geq n/3$ validators are slashable: the store state $(J_s, h_s, F_s)$ after processing a set of blocks depends only on \emph{which} blocks have been processed, not on the order in which they were processed.
+\end{theorem}
+
+\begin{proof}
+\emph{$J_s$ and~$h_s$.}
+Let $(J^*, h^*)$ be the pair with the lexicographically largest tuple $(h^*, J^*\!.\mathsf{slot}, \mathsf{hash}(J^*))$ among all processed blocks' post-states.
+When the block carrying $(J^*, h^*)$ is processed, $h^* \geq h_s$.
+By Theorem~\ref{thm:justlive}, $J_s = J^*$ after processing.
+No subsequent block has a higher justified height, so $J_s = J^*$ remains.
+Thus $(J_s, h_s) = (J^*, h^*)$ regardless of processing order.
+
+\emph{$F_s$.}
+All finalized blocks are mutually compatible (Theorem~\ref{thm:safety}), so the finalized values $F_B$ across all processed blocks form a chain.
+Let $F_{\max}$ be their maximum.
+By Theorem~\ref{thm:finlive}, processing the block carrying $F_{\max}$ yields $F_s \succeq F_{\max}$.
+Since $F_s$ can only be set to some $F_B \preceq F_{\max}$, we get $F_s = F_{\max}$.
+Thus $F_s = F_{\max}$ regardless of order.
+\end{proof}
+
+\begin{corollary}[Cross-node agreement]\label{cor:agreement}
+Unless $\geq n/3$ validators are slashable: if two nodes have processed the same set of blocks, they have the same $(J_s, h_s, F_s)$.
+\end{corollary}
+
+\begin{proof}
+Immediate from Theorem~\ref{thm:orderindep}.
+\end{proof}
+
+
+\section{Inactivity leak}
+
+We assume \emph{synchrony}: all messages between honest validators are delivered within a known bound, at least one honest validator proposes a block in each round, and $\textsf{getHead}$ is a deterministic function of the store.
+A \emph{round} is one block-processing step at a given height; the first round at a new height is $r = 1$, and subsequent rounds at the same height are $r > 1$.
+The \emph{canonical chain} is the chain selected by $\textsf{getHead}$.
+Under synchrony, honest validators have received the same set of blocks and therefore share the same store state (Corollary~\ref{cor:agreement}) and canonical chain.
+
+\subsection{Penalty units}
+
+During periods of non-finality, the protocol assesses \emph{penalty units} per validator per round.
+
+\begin{definition}[Penalty units]\label{def:penalty}
+Let $r$ denote the round index within the current height ($r = 1$ for the first round after the height last advanced).
+Let $T_c$ denote the \emph{canonical target}---the block designated by the chain as the target for the current height.
+Penalties are assessed in two layers depending on whether height advances.
+
+\medskip\noindent\textbf{Layer 1 (stall --- height does not advance):}
+
+\emph{First round} ($r = 1$): $\mathsf{penalty}(i) = 0$ if $\mathsf{targets}[i] = T_c$, else $1$.
+
+\emph{Later rounds} ($r > 1$): $\mathsf{penalty}(i) = 0$ if $\mathsf{secondaries}[i] \neq \bot$, else $1$.
+
+\medskip\noindent\textbf{Layer 2 (advance --- height advances):}
+two independent checks, each contributing $0$ or $1$.
+\begin{enumerate}
+  \item \emph{Target check}: $1$ unit unless $\mathsf{targets}[i] = T_c$.
+  \item \emph{Finalize check} (only at $h = h_j + 1$ with $|P| < 2n/3$): $1$ unit unless $i \in P$.
+\end{enumerate}
+Thus $\mathsf{penalty}(i) \in \{0, 1, 2\}$ in an advance round.
+\end{definition}
+
+Layer~1 incentivizes voting for the canonical target (first round) or casting a secondary vote (later rounds).
+Layer~2 incentivizes both justification progress and finalization.
+
+\subsection{Leak fairness}
+
+A validator is \emph{locked} at height~$h$ if it signed a vote with $\mathsf{finalize\_height} = h$; by Definition~\ref{def:slashing} (E2), casting a secondary vote at height~$h$ would make it slashable.
+
+\begin{theorem}[Canonical chain catch-up]\label{thm:catchup}
+Under $f < n/3$ and synchrony: if $J_s = (J, h)$ is the store-justified block, then the canonical chain can advance from any height~$h' < h$ to height~$h$.
+In particular, the canonical chain can always reach the latest justified height.
+\end{theorem}
+
+\begin{proof}
+Let~$A$ be the canonical chain, currently at height~$h' < h$.
+We show by induction that $A$ can advance from~$h'$ to $h' + 1$, and by repeating this argument, from~$h'$ all the way to~$h$.
+
+Consider any chain~$B$ that justified $(J, h)$.
+To reach height~$h$, chain~$B$ went through height~$h'$, advancing to $h' + 1$ via either justification or notarization of some block~$(C, h')$.
+
+\emph{In either case}, after advancing to $h' + 1$ on chain~$B$, the state has $s_n \geq C.\slot$.
+Since~$(J, h)$ was subsequently justified on chain~$B$, and $s_n$ is non-decreasing (Lemma~\ref{lem:slotmono}), we have $J.\slot \geq s_n \geq C.\slot$ at the time of $J$'s justification.
+Because $J$ and $C$ are both on chain~$B$ and $J.\slot \geq C.\slot$, we have $C \preceq J$.
+
+Since $J$ is on the canonical chain~$A$ (it is the store-justified block, and $\textsf{getHead}$ returns a descendant of~$J_s$), and $C \preceq J$, chain~$A$ also contains~$C$.
+
+\emph{Justification case at height~$h'$:}
+$C$ was justified at height~$h'$ on chain~$B$, meaning a quorum of $\geq 2n/3$ primary votes for~$C$ at height~$h'$ exists.
+Since $C$ is on chain~$A$, these votes can be included and processed on chain~$A$.
+The primary votes register ($C \preceq L$ on chain~$A$), and justification fires at height~$h'$, advancing $A$ to $h' + 1$.
+
+\emph{Notarization case at height~$h'$:}
+$C$ was notarized at height~$h'$ on chain~$B$, meaning a quorum of $\geq 2n/3$ secondary votes whose targets are $\succeq C$ exists.
+Since $C$ is on chain~$A$, the secondary votes for~$C$ or its descendants that are also on chain~$A$ can be processed.
+The prefix count for~$C$ reaches $2n/3$, and notarization fires at height~$h'$, advancing $A$ to $h' + 1$.
+
+Note that for this argument, it is irrelevant whether the monotonicity guard ($T.\slot > s_n$) causes the justified checkpoint or notarized slot to be updated on chain~$A$---the height advances regardless.
+
+By induction, chain~$A$ advances from~$h'$ to~$h$.
+\end{proof}
+
+\begin{remark}\label{rem:notarization-targets}
+The key insight of rooted timeouts is that secondary votes carry targets, so notarizations are ``rooted'' in specific blocks.
+This allows the canonical chain to replay the notarization certificate: the notarized block~$C$ is on the canonical chain (since $C \preceq J$ and $J$ is on the canonical chain), and the secondary votes can be verified against it.
+In contrast, pure timeouts (as in Simplex) carry no target, so there is no block to replay---the canonical chain cannot ``import'' a timeout certificate from another chain.
+\end{remark}
+
+\begin{theorem}[Leak fairness]\label{thm:fairness}
+Under $f < n/3$ and synchrony, every honest validator has $\mathsf{penalty}(i) = 0$ on the canonical chain in every round.
+\end{theorem}
+
+\begin{proof}
+Let~$i$ be an honest validator and~$X$ the canonical chain.
+
+\emph{Case 1: $i$ is not locked at the current height of~$X$.}
+Under synchrony, all honest validators share the same store state and vote for the same target~$T$.
+Since honest validators constitute $\geq 2n/3$ and all vote for the same target~$T = T_c$, justification fires and no later rounds occur.
+Validator~$i$ voted $\mathsf{targets}[i] = T_c$, so $\mathsf{penalty}(i) = 0$.
+
+\emph{Case 2: $i$ is locked at height~$h$.}
+The honest voting rule means $i$ signed $\mathsf{finalize\_height} = h$ only when~$h$ was the justified height; some block~$T$ was justified at height~$h$.
+By justification uniqueness (Lemma~\ref{lem:uniqueness}), $T$ is the unique block justified at height~$h$ across all chains.
+
+If $X$ has already advanced past height~$h$, the lock is irrelevant and Case~1 applies.
+
+If $X$ is at height~$h$: a justification certificate for~$T$ exists ($\geq 2n/3$ primary votes for~$T$ at height~$h$).
+We show $T$ is on the canonical chain~$X$.
+First, no chain can pass height~$h$ via notarization: by Lemma~\ref{lem:finexclude}, a notarization quorum at height~$h$ together with the finalize quorum at height~$h$ (which exists, since $T$ being justified at~$h$ and honest validators setting $\mathsf{finalize\_height} = h$ yields $|P| \geq 2n/3$) would make $\geq n/3$ validators slashable via E2.
+Therefore every chain that progressed past height~$h$ did so via justification at height~$h$, and by uniqueness justified~$T$.
+By checkpoint monotonicity, $J \succeq T$ on every such chain at all subsequent heights.
+The store-justified height~$h_s \geq h$, and the chain producing~$J_s$ passed through~$h$ via justification, so $J_s \succeq T$.
+Since $\textsf{getHead}$ returns a descendant of~$J_s$, $T$ is on~$X$.
+Under synchrony, the justification votes are included, justification fires for~$T = T_c$, and $\mathsf{penalty}(i) = 0$.
+
+In both cases, the lock on~$i$ does not prevent participation on the canonical chain, and the canonical chain can always reach the latest justified height (Theorem~\ref{thm:catchup}), so locks at earlier heights are resolved.
+\end{proof}
+
+\subsection{Leak tightness}
+
+\begin{theorem}[Amortized $n/3$ penalty units per height]\label{thm:tightness}
+Under $f < n/3$: during any period of non-finality, the total penalty units is at least $n/3$ per height on average.
+\end{theorem}
+
+\begin{proof}
+Every height is either a stall (no advance) or an advance (justification or notarization fires).
+
+\emph{Stall height (Layer~1 only).}
+Let $m = |\{i : \mathsf{targets}[i] = T_c\}|$ be the canonical-target count.
+If $m < 2n/3$ (no justification), the first-round penalty is $n - m > n/3$.
+If the stall continues to later rounds, the secondary-vote penalty contributes $> n/3$ per round (since $< 2n/3$ secondary votes or notarization would fire).
+
+\emph{Advance height where the checkpoint updates (Layer~2 target check).}
+The canonical-target penalty may be zero.
+However, the checkpoint update means finalization is now pending.
+At the next advance height $h = h_j + 1$ with $|P| < 2n/3$, the finalize check contributes $n - |P| > n/3$.
+
+\emph{Advance height without checkpoint update (Layer~2 target check).}
+The canonical target $T_c$ has $< 2n/3$ votes (otherwise the checkpoint would update).
+The target-check penalty is $n - m > n/3$.
+
+In every case, each height contributes $\geq n/3$ penalty units.
+\end{proof}
+
+\appendix
+\section{Differences from Simplex}\label{app:diffs}
+
+This section summarizes the structural changes from Simplex to Rooted Timeouts.
+
+\subsection*{Vote structure}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+& \textbf{Simplex} & \textbf{Rooted Timeouts} \\
+\midrule
+Fields & $(\mathsf{val},\, \mathsf{height},\, \mathsf{target},\, \mathsf{fin\_h})$ & $(\mathsf{val},\, \mathsf{height},\, \mathsf{target},\, \mathsf{kind},\, \mathsf{fin\_h})$ \\
+Timeout/secondary & $\mathsf{target} = \bot$ & $\mathsf{kind} = \mathsf{secondary}$, target is a block \\
+Target vote & $\mathsf{target} \neq \bot$ & $\mathsf{kind} = \mathsf{primary}$, target is a block \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The key change: timeout votes are replaced by \emph{secondary votes} that carry an explicit target block, ``rooting'' them in the block tree.
+
+\subsection*{State}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+& \textbf{Simplex} & \textbf{Rooted Timeouts} \\
+\midrule
+Trackers & $\mathsf{targets}[1..n]$, $\mathsf{timeouts}[1..n] \in \{\true, \false\}$ & $\mathsf{targets}[1..n]$, $\mathsf{secondaries}[1..n]$ (block-valued) \\
+New field & --- & $s_n$ (notarized slot) \\
+Checkpoint guard & $T^* \succ J$ & $T^*.\slot > s_n$ \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{itemize}
+  \item The boolean $\mathsf{timeouts}$ array becomes a block-valued $\mathsf{secondaries}$ array.
+  \item The new field $s_n$ (notarized slot) tracks the slot of the most recently justified or notarized block.
+        It decouples the monotonicity guard from the justified checkpoint: if a justification or notarization targets a block with slot $\leq s_n$, the height still advances but~$J$, $h_j$, $s_n$, and~$P$ are not updated.
+  \item Only justifications can move the justified checkpoint~$(J, h_j)$.
+        In Simplex, timeouts never move it either, but the mechanism is different: Simplex timeouts simply skip the update unconditionally, whereas here the monotonicity guard ($T.\slot > s_n$) governs all height-advancing events uniformly.
+\end{itemize}
+
+\subsection*{Height advancement}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+& \textbf{Simplex} & \textbf{Rooted Timeouts} \\
+\midrule
+Justification & Fixed-target: $|\{i : \mathsf{targets}[i] = T\}| \geq \tfrac{2n}{3}$ & Same \\
+Timeout/notar. & Pure: $|\{i : \mathsf{timeouts}[i]\}| \geq \tfrac{2n}{3}$ & Prefix: $|\{i : T \preceq \mathsf{secondaries}[i]\}| \geq \tfrac{2n}{3}$ \\
+State updates & $J, h_j, P$ unchanged & $J, h_j, P$ unchanged; $s_n$ may update \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Notarization uses prefix counting (like Prefix-IC): votes for descendants of~$T$ contribute.
+This is crucial for the catch-up argument---on the canonical chain, the notarized block~$C$ is present, and secondary votes targeting descendants of~$C$ (possibly on different forks) still count toward~$C$'s prefix quorum.
+
+\subsection*{Slashing conditions}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+& \textbf{Simplex} & \textbf{Rooted Timeouts} \\
+\midrule
+E1 & Double target ($\neq \bot$ targets, same height) & Double primary (same height) \\
+E2 & Finalize + timeout (same height) & Finalize + secondary (same height) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The conditions are structurally identical; only the vote classification changes ($\mathsf{target} = \bot$ becomes $\mathsf{kind} = \mathsf{secondary}$, and $\mathsf{target} \neq \bot$ becomes $\mathsf{kind} = \mathsf{primary}$).
+
+\subsection*{Store}
+
+The store is unchanged from Simplex.
+The $\textsf{updateJustified}$ and $\textsf{updateFinalized}$ functions, along with all store invariants and proofs, carry over verbatim.
+
+\subsection*{Key new result: canonical chain catch-up (Theorem~\ref{thm:catchup})}
+
+This is the main motivation for rooted timeouts.
+In Simplex, a pure timeout carries no target, so there is no block certificate to ``replay'' on the canonical chain---if another chain advanced via timeout, the canonical chain has no way to import that progress.
+With rooted timeouts, notarizations are anchored to blocks.
+If chain~$B$ notarized block~$C$ at height~$h'$ on its way to justifying $(J, h)$, and $C \preceq J$, then~$C$ is on the canonical chain, and the notarization certificate (secondary votes for~$C$ or descendants) can be replayed on the canonical chain to advance past height~$h'$.
+
+This directly yields \textbf{leak fairness} (Theorem~\ref{thm:fairness}): locks at earlier heights are always resolved because the canonical chain can catch up to the latest justified height, where the lock no longer applies.
+In Simplex, leak fairness relies on the fact that justification certificates can be replayed, but this argument breaks down if the height was advanced via timeout rather than justification.
+Rooted timeouts close this gap.
+
+\end{document}
