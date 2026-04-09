@@ -150,21 +150,23 @@ A vote included on a chain is verified to reference a target that actually exist
 
 
 \begin{definition}[State]\label{def:state}
-Each chain maintains a \emph{state} $(L,\; h,\; \mathsf{targets},\; \mathsf{secondaries},\; J,\; h_j,\; s_n,\; F,\; P)$.
-The \emph{head}~$L$ is the leaf block of the chain; a block~$B$ is on the chain iff $B \preceq L$.
-The \emph{current height}~$h$ is the finality gadget's counter.
+The \emph{state after block~$B$}, written $\sigma[B]$, is a tuple $(h,\; \mathsf{targets},\; \mathsf{secondaries},\; J,\; h_j,\; s_n,\; F,\; P)$.
+A block~$B'$ is \emph{on the chain ending at~$B$} iff $B' \preceq B$.
 \begin{itemize}
+  \item $h$: the \emph{current height} of the finality gadget.
   \item $\mathsf{targets}[1..n]$: the \emph{primary target tracker}.
-        For each validator~$i$, the block that~$i$ voted for with a primary vote at the current height ($\mathsf{targets}[i] = \bot$ if~$i$ has not cast a primary vote).
+        For each validator~$i$, the block on the chain ending at~$B$ that~$i$ voted for with a primary vote at height~$h$
+        ($\mathsf{targets}[i] = \bot$ if~$i$ has not cast a primary vote).
   \item $\mathsf{secondaries}[1..n]$: the \emph{secondary target tracker}.
-        For each validator~$i$, the block that~$i$ voted for with a secondary vote at the current height ($\mathsf{secondaries}[i] = \bot$ if~$i$ has not cast a secondary vote).
-  \item $J$: the \emph{justified block}, the highest justified block on this chain, justified at \emph{justified height}~$h_j$.
+        For each validator~$i$, the block on the chain ending at~$B$ that~$i$ voted for with a secondary vote at height~$h$
+        ($\mathsf{secondaries}[i] = \bot$ if~$i$ has not cast a secondary vote).
+  \item $J$: the \emph{justified block}, produced by the most recent justification event.
+  \item $h_j$: the \emph{justified height}, the height at which~$J$ was justified.
   \item $s_n$: the \emph{notarized slot}, the slot of the most recently justified or notarized block. Used for monotonicity: if a justification or notarization targets a block with slot $\leq s_n$, the height advances but~$J$, $h_j$, and~$s_n$ are not updated.
   \item $F$: the \emph{finalized block}, the most recently finalized block.
   \item $P \subseteq \{1, \ldots, n\}$: the \emph{finality participation}, the set of validators who have cast a vote with $\mathsf{finalize\_height} = h_j$.
 \end{itemize}
-
-The genesis state has $L = B_{\mathrm{genesis}}$, $h = 0$, all $\mathsf{targets}[i] = \bot$, all $\mathsf{secondaries}[i] = \bot$, $J = F = B_{\mathrm{genesis}}$, $h_j = 0$, $s_n = 0$, and $P = \emptyset$.
+The genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\; \bot^n,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; 0,\; B_{\mathrm{genesis}},\; \emptyset)$.
 \end{definition}
 
 \yann{TO FIX: How to deal with the fact that there can be many secondary votes? In prefix-IC we can keep track of the highest, since it implies all lower targets. The current doc does the the same, e.g., it allows "prefix notarization of timeout". Not sure about this (and whether this is in the spirit of Francesco's suggestion, but this seems like a practical way to restrict secondaries to one vote per snapshot and per height? In any case not more are needed of course.}
@@ -218,23 +220,23 @@ E2 enforces \emph{finalization consistency}: a validator who commits to finalize
 An honest validator casts at most one primary vote per height (avoiding E1), does not aim to finalize a height for which it sent a secondary vote (avoiding E2), and sets $\mathsf{finalize\_height}$ only to the current~$h_j$ (committing to finalize the justified block~$J$ at~$h_j$).
 
 \paragraph{State transitions.}
-The state evolves by processing blocks.
-Each block extends the chain (updating the head~$L$), then its votes are processed, and finally finality, justification, and notarization are evaluated.
+The state after a block~$B$ is derived from the state after its parent.
+The block's votes are processed against the parent's state, then finality, justification, and notarization are evaluated, yielding $\sigma[B]$.
 
 \emph{Processing a vote.}
-When a vote~$v$ is processed:
-if $v.\mathsf{kind} = \mathsf{primary}$, $v.\mathsf{height} = h$, and $v.\mathsf{target} \preceq L$, then $\mathsf{targets}[v.\mathsf{validator}] \gets v.\mathsf{target}$.
-If $v.\mathsf{kind} = \mathsf{secondary}$, $v.\mathsf{height} = h$, and $v.\mathsf{target} \preceq L$, then $\mathsf{secondaries}[v.\mathsf{validator}] \gets v.\mathsf{target}$.
-Independently, if $v.\mathsf{finalize\_height} = h_j$, then the validator is added to~$P$.
+When a vote~$v$ in block~$B$ is processed, the target trackers are updated if the vote is for the current height and the target is on the chain ending at~$B$ ($v.\mathsf{target} \preceq B$):
+if $v.\mathsf{kind} = \mathsf{primary}$, $\mathsf{targets}[v.\mathsf{validator}]$ is set to $v.\mathsf{target}$;
+if $v.\mathsf{kind} = \mathsf{secondary}$, $\mathsf{secondaries}[v.\mathsf{validator}]$ is set to $v.\mathsf{target}$.
+Independently, if $v.\mathsf{finalize\_height} = h_j$, the validator is added to~$P$.
 
 \emph{Height processing.}
 After processing all votes in a block, finality, justification, and notarization are evaluated in order.
 First, if $|P| \geq 2n/3$, the justified block is finalized: $F \gets J$.
 Then justification is checked: if some block~$T$ on the chain has $|\{i : \mathsf{targets}[i] = T\}| \geq 2n/3$, the height advances via justification.
-If $T.\slot > s_n$, the justified checkpoint is updated ($J \gets T$, $h_j \gets h$, $s_n \gets T.\slot$, $P \gets \emptyset$); 
+If $T.\slot > s_n$, the justified checkpoint is updated ($J \gets T$, $h_j \gets h$, $s_n \gets T.\slot$, $P \gets \emptyset$);
 otherwise $J$, $h_j$, $s_n$, $P$ remain unchanged.
 In either case $h \gets h+1$ and all targets and secondaries are reset.
-If justification does not fire, notarization is checked: the chain is walked from~$L$ toward genesis, accumulating the count of secondary votes.
+If justification does not fire, notarization is checked: the chain is walked from~$B$ toward genesis, accumulating the count of secondary votes.
 The first block~$T$ where the cumulative count reaches $2n/3$ is the highest notarizable block.
 If found, the height advances.
 If $T.\slot > s_n$, then $s_n \gets T.\slot$ (but $J$, $h_j$, $P$ are \emph{unchanged}---only justifications move the justified checkpoint); otherwise $s_n$ remains unchanged.
@@ -242,36 +244,33 @@ In either case $h \gets h+1$ and all targets and secondaries are reset.
 Because finality is checked before justification, a justified block can be finalized in the same round it is superseded.
 \yann{I haven't yet wrapped my head around why the last bit is needed.}
 
-\begin{center}
+\begin{figure*}[h!]
+\centering
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{State:} $L \gets B_{\mathrm{genesis}}$, \; $h \gets 0$, \; $\mathsf{targets}[1..n] \gets \bot$, \; $\mathsf{secondaries}[1..n] \gets \bot$, \; $J \gets B_{\mathrm{genesis}}$, \; $h_j \gets 0$, \; $s_n \gets 0$, \; $F \gets B_{\mathrm{genesis}}$, \; $P \gets \emptyset$
-\vspace{3pt}
-
-\Function{$\textsf{processBlock}$}{$B$}
-  \State \textbf{assert} $B.\mathsf{parent} = L$ \Comment{$B$ extends the chain}
-  \State $L \gets B$
-  \For{each vote $v$ in $B$} $\textsf{processVote}(v)$ \EndFor
-  \State $\textsf{processHeight}()$
+\Function{$\textsf{processBlock}$}{$s,\; B$}
+  \For{each vote $v$ in $B$} $s \gets \textsf{processVote}(s,\, v,\, B)$ \EndFor
+  \State \Return $\textsf{processHeight}(s,\, B)$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processVote}$}{$v$}
+\Function{$\textsf{processVote}$}{$(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P),\; v,\; B$}
   \State $i \gets v.\mathsf{validator}$
-  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{primary}$ and $v.\mathsf{target} \preceq L$}
+  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{primary}$ and $v.\mathsf{target} \preceq B$}
     \State $\mathsf{targets}[i] \gets v.\mathsf{target}$
   \EndIf
-  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{secondary}$ and $v.\mathsf{target} \preceq L$}
+  \If{$v.\mathsf{height} = h$ and $v.\mathsf{kind} = \mathsf{secondary}$ and $v.\mathsf{target} \preceq B$}
     \State $\mathsf{secondaries}[i] \gets v.\mathsf{target}$
   \EndIf
   \If{$v.\mathsf{finalize\_height} = h_j$}
     \State $P \gets P \cup \{i\}$
   \EndIf
+  \State \Return $(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P)$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processHeight}$}{}
+\Function{$\textsf{processHeight}$}{$(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P),\; B$}
   \If{$|P| \geq 2n/3$} \Comment{Finality}
     \State $F \gets J$
   \EndIf
@@ -282,10 +281,10 @@ Because finality is checked before justification, a justified block can be final
     \EndIf
     \State $h \gets h + 1$
     \For{all $i$} $\mathsf{targets}[i] \gets \bot$, \; $\mathsf{secondaries}[i] \gets \bot$ \EndFor
-    \State \Return
+    \State \Return $(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P)$
   \EndIf
-  \State $\mathsf{count} \gets 0$ \Comment{Notarization: walk from $L$ toward genesis}
-  \For{$B'$ from $L$ down to $B_{\mathrm{genesis}}$}
+  \State $\mathsf{count} \gets 0$ \Comment{Notarization: walk from $B$ toward genesis}
+  \For{$B'$ from $B$ down to $B_{\mathrm{genesis}}$}
     \State $\mathsf{count} \gets \mathsf{count} + |\{i : \mathsf{secondaries}[i] = B'\}|$
     \If{$\mathsf{count} \geq 2n/3$} \Comment{Notarization fires}
       \If{$B'.\slot > s_n$} \Comment{Monotonicity check}
@@ -293,9 +292,10 @@ Because finality is checked before justification, a justified block can be final
       \EndIf
       \State $h \gets h + 1$
       \For{all $i$} $\mathsf{targets}[i] \gets \bot$, \; $\mathsf{secondaries}[i] \gets \bot$ \EndFor
-      \State \Return
+      \State \Return $(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P)$
     \EndIf
   \EndFor
+  \State \Return $(h,\, \mathsf{targets},\, \mathsf{secondaries},\, J,\, h_j,\, s_n,\, F,\, P)$
 \EndFunction
 \vspace{3pt}
 
@@ -316,7 +316,7 @@ Because finality is checked before justification, a justified block can be final
 
 \end{algorithmic}
 \end{boxedminipage}
-\end{center}
+\end{figure*}
 
 
 \section{Accountable safety}
@@ -424,7 +424,8 @@ A node, however, may track multiple chains simultaneously and must select one to
 The \emph{store} is the node-local data structure that mediates this selection.
 
 \begin{definition}[Store]\label{def:store}
-A node maintains a \emph{store} $(J_s,\; h_s,\; F_s,\; \mathcal{T})$ where:
+A node maintains a \emph{store} $(\sigma,\; J_s,\; h_s,\; F_s,\; \mathcal{T})$ where:
+$\sigma$ is the \emph{state map} (Definition~\ref{def:state}), mapping each accepted block to its post-state,
 $J_s$ is the \emph{store-justified block} with \emph{store-justified height}~$h_s$,
 $F_s$ is the \emph{store-finalized block},
 and $\mathcal{T}$ is the \emph{block tree}---the set of all blocks the node has accepted.
@@ -433,12 +434,12 @@ The genesis store has $J_s = F_s = B_{\mathrm{genesis}}$, $h_s = 0$, and $\mathc
 \end{definition}
 
 The store is updated when a new block is received.
-The node runs the per-chain state transition to obtain the block's post-state, then updates the store's justified and finalized blocks.
+The node computes $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\mathsf{parent}],\; B)$, then updates the store's justified and finalized blocks.
 
 \emph{Accepting a block.}
 A block~$B$ is accepted into the store only if its parent is already in~$\mathcal{T}$ and it descends from~$F_s$.
 Blocks are processed in parent-first order: before calling $\textsf{onBlock}(B)$, all ancestors of~$B$ have already been accepted.
-After running the state transition, the block's post-state yields a candidate justified pair~$(J_B, h_B)$ and a candidate finalized block~$F_B$.
+The post-state $\sigma[B]$ yields a candidate justified pair~$(\sigma[B].J,\; \sigma[B].h_j)$ and a candidate finalized block~$\sigma[B].F$.
 
 \emph{Updating justified.}
 $\textsf{updateJustified}$ compares the block's justified pair~$(J_B, h_B)$ against the store's current $(J_s, h_s)$.
@@ -449,20 +450,21 @@ The store updates $J_s \gets J_B$, $h_s \gets h_B$ when both conditions hold:
 \emph{Updating finalized.}
 If $F_B \succ F_s$ and $F_B \preceq J_s$, then $F_s \gets F_B$.
 
-\begin{center}
+\begin{figure*}[h!]
+\centering
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Store:} $J_s \gets B_{\mathrm{genesis}}$, \; $h_s \gets 0$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$
+\State \textbf{Store:} $J_s \gets B_{\mathrm{genesis}}$, \; $h_s \gets 0$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$, \; $\sigma[B_{\mathrm{genesis}}] \gets (0,\; \bot^n,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; 0,\; B_{\mathrm{genesis}},\; \emptyset)$
 \vspace{3pt}
 
 \Function{$\textsf{onBlock}$}{$B$}
   \State \textbf{assert} $B.\mathsf{parent} \in \mathcal{T}$ \Comment{Parent already accepted}
   \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
   \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
-  \State run state transition on~$B$; let $(J_B, h_B, F_B)$ be the post-state checkpoints
-  \State $\textsf{updateJustified}(J_B, h_B)$
-  \State $\textsf{updateFinalized}(F_B)$
+  \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\mathsf{parent}],\; B)$
+  \State $\textsf{updateJustified}(\sigma[B].J,\; \sigma[B].h_j)$
+  \State $\textsf{updateFinalized}(\sigma[B].F)$
 \EndFunction
 \vspace{3pt}
 
@@ -481,7 +483,7 @@ If $F_B \succ F_s$ and $F_B \preceq J_s$, then $F_s \gets F_B$.
 
 \end{algorithmic}
 \end{boxedminipage}
-\end{center}
+\end{figure*}
 
 \begin{definition}[$\textsf{getHead}$]\label{def:gethead}
 The fork-choice function $\textsf{getHead}$ returns a block from the subtree of~$\mathcal{T}$ rooted at~$J_s$.
@@ -662,7 +664,7 @@ Since $J$ is on the canonical chain~$A$ (it is the store-justified block, and $\
 \emph{Justification case at height~$h'$:}
 $C$ was justified at height~$h'$ on chain~$B$, meaning a quorum of $\geq 2n/3$ primary votes for~$C$ at height~$h'$ exists.
 Since $C$ is on chain~$A$, these votes can be included and processed on chain~$A$.
-The primary votes register ($C \preceq L$ on chain~$A$), and justification fires at height~$h'$, advancing $A$ to $h' + 1$.
+The primary votes register ($C \preceq A$), and justification fires at height~$h'$, advancing $A$ to $h' + 1$.
 
 \emph{Notarization case at height~$h'$:}
 $C$ was notarized at height~$h'$ on chain~$B$, meaning a quorum of $\geq 2n/3$ secondary votes whose targets are $\succeq C$ exists.
