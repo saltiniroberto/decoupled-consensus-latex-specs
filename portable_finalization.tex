@@ -76,6 +76,21 @@
 \newcommand{\Block}{\mathsf{Block}}
 \newcommand{\BlockID}{\mathsf{BlockID}}
 \newcommand{\View}{\mathsf{View}}
+\newcommand{\target}{\mathsf{target}}
+\newcommand{\targets}{\mathsf{targets}}
+\newcommand{\kind}{\mathsf{kind}}
+\newcommand{\height}{\mathsf{height}}
+\newcommand{\finalize}{\mathsf{finalize}}
+\newcommand{\validator}{\mathsf{validator}}
+\newcommand{\prefix}{\mathsf{prefix}}
+\newcommand{\cnt}{\mathsf{count}}
+\newcommand{\pnlty}{\mathsf{penalty}}
+\newcommand{\parent}{\mathsf{parent}}
+\newcommand{\fintarget}{\mathsf{fin\_target}}
+\newcommand{\val}{\mathsf{val}}
+\newcommand{\finh}{\mathsf{fin\_h}}
+\newcommand{\finalizetarget}{\mathsf{finalize\_target}}
+\newcommand{\finalizeheight}{\mathsf{finalize\_height}}
 
 \algrenewcommand\textproc{}
 
@@ -128,22 +143,22 @@ The \emph{divergence point} of two conflicting chains~$X$ and~$Y$ is the last bl
 We write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \sim B'$ when $B$ and $B'$ are \emph{compatible}: $B \preceq B'$ or $B' \preceq B$.
 
 \begin{definition}[Vote]\label{def:vote}
-A \emph{vote} is a signed tuple $(\mathsf{validator},\; \mathsf{height},\; \mathsf{target},\; \mathsf{kind})$ where $\mathsf{validator}$ identifies the signer, $\mathsf{height}$ is a height, $\mathsf{target}$ is a block, and $\mathsf{kind} \in \{\mathsf{prefix},\, \mathsf{finalize}\}$ distinguishes the vote type.
+A \emph{vote} is a signed tuple $(\validator,\; \height,\; \target,\; \kind)$ where $\validator$ identifies the signer, $\height$ is a height, $\target$ is a block, and $\kind \in \{\prefix,\, \finalize\}$ distinguishes the vote type.
 A vote included on a chain is verified to reference a target that actually exists on that chain.
 \end{definition}
 
 \begin{definition}[State]\label{def:state}
-The \emph{state after block~$B$}, written $\sigma[B]$, is a tuple $(h,\; \mathsf{targets},\; J,\; h_j,\; F,\; P)$.
+The \emph{state after block~$B$}, written $\sigma[B]$, is a tuple $(h,\; \targets,\; J,\; h_j,\; F,\; P)$.
 A block~$B'$ is \emph{on the chain ending at~$B$} iff $B' \preceq B$.
 \begin{itemize}
   \item $h$: the \emph{current height} of the finality gadget.
-  \item $\mathsf{targets}[1..n]$: the \emph{target tracker}.
+  \item $\targets[1..n]$: the \emph{target tracker}.
         For each validator~$i$, the highest block on the chain ending at~$B$ that~$i$ voted for at height~$h$
-        ($\mathsf{targets}[i] = \bot$ if~$i$ has not voted).
+        ($\targets[i] = \bot$ if~$i$ has not voted).
   \item $J$: the \emph{justified block}, produced by the most recent justification event.
   \item $h_j$: the \emph{justified height}, the height at which~$J$ was justified.
   \item $F$: the \emph{finalized block}, the most recently finalized block.
-  \item $P \subseteq \{1, \ldots, n\}$: the \emph{finality participation}, the set of validators who have cast a finalize vote ($\mathsf{kind} = \mathsf{finalize}$) with $\mathsf{height} = h_j$ and $\mathsf{target} \succeq J$.
+  \item $P \subseteq \{1, \ldots, n\}$: the \emph{finality participation}, the set of validators who have cast a finalize vote ($\kind = \finalize$) with $\height = h_j$ and $\target \succeq J$.
 \end{itemize}
 The genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; B_{\mathrm{genesis}},\; \emptyset)$.
 \end{definition}
@@ -152,7 +167,7 @@ The genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\; \bot^n,\; B_{\mathrm{
 Justification is evaluated on the state after each block.
 A block~$B'$ on the chain ending at~$B$ is \emph{justifiable at height~$h$} (with respect to $\sigma[B]$) if at least $2n/3$ validators voted for~$B'$ or a descendant of~$B'$:
 \[
-  \bigl|\{i \,:\, B' \preceq \mathsf{targets}[i]\}\bigr| \;\geq\; 2n/3.
+  \bigl|\{i \,:\, B' \preceq \targets[i]\}\bigr| \;\geq\; 2n/3.
 \]
 The \emph{justified block} is the unique highest justifiable block.
 \end{definition}
@@ -164,11 +179,11 @@ The justified block~$J$ is \emph{finalized} when $|P| \geq 2n/3$.
 \begin{definition}[Slashing condition]\label{def:slashing}
 Given two votes~$a$, $b$ from the same validator, the validator is \emph{slashable} if
 \[
-  b.\mathsf{kind} = \mathsf{finalize}
+  a.\kind = b.\finalize
   \;\;\wedge\;\;
-  a.\mathsf{height} = b.\mathsf{height}
+  a.\height = b.\height
   \;\;\wedge\;\;
-  a.\mathsf{target} \not\succeq b.\mathsf{target}.
+  a.\target  \not\succeq b.\target.
 \]
 That is: if a validator casts a finalize vote for block~$D$ at height~$h$, then every vote it cast at height~$h$ must have a target that is a descendant of~$D$ (or $D$ itself).
 We refer to a slashable validator also as an \emph{equivocator}.
@@ -180,10 +195,10 @@ There is no double-target condition: validators may cast multiple prefix votes a
 \paragraph{Honest voting behavior.}
 An honest validator casts two kinds of votes, with cleanly separated roles:
 \begin{enumerate}
-  \item \emph{Prefix vote} ($\mathsf{kind} = \mathsf{prefix}$, justification only).
-        At each height~$h$, the validator casts a vote with $\mathsf{height} = h$, $\mathsf{target} = \textsf{getHead}()$, and $\mathsf{kind} = \mathsf{prefix}$.
-  \item \emph{Finalize vote} ($\mathsf{kind} = \mathsf{finalize}$, finalization + portable justification).
-        After block~$J$ is justified at height~$h_j$ and the validator has seen at least one additional block on the canonical chain at height $> h_j$ confirming that~$J$ is stable (not superseded), the validator casts a vote with $\mathsf{height} = h_j$, $\mathsf{target} = J$, and $\mathsf{kind} = \mathsf{finalize}$.
+  \item \emph{Prefix vote} ($\kind = \prefix$, justification only).
+        At each height~$h$, the validator casts a vote with $\height = h$, $\target = \textsf{getHead}()$, and $\kind = \prefix$.
+  \item \emph{Finalize vote} ($\kind = \finalize$, finalization + portable justification).
+        After block~$J$ is justified at height~$h_j$ and the validator has seen at least one additional block on the canonical chain at height $> h_j$ confirming that~$J$ is stable (not superseded), the validator casts a vote with $\height = h_j$, $\target = J$, and $\kind = \finalize$.
 \end{enumerate}
 The one-block delay on the finalize vote prevents premature finalization: a Byzantine proposer who withholds votes can cause justification at a deeper-than-optimal block, but honest validators wait to see whether the next block (from an honest proposer) supersedes it before committing.
 
@@ -201,9 +216,9 @@ The state after a block~$B$ is derived from the state after its parent.
 The block's votes are processed against the parent's state, then justification and finality are evaluated, yielding $\sigma[B]$.
 
 \emph{Processing a vote.}
-When a vote~$v$ in block~$B$ is processed, the target tracker is updated if the vote is for the current height and the target is on the chain ending at~$B$ ($v.\mathsf{target} \preceq B$): $\mathsf{targets}[v.\mathsf{validator}]$ is set to $v.\mathsf{target}$ when it is higher than the current record (or the validator has not yet voted).
+When a vote~$v$ in block~$B$ is processed, the target tracker is updated if the vote is for the current height and the target is on the chain ending at~$B$ ($v.\target \preceq B$): $\targets[v.\validator]$ is set to $v.\target$ when it is higher than the current record (or the validator has not yet voted).
 This applies to both prefix and finalize votes.
-Independently, if the vote is a finalize vote ($v.\mathsf{kind} = \mathsf{finalize}$) with $v.\mathsf{height} = h_j$, $v.\mathsf{target} \succeq J$, and $v.\mathsf{target} \preceq B$, the validator is added to the finality participation~$P$.
+Independently, if the vote is a finalize vote ($v.\kind = \finalize$) with $v.\height = h_j$, $v.\target \succeq J$, and $v.\target \preceq B$, the validator is added to the finality participation~$P$.
 
 \emph{Height processing.}
 After processing all votes in a block, justification and finality are evaluated.
@@ -223,37 +238,37 @@ Finality is checked before justification, so a justified block can be finalized 
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processVote}$}{$(h,\, \mathsf{targets},\, J,\, h_j,\, F,\, P),\; v,\; B$}
-  \State $i \gets v.\mathsf{validator}$
-  \If{$v.\mathsf{height} = h$ and $v.\mathsf{target} \preceq B$} \Comment{Both prefix and finalize votes}
-    \If{$\mathsf{targets}[i] = \bot$ or $v.\mathsf{target} \succ \mathsf{targets}[i]$}
-      \State $\mathsf{targets}[i] \gets v.\mathsf{target}$
+\Function{$\textsf{processVote}$}{$(h,\, \targets,\, J,\, h_j,\, F,\, P),\; v,\; B$}
+  \State $i \gets v.\validator$
+  \If{$v.\height = h$ and $v.\target \preceq B$} \Comment{Both prefix and finalize votes}
+    \If{$\targets[i] = \bot$ or $v.\target \succ \targets[i]$}
+      \State $\targets[i] \gets v.\target$
     \EndIf
   \EndIf
-  \If{$v.\mathsf{kind} = \mathsf{finalize}$ and $v.\mathsf{height} = h_j$ and $J \preceq v.\mathsf{target} \preceq B$} \Comment{Finalize votes only}
+  \If{$v.\kind = \finalize$ and $v.\height = h_j$ and $J \preceq v.\target \preceq B$} \Comment{Finalize votes only}
     \State $P \gets P \cup \{i\}$
   \EndIf
-  \State \Return $(h,\, \mathsf{targets},\, J,\, h_j,\, F,\, P)$
+  \State \Return $(h,\, \targets,\, J,\, h_j,\, F,\, P)$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processHeight}$}{$(h,\, \mathsf{targets},\, J,\, h_j,\, F,\, P),\; B$}
+\Function{$\textsf{processHeight}$}{$(h,\, \targets,\, J,\, h_j,\, F,\, P),\; B$}
   \If{$|P| \geq 2n/3$} \Comment{Finality}
     \State $F \gets J$
   \EndIf
-  \State $\mathsf{count} \gets 0$ \Comment{Justification: walk from $B$ toward genesis}
+  \State $\cnt \gets 0$ \Comment{Justification: walk from $B$ toward genesis}
   \For{$B'$ from $B$ down to $B_{\mathrm{genesis}}$}
-    \State $\mathsf{count} \gets \mathsf{count} + |\{i : \mathsf{targets}[i] = B'\}|$
-    \If{$\mathsf{count} \geq 2n/3$} \Comment{Height advances}
+    \State $\cnt \gets \cnt + |\{i : \targets[i] = B'\}|$
+    \If{$\cnt \geq 2n/3$} \Comment{Height advances}
       \If{$B' \succ J$} \Comment{Justified block advances}
         \State $J \gets B'$, \; $h_j \gets h$, \; $P \gets \emptyset$
       \EndIf
       \State $h \gets h + 1$
-      \For{all $i$} $\mathsf{targets}[i] \gets \bot$ \EndFor
-      \State \Return $(h,\, \mathsf{targets},\, J,\, h_j,\, F,\, P)$
+      \For{all $i$} $\targets[i] \gets \bot$ \EndFor
+      \State \Return $(h,\, \targets,\, J,\, h_j,\, F,\, P)$
     \EndIf
   \EndFor
-  \State \Return $(h,\, \mathsf{targets},\, J,\, h_j,\, F,\, P)$
+  \State \Return $(h,\, \targets,\, J,\, h_j,\, F,\, P)$
 \EndFunction
 
 \end{algorithmic}
@@ -288,7 +303,7 @@ If $C$ is finalized at height~$h$, any chain~$Y$ that has progressed past height
 \end{lemma}
 
 \begin{proof}
-By Definition~\ref{def:finality}, finality of~$C$ at height~$h$ on chain~$X$ means $|P| \geq 2n/3$: a set~$Q_F$ of at least $2n/3$ validators where each member~$i$ signed a finalize vote with $\mathsf{height} = h$ and $\mathsf{target} = D_i \succeq C$.
+By Definition~\ref{def:finality}, finality of~$C$ at height~$h$ on chain~$X$ means $|P| \geq 2n/3$: a set~$Q_F$ of at least $2n/3$ validators where each member~$i$ signed a finalize vote with $\height = h$ and $\target = D_i \succeq C$.
 
 By Lemma~\ref{lem:heightprog}, chain~$Y$ reaching height $h' > h$ progressed through height~$h$ via justification: a quorum~$Q$ of at least $2n/3$ validators each voted at height~$h$ on chain~$Y$.
 By quorum intersection, $|Q_F \cap Q| \geq n/3$.
@@ -296,7 +311,7 @@ By quorum intersection, $|Q_F \cap Q| \geq n/3$.
 Consider any $v \in Q_F \cap Q$.
 From~$Q_F$, $v$ signed a finalize vote at height~$h$ with target $D_v \succeq C$.
 From~$Q$, $v$ voted at height~$h$ on chain~$Y$ with some target~$T_v \preceq Y$.
-If $T_v \not\succeq D_v$, then $v$ is slashable (Definition~\ref{def:slashing}: the finalize vote has $\mathsf{kind} = \mathsf{finalize}$, $\mathsf{height} = h$, and $T_v \not\succeq D_v$).
+If $T_v \not\succeq D_v$, then $v$ is slashable (Definition~\ref{def:slashing}: the finalize vote has $\kind = \finalize$, $\height = h$, and $T_v \not\succeq D_v$).
 
 Since $|Q_F \cap Q| \geq n/3$ and at most~$f < n/3$ validators are slashable, at least one $v \in Q_F \cap Q$ is non-slashable, so $T_v \succeq D_v$.
 This gives $T_v \succeq D_v \succeq C$.
@@ -341,7 +356,7 @@ The genesis store has $J_s = F_s = B_{\mathrm{genesis}}$, $\mathcal{T} = \{B_{\m
 \end{definition}
 
 The store is updated when a new block is received.
-The node computes $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\mathsf{parent}],\; B)$, then updates the store's justified and finalized blocks.
+The node computes $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\parent],\; B)$, then updates the store's justified and finalized blocks.
 
 \emph{Accepting a block.}
 A block~$B$ is accepted into the store only if its parent is already in~$\mathcal{T}$ and it descends from~$F_s$.
@@ -364,10 +379,10 @@ If $F_B \succ F_s$ and $F_B \preceq J_s$, then $F_s \gets F_B$.
 \vspace{3pt}
 
 \Function{$\textsf{onBlock}$}{$B$}
-  \State \textbf{assert} $B.\mathsf{parent} \in \mathcal{T}$ \Comment{Parent already accepted}
+  \State \textbf{assert} $B.\parent \in \mathcal{T}$ \Comment{Parent already accepted}
   \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
   \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
-  \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\mathsf{parent}],\; B)$
+  \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\parent],\; B)$
   \State $C \gets C \cup \{(\sigma[B].J,\; \sigma[B].h_j)\}$
   \State $J_s \gets \textsf{computeJustified}()$
   \State $\textsf{updateFinalized}(\sigma[B].F)$
@@ -497,23 +512,23 @@ Unless $\geq n/3$ validators are slashable: if two nodes have processed the same
 The finalize vote has a dual role: it finalizes the justified block on the chain where the original prefix justification fired, and it provides a \emph{portable fixed-target justification} on any other chain.
 
 \paragraph{Mechanism.}
-After block~$J$ is prefix-justified at height~$h_j$ on chain~$X$ (and confirmed stable), honest validators send a finalize vote: $(\mathsf{validator},\; h_j,\; J,\; \mathsf{finalize})$.
-This vote has $\mathsf{height} = h_j$, $\mathsf{target} = J$, and $\mathsf{kind} = \mathsf{finalize}$.
+After block~$J$ is prefix-justified at height~$h_j$ on chain~$X$ (and confirmed stable), honest validators send a finalize vote: $(\validator,\; h_j,\; J,\; \finalize)$.
+This vote has $\height = h_j$, $\target = J$, and $\kind = \finalize$.
 Consider how it is processed on different chains:
 
 \emph{Original chain~$X$ (at height $> h_j$).}
-The target part does not register ($v.\mathsf{height} = h_j \neq h$).
-The finalize part registers ($v.\mathsf{kind} = \mathsf{finalize}$, $v.\mathsf{height} = h_j = h_j$, and $J \preceq v.\mathsf{target} = J \preceq B$), adding the validator to~$P$.
+The target part does not register ($v.\height = h_j \neq h$).
+The finalize part registers ($v.\kind = \finalize$, $v.\height = h_j = h_j$, and $J \preceq v.\target = J \preceq B$), adding the validator to~$P$.
 When $|P| \geq 2n/3$, $J$ is finalized.
 
 \emph{Another chain~$Y$ at height~$h_j$, containing~$J$.}
-The target part registers: $v.\mathsf{height} = h_j = h$ and $v.\mathsf{target} = J \preceq B$ (since $J$ is on chain~$Y$).
+The target part registers: $v.\height = h_j = h$ and $v.\target = J \preceq B$ (since $J$ is on chain~$Y$).
 If $\geq 2n/3$ finalize votes are included, their targets all equal~$J$, so the prefix count at~$J$ reaches $\geq 2n/3$.
 Prefix justification fires for~$J$ (since all votes target~$J$ specifically, $J$ is the highest prefix-justified block).
 Height advances on chain~$Y$.
 
 \emph{Chain~$Z$ not containing~$J$.}
-Both checks fail: $v.\mathsf{target} = J \not\preceq B$ (since $J$ is not on chain~$Z$).
+Both checks fail: $v.\target = J \not\preceq B$ (since $J$ is not on chain~$Z$).
 The finalize vote has no effect.
 
 \paragraph{Why this provides re-org resistance.}
@@ -523,17 +538,17 @@ This means:
 \begin{itemize}
   \item Under $f < n/3$, any chain that advances past height~$h_j$ must contain~$J$ (Lemma~\ref{lem:mainsafety}).
   \item The finalize votes make~$J$ justified on any chain that reaches height~$h_j$ and contains~$J$, ensuring the fork-choice anchors on~$J$ everywhere.
-  \item A competing chain that diverges before~$J$ cannot include the finalize votes (the on-chain verification $v.\mathsf{target} \preceq B$ fails), so it cannot benefit from them.
+  \item A competing chain that diverges before~$J$ cannot include the finalize votes (the on-chain verification $v.\target \preceq B$ fails), so it cannot benefit from them.
 \end{itemize}
 
 \begin{remark}[Contrast with pure timeouts]
-In Simplex, a timeout vote carries no target ($\mathsf{target} = \bot$), so there is no block to ``replay'' on a competing chain.
+In Simplex, a timeout vote carries no target ($\target = \bot$), so there is no block to ``replay'' on a competing chain.
 If a height was advanced via timeout, other chains have no certificate to import.
 Portable finalization solves this: the finalize vote carries an explicit target ($J$), making it replayable on any chain containing~$J$.
 \end{remark}
 
 \begin{remark}[Finalization on competing chains]
-On chain~$Y$, after~$J$ is justified (from the finalize votes' target part in one block), those votes' finalize parts register in subsequent blocks (once the chain's $h_j$ equals~$h_j$ and $J \preceq v.\mathsf{target} \preceq B$), growing~$P$ toward finalization.
+On chain~$Y$, after~$J$ is justified (from the finalize votes' target part in one block), those votes' finalize parts register in subsequent blocks (once the chain's $h_j$ equals~$h_j$ and $J \preceq v.\target \preceq B$), growing~$P$ toward finalization.
 This is consistent with safety: $J$ is on both chains.
 \end{remark}
 
@@ -554,21 +569,21 @@ Let $r$ denote the round index within the current height ($r = 1$ for the first 
 Penalties are assessed in two layers depending on whether height advances.
 
 \medskip\noindent\textbf{Layer 1 (stall --- height does not advance):}
-$\mathsf{penalty}(i) = 0$ if $\mathsf{targets}[i] \neq \bot$ (the validator voted at this height), else $1$.
+$\pnlty(i) = 0$ if $\targets[i] \neq \bot$ (the validator voted at this height), else $1$.
 
 \medskip\noindent\textbf{Layer 2 (advance --- height advances):}
 two independent checks, each contributing $0$ or $1$.
 \begin{enumerate}
-  \item \emph{Participation check}: $1$ unit unless $\mathsf{targets}[i] \neq \bot$.
+  \item \emph{Participation check}: $1$ unit unless $\targets[i] \neq \bot$.
   \item \emph{Finalize check} (only at $h = h_j + 1$ with $|P| < 2n/3$): $1$ unit unless $i \in P$.
 \end{enumerate}
-Thus $\mathsf{penalty}(i) \in \{0, 1, 2\}$ in an advance round.
+Thus $\pnlty(i) \in \{0, 1, 2\}$ in an advance round.
 \end{definition}
 
 \subsection{Leak fairness}
 
 \begin{theorem}[Leak fairness]\label{thm:fairness}
-Under $f < n/3$ and synchrony, every honest validator has $\mathsf{penalty}(i) = 0$ on the canonical chain in every round.
+Under $f < n/3$ and synchrony, every honest validator has $\pnlty(i) = 0$ on the canonical chain in every round.
 \end{theorem}
 
 \begin{proof}
@@ -577,8 +592,8 @@ Under synchrony, all honest validators vote for $\textsf{getHead}()$ at the curr
 Since $\geq 2n/3$ honest validators all vote for the same block, the prefix count at that block reaches $\geq 2n/3$.
 Justification fires in one round (no stalls occur), so Layer~1 penalties never apply.
 
-For Layer~2: validator~$i$ voted ($\mathsf{targets}[i] \neq \bot$), so the participation check is satisfied.
-For the finalize check: after one block of confirmation, $i$ sends a finalize vote with $\mathsf{finalize\_height} = h_j$ and $\mathsf{finalize\_target} = J$, so $i \in P$.
+For Layer~2: validator~$i$ voted ($\targets[i] \neq \bot$), so the participation check is satisfied.
+For the finalize check: after one block of confirmation, $i$ sends a finalize vote with $\finalizeheight = h_j$ and $\finalizetarget = J$, so $i \in P$.
 Under synchrony, the finalize vote is included in the next honest proposer's block, and finality fires (finality is checked before justification in $\textsf{processHeight}$, so~$P$ is evaluated before the checkpoint can advance).
 
 Crucially, there is no ``lock'' that prevents honest validators from voting on the canonical chain.
@@ -596,7 +611,7 @@ Under $f < n/3$: during any period of non-finality, the total penalty units is a
 Every height is either a stall (no advance) or an advance.
 
 \emph{Stall height (Layer~1 only).}
-Let $m = |\{i : \mathsf{targets}[i] \neq \bot\}|$ be the participation count.
+Let $m = |\{i : \targets[i] \neq \bot\}|$ be the participation count.
 Since justification didn't fire, $m < 2n/3$ (otherwise the prefix count at the genesis block alone would be $\geq m \geq 2n/3$).
 The penalty is $n - m > n/3$.
 
@@ -628,15 +643,15 @@ This section summarizes the changes from Prefix-IC to Portable Finalization.
 \toprule
 & \textbf{Prefix-IC} & \textbf{Portable Finalization} \\
 \midrule
-Fields & $(\mathsf{val},\, \mathsf{height},\, \mathsf{target},\, \mathsf{fin\_h},\, \mathsf{fin\_target})$ & $(\mathsf{val},\, \mathsf{height},\, \mathsf{target},\, \mathsf{kind})$ \\
-Finalize commitment & Via $\mathsf{fin\_h}$/$\mathsf{fin\_target}$ fields on any vote & Via $\mathsf{kind} = \mathsf{finalize}$ (height and target are the commitment) \\
-Vote kinds & One (finalize fields optional) & Two: $\mathsf{prefix}$ and $\mathsf{finalize}$ \\
+Fields & $(\val,\, \height,\, \target,\, \finh,\, \fintarget)$ & $(\val,\, \height,\, \target,\, \kind)$ \\
+Finalize commitment & Via $\finh$/$\fintarget$ fields on any vote & Via $\kind = \finalize$ (height and target are the commitment) \\
+Vote kinds & One (finalize fields optional) & Two: $\prefix$ and $\finalize$ \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-The finalize fields ($\mathsf{finalize\_height}$, $\mathsf{finalize\_target}$) are replaced by a $\mathsf{kind}$ field.
-For a finalize vote, the vote's own $\mathsf{height}$ and $\mathsf{target}$ serve as the finalize height and finalize target, eliminating redundancy.
+The finalize fields ($\finalizeheight$, $\finalizetarget$) are replaced by a $\kind$ field.
+For a finalize vote, the vote's own $\height$ and $\target$ serve as the finalize height and finalize target, eliminating redundancy.
 
 \subsection*{Slashing condition}
 
@@ -645,13 +660,13 @@ For a finalize vote, the vote's own $\mathsf{height}$ and $\mathsf{target}$ serv
 \toprule
 & \textbf{Prefix-IC} & \textbf{Portable Finalization} \\
 \midrule
-Condition & $d_1.\mathsf{target} \neq d_2.\mathsf{fin\_target}$ (equality) & $a.\mathsf{target} \not\succeq b.\mathsf{target}$ where $b.\mathsf{kind} = \mathsf{finalize}$ (compatibility) \\
+Condition & $d_1.\target \neq d_2.\fintarget$ (equality) & $a.\target \not\succeq b.\target$ where $b.\kind = \finalize$ (compatibility) \\
 Effect & Vote target must exactly match finalize target & Vote target must descend from finalize vote's target \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-Two changes: (1)~the relaxation from equality to compatibility, enabling validators to vote for head $\succeq J$ while finalizing~$J$; (2)~the condition references $\mathsf{kind}$ instead of separate finalize fields.
+Two changes: (1)~the relaxation from equality to compatibility, enabling validators to vote for head $\succeq J$ while finalizing~$J$; (2)~the condition references $\kind$ instead of separate finalize fields.
 
 \subsection*{Honest voting behavior}
 
@@ -660,8 +675,8 @@ Two changes: (1)~the relaxation from equality to compatibility, enabling validat
 \toprule
 & \textbf{Prefix-IC} & \textbf{Portable Finalization} \\
 \midrule
-Prefix vote & target $=$ head, finalize fields optional & $\mathsf{kind} = \mathsf{prefix}$, target $=$ head \\
-Finalize vote & --- (finalize fields on prefix vote) & $\mathsf{kind} = \mathsf{finalize}$, target $= J$, height $= h_j$ \\
+Prefix vote & target $=$ head, finalize fields optional & $\kind = \prefix$, target $=$ head \\
+Finalize vote & --- (finalize fields on prefix vote) & $\kind = \finalize$, target $= J$, height $= h_j$ \\
 Timing & Immediate & One-block delay (timer) \\
 \bottomrule
 \end{tabularx}
