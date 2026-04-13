@@ -309,7 +309,7 @@ By Lemma~\ref{lem:finchain}, $C \sim C'$, so $C$ and $C'$ are not conflicting.
 \Function{$\textsf{computeJustified}$}{}
   % \State $J^* \gets F_s$
   % \While{$\exists\, (J',\, h') \in C$ with $J' \succ J^*$} \Comment{Walk toward descendants}
-  \State \Return $\arg\max_{(J',\, h') \in C,\; J' \succ F_s} (h',\, J')$
+  \State \Return $\arg\max_{(J',\, h') \in C,\; J' \succeq F_s} (h',\, J')$
   % \EndWhile
   % \State \Return $J^*$
 \EndFunction
