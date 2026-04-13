@@ -421,7 +421,7 @@ Hence $C' \preceq t_i \preceq T$.
 
 \begin{lemma}\label{lem:upgrade-helper}
   Assume $< n/3$ of validators are slashable.
-  Let $(J_j, h_j) = \arg\max_{(J',h')\in C }(h', J')$.
+  Let $(J_j, h_j) \in C$.
   If $F$ is finalized at height~$h_F < h_j$ and $(F, h_F) \in C$, then $J_j \succeq F$.
 \end{lemma}
 
@@ -480,7 +480,52 @@ Then $F \succ J_j \succeq F_s$, so $F \succeq F_s$---a contradiction.
 Therefore $F \preceq J_j$.
 \end{proof}
 
-\subsection{WIP}
+% \subsection{WIP}
+
+\begin{lemma}
+  % Assume $< n/3$ of validators are slashable.
+  Assume an honest validator $i$.
+  Let $h_F$ be such that $(F_s, h_F) \in C$ for $i$.
+  Let $(J_j, h_j) = \arg\max_{(J',h')\in C \land J' \succeq F_s}(h', J')$ in the view of a validator $i$.
+  Then $h_j \geq h_F$.
+\end{lemma}
+
+\begin{proof}
+$(F_s, h_F) \in C$ with $F_s \succeq F_s$, so it is a candidate for the $\arg\max$.
+Since $(J_j, h_j)$ is the maximizer, $(h_j, J_j) \geq (h_F, F_s)$ lexicographically, hence $h_j \geq h_F$.
+\end{proof}
+
+% \begin{lemma}
+%   Assume $< n/3$ of validators are slashable.
+%   Assume an honest validator $i$.
+%   Let $h_F$ be such that $(F_s, h_F) \in C$ for $i$.
+%   Let $(J_j, h_j) = \arg\max_{(J',h')\in C \land J' \succeq F_s}(h', J')$ in the view of a validator $i$.
+%   Take a chain $B$ extending $J_j$.
+%   Take $h' \in [1, \max(h_F,h_j)-1]$.
+%   there exists a set of votes, each with target $\preceq B$, that either notarizes or justifies a block $\preceq B$ at height $h'$.
+% \end{lemma}
+
+% \begin{proof}
+% Since $B \succeq J_j \succeq F_s$, both $J_j$ and $F_s$ lie on chain~$B$.
+% Let $(J^*, h^*)$ be whichever of $(J_j, h_j)$ and $(F_s, h_F)$ has the larger height, so $h^* = \max(h_F, h_j)$.
+% Since $(J^*, h^*) \in C$ and $J^* \preceq J_j \preceq B$, Lemma~\ref{lem:witnessed} applied to the chain that produced $(J^*, h^*)$ yields, for each $h' \in [1, h^* - 1]$, a witness with targets $\preceq J^* \preceq B$ that justifies or notarizes a block $\preceq B$.
+% \end{proof}
+
+
+% \begin{lemma}
+%   Assume $< n/3$ of validators are slashable.
+%   Assume an honest validator $i$.
+%   Let $h_F$ be such that $(F_s, h_F) \in C$ for $i$.
+%   Let $(J_j, h_j) = \arg\max_{(J',h')\in C \land J' \succeq F_s}(h', J')$ in the view of a validator $i$.
+%   Take a chain $B$ extending $J_j$.
+%   If $i$ casts a $\finalize$ vote at height~$\max(h_j,h_F)$ with target~$F$, then $F \preceq B$.
+% \end{lemma}
+
+% \begin{proof}
+%   Say $h_j \geq h_F$, then use \Cref{lem:honest-fin}.
+
+%   If $h_j < h_F$, then 
+% \end{proof}
 
 \begin{lemma}
   Assume $< n/3$ of validators are slashable.
@@ -490,14 +535,14 @@ Therefore $F \preceq J_j$.
 \end{lemma}
 
 \begin{proof}
-  Assume it sent a finalize vote for $(F,h_F)$ with $h_F > j_j$.
-  It would be that $(F,h_F)\in C$.
-  If $F \succeq F_s$, then it is obvious that we reach a contradiction as we would have $h_j \geq h_F$.
+Suppose for contradiction that $i$ sent a finalize vote at height~$h_B > h_j$ with target~$B_F$.
+From $\textsf{onVote}$, $(B_F, h_B) = \arg\max_{(J',h')\in C}(h', J')$, so $(B_F, h_B) \in C$.
 
-  $F$ must have been $\succeq F'_s$ where $F'_s$ was $F_s$ at the time the vote was cast.
-  From a previous lemma we know $F'_s \sim F_s$.
-  Then $(F, h_F) \in C$.
+Let $h_F$ be such that $(F_s, h_F) \in C$.
+By a previous lemma, $h_j \geq h_F$, so $h_B > h_j \geq h_F$.
+Since $F_s$ is finalized at height~$h_F$ and $h_F < h_B$, Lemma~\ref{lem:upgrade-helper} (applied to the entry $(B_F, h_B) \in C$) gives $B_F \succeq F_s$.
 
+But then $(B_F, h_B) \in C$ with $B_F \succeq F_s$ and $h_B > h_j$, contradicting $(J_j, h_j)$ being $\arg\max_{J' \succeq F_s} C$.
 \end{proof}
 
 % \begin{lemma}
