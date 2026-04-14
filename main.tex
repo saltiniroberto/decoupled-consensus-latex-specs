@@ -1,0 +1,43 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+\usepackage{hyperref}
+
+\title{Finality Gadget Specs -- Overview (AI-generated)}
+
+\begin{document}
+\maketitle
+
+This repository contains notes and specifications for finality gadgets.
+Each document is a self-contained \LaTeX{} file.
+
+\begin{description}
+
+\item[\texttt{finalization\_as\_notarization.tex}] \textbf{Finalization as Notarization.}
+  Defines a finality gadget with three vote types (notarize, justify, finalize)
+  and a quorum-intersection slashing condition.
+  Covers accountable safety, the fork-choice store, the inactivity leak,
+  and a top-down notarization variant.
+  This is the most current document; definitions and proofs are
+  internally consistent, though some lemma sketches remain in the
+  inactivity-leak section.
+
+\item[\texttt{portable\_finalization.tex}] \textbf{Portable Finalization.}
+  Specifies a finality gadget in which justification certificates are
+  portable across forks (two vote types: prefix and finalize).
+  Includes accountable-safety proofs, the fork-choice store,
+  the inactivity-leak mechanism, and a comparison with Prefix-IC.
+  Predates \texttt{finalization\_as\_notarization.tex};
+  the model and terminology have since diverged and are not fully
+  up to date.
+
+\item[\texttt{rooted\_timeouts.tex}] \textbf{Rooted Timeouts.}
+  Specifies a finality gadget with primary/secondary votes, rooted timeouts,
+  and a slot-based monotonicity mechanism.
+  Covers accountable safety, the fork-choice store,
+  the inactivity leak, and a comparison with Simplex.
+  An earlier draft with several open review comments and unresolved
+  design questions; the model and terminology have since diverged.
+
+\end{description}
+
+\end{document}

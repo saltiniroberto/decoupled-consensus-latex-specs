@@ -7,6 +7,7 @@
 \usepackage[noend]{algpseudocode}
 \usepackage{amsthm}
 \usepackage{boxedminipage}
+\usepackage{float}
 \usepackage{hyperref}
 \usepackage{cleveref}
 
@@ -107,6 +108,8 @@ There is no double-target condition for notarize votes: validators may cast mult
 \emph{Convention.} Maps accessed at an uninitialized key return $\bot$ by default.
 Every block satisfies $B \succeq \bot$.
 
+\begin{figure}[H]
+\caption{State machine}\label{alg:state-machine}
 \begin{center}
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
@@ -144,14 +147,18 @@ Every block satisfies $B \succeq \bot$.
   \If{$|P| \geq 2n/3$} \Comment{Finality}
     \State $F \gets J$
   \EndIf
-  \State $\cnt \gets 0$ \Comment{Justification: walk from $B$ toward genesis}
-  \State $T^\mathsf{max\_temp}\gets \bot$
+  \State $\cnt \gets 0$ \Comment{Justification: first pass, walk from $B$ down to $T^\mathsf{max}$}
   \For{$B'$ from $B$ down to $T^\mathsf{max}$}
     \State $\cnt \gets \cnt + |\{i : \jtargets[h][i] = B'\}|$
-    \If{$T^\mathsf{max\_temp}=\bot$ and $\cnt > 0$}
-      \State $T^\mathsf{max\_temp}\gets B'$
-    \EndIf
     \If{$\cnt \geq 2n/3$} \Comment{Height advances; $B' \succeq T^\mathsf{max} \succeq J$ by walk range}
+      \State $\cnt \gets 0$ \Comment{Second pass: find tightest $T^\mathsf{max\_temp}$}
+      \For{$B''$ from $B'$ up to $B$}
+        \State $\cnt \gets \cnt + |\{i : \jtargets[h][i] = B''\}|$
+        \If{$\cnt \geq 2n/3$}
+          \State $T^\mathsf{max\_temp}\gets B''$
+          \State \textbf{break}
+        \EndIf
+      \EndFor
       \State \textbf{delete} $\jtargets[h_j]$
       \State $J \gets B'$, \; $h_j \gets h$, \; $P \gets \emptyset$
       \If{$T^\mathsf{max\_temp} \succeq T^\mathsf{max}$}
@@ -182,7 +189,7 @@ Every block satisfies $B \succeq \bot$.
 \end{algorithmic}
 \end{boxedminipage}
 \end{center}
-
+\end{figure}
 
 \section{Accountable safety}
 
@@ -235,6 +242,7 @@ From~$Q_N$: $\ntargets[i] = D_i \preceq B$.
 Combined: $C \preceq D_i \preceq B$, hence $C \preceq B$.
 \end{proof}
 
+
 \begin{lemma}[Justification respects finalization]\label{lem:tbd}
 Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$ and block~$B$ is justified at height~$h$ on some chain $X$, then $C \preceq X$.
 \end{lemma}
@@ -285,7 +293,8 @@ Suppose $C$ is finalized at height~$h$ and $C'$ at height~$h'$, with $h \leq h'$
 By Lemma~\ref{lem:finchain}, $C \sim C'$, so $C$ and $C'$ are not conflicting.
 \end{proof}
 
-
+\begin{figure}[H]
+\caption{Store and voting}\label{alg:store}
 \begin{center}
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
@@ -342,7 +351,7 @@ By Lemma~\ref{lem:finchain}, $C \sim C'$, so $C$ and $C'$ are not conflicting.
 \end{algorithmic}
 \end{boxedminipage}
 \end{center}
-
+\end{figure}
 
 \section{Inactivity Leak}
 
@@ -568,5 +577,121 @@ But then $(B_F, h_B) \in C$ with $B_F \succeq F_s$ and $h_B > h_j$, contradictin
 % \begin{lemma}
   
 % \end{lemma}
+
+\section{Finalize via longest common prefix}
+
+\Cref{alg:state-machine-finprefix} modifies \Cref{alg:state-machine} in two ways.
+
+\paragraph{Change 1: finalize via walk.}
+Instead of $F \gets J$ when $|P| \geq 2n/3$, the algorithm walks the finalize targets top-down (as justification walks justify targets) and finalizes the longest block~$F^*$ with $2n/3$ support.
+$F$ is updated only if $F^* \succ F$ (finalization never regresses).
+
+\paragraph{Change 2: dropping the $J \preceq v.\target$ guard.}
+The finalize condition in \Cref{alg:state-machine} requires $J \preceq v.\target$ (the finalize target must be at least as long as~$J$).
+This guard is removed in \Cref{alg:state-machine-finprefix}: any finalize target $v.\target \preceq \jtargets[h_j][i]$ on the chain is accepted.
+
+In \Cref{alg:state-machine} the guard is necessary because finalization sets $F \gets J$ unconditionally---without the guard, validators with finalize targets shorter than~$J$ would enter~$P$, reaching $|P| \geq 2n/3$ even when the quorum does not truly support~$J$.
+The safety proofs (e.g., Lemma~\ref{lem:finexclude}) assume every finalize voter has target $\succeq F$; removing the guard would violate this.
+
+In \Cref{alg:state-machine-finprefix} the guard is unnecessary: the finalize walk naturally finds the longest block~$F^*$ with genuine $2n/3$ support.
+The $\geq 2n/3$ finalize voters counted at~$F^*$ all have $\mathsf{ftargets}[i] \succeq F^*$, so the safety proofs carry over with~$F^*$ in place of~$J$.
+The consequence is that $F^*$ may be shorter than~$J$ (if many finalize targets cluster below~$J$), yielding weaker finalization than \Cref{alg:state-machine} in that case.
+
+\label{alg:state-machine-finprefix}
+The following changes are applied to \Cref{alg:state-machine}.
+The state is extended with $\mathsf{ftargets}[1..n]$ (finalize targets, initially $\bot$).
+
+\paragraph{processVote.} The finalize condition drops the $J \preceq v.\target$ guard and records the target:
+\begin{center}
+\begin{boxedminipage}{0.9\textwidth}
+\begin{algorithmic}[1]
+  \If{$v.\height = h_j$ and $v.\kind = \finalize$ and $\jtargets[h_j][i] \neq \bot$ and $v.\target \preceq \jtargets[h_j][i]$ and $v.\target \preceq B$}
+    \State $P \gets P \cup \{i\}$
+    \State $\mathsf{ftargets}[i] \gets v.\target$
+  \EndIf
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+
+\paragraph{processHeight.} The finality block ``$F \gets J$'' is replaced by a top-down walk over $\mathsf{ftargets}$:
+\begin{center}
+\begin{boxedminipage}{0.9\textwidth}
+\begin{algorithmic}[1]
+  \If{$|P| \geq 2n/3$} \Comment{Finality: walk finalize targets from $B$ toward genesis}
+    \State $\cnt \gets 0$
+    \For{$B'$ from $B$ down to $B_{\mathrm{genesis}}$}
+      \State $\cnt \gets \cnt + |\{i : \mathsf{ftargets}[i] = B'\}|$
+      \If{$\cnt \geq 2n/3$}
+        \If{$B' \succ F$} $F \gets B'$ \EndIf \Comment{Only advance $F$}
+        \State \textbf{break}
+      \EndIf
+    \EndFor
+  \EndIf
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+When $J$ advances (justification fires), $\mathsf{ftargets}$ is also deleted.
+
+\section{Count notarizations top-down}
+
+\label{alg:state-machine-topdown}
+The following changes are applied to \Cref{alg:state-machine}.
+$T^\mathsf{min}$ is removed from the state.
+
+\paragraph{processVote.} $\ntargets[i]$ records the \emph{greatest} (longest) target.
+The $T^\mathsf{min}$ update is removed.
+\begin{center}
+\begin{boxedminipage}{0.9\textwidth}
+\begin{algorithmic}[1]
+  \State \Comment{Both notarize and finalize votes}
+  \If{$v.\target \succeq \ntargets[i]$}
+    \State $\ntargets[i] \gets v.\target$
+  \EndIf
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+
+\paragraph{processHeight.} The notarization walk is replaced by a top-down walk from $B$ down to $T^\mathsf{max}$ (symmetric to the justification walk), counting $\ntargets[i]$:
+\begin{center}
+\begin{boxedminipage}{0.9\textwidth}
+\begin{algorithmic}[1]
+  \State $\cnt \gets 0$ \Comment{Notarization: walk from $B$ down to $T^\mathsf{max}$}
+  \For{$B'$ from $B$ down to $T^\mathsf{max}$}
+    \State $\cnt \gets \cnt + |\{i : \ntargets[i] = B'\}|$
+    \If{$\cnt \geq 2n/3$} \Comment{Height advances}
+      \If{$B' \succeq T^\mathsf{max}$}
+        \State $T^\mathsf{max}\gets B'$
+      \Else
+        \State \textbf{delete} $\jtargets[h]$
+      \EndIf
+      \State $h \gets h + 1$
+      \State \textbf{delete} $\ntargets$
+      \State \Return $s$
+    \EndIf
+  \EndFor
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+
+\begin{lemma}[Notarization respects finalization]
+\Cref{alg:state-machine-topdown}.
+Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$ and block~$B$ is notarized at height~$h$ on some chain $X$, then $C \preceq X$.
+\end{lemma}
+
+\begin{proof}
+Finalization of~$C$ at height~$h$ requires a quorum~$Q_F$ ($|Q_F| \geq 2n/3$) where each member~$i$ signed a finalize vote with $\height = h$ and target $D_i \succeq C$.
+By slashing condition~2, no member of~$Q_F$ can have signed a notarize vote at height~$h$ without being slashable.
+By slashing condition~1, each member has a unique finalize target~$D_i$.
+
+Notarization of~$B$ at height~$h$ on chain~$X$ means the top-down notarize walk reached $2n/3$ at~$B$.
+Let $Q_N = \{i : \ntargets[i] \succeq B\}$ on chain~$X$, with $|Q_N| \geq 2n/3$.
+By quorum intersection, $|Q_F \cap Q_N| \geq n/3$.
+
+Consider a non-slashable validator~$i$ in $Q_F \cap Q_N$.
+Since~$i$ cannot have sent a notarize vote (condition~2), $\ntargets[i]$ on chain~$X$ was set by~$i$'s finalize vote.
+For this vote to be processed on chain~$X$: $D_i \preceq X$.
+From~$Q_F$: $D_i \succeq C$.
+Hence $C \preceq D_i \preceq X$.
+\end{proof}
 
 \end{document}
