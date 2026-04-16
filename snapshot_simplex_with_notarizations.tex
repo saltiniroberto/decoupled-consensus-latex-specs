@@ -1,0 +1,305 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{mathtools}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{amsthm}
+\usepackage{boxedminipage}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\algrenewcommand\textproc{}
+
+% Custom commands
+\newcommand{\target}{\mathsf{target}}
+\newcommand{\kind}{\mathsf{kind}}
+\newcommand{\height}{\mathsf{height}}
+\newcommand{\validator}{\mathsf{validator}}
+\newcommand{\justify}{\mathsf{justify}}
+\newcommand{\notarize}{\mathsf{notarize}}
+\newcommand{\parent}{\mathsf{parent}}
+\newcommand{\true}{\mathsf{true}}
+\newcommand{\sentfinalize}{\mathsf{sent\_finalize}}
+\newcommand{\sentjustify}{\mathsf{sent\_justify}}
+\newcommand{\sentnotarize}{\mathsf{sent\_notarize}}
+\newcommand{\getKDeep}{\mathsf{getKDeep}}
+\newcommand{\getConfirmed}{\mathsf{getConfirmed}}
+
+% Theorem environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Simplex with Notarizations}
+
+\begin{document}
+\maketitle
+
+\section{Model and definitions}
+
+We consider a system of~$n$ validators of which at most~$f$ are adversarial, where $n \geq 3f + 1$.
+A \emph{quorum} is any set of at least $2n/3$ validators.
+Any two quorums overlap in at least $n/3 + 1 > f$ validators, so their intersection contains at least one honest validator.
+
+\begin{definition}[Block]\label{def:block}
+A \emph{block} has a \emph{parent} (another block) and contains a set of votes (Definition~\ref{def:vote}).
+The \emph{genesis block}~$B_{\mathrm{genesis}}$ has no parent.
+\end{definition}
+
+\begin{definition}[Chain and divergence]\label{def:chain}
+A \emph{chain} is a sequence of blocks forming a path from the genesis block, where each block's parent is its predecessor in the sequence.
+Since a chain is uniquely determined by its last block, we identify chains with their last block and use the two interchangeably.
+Two chains \emph{conflict} if neither is a prefix of the other.
+\end{definition}
+
+We write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \sim B'$ when $B$ and $B'$ are \emph{compatible}: $B \preceq B'$ or $B' \preceq B$.
+For compatible blocks, we write $B > B'$ to mean $B \succ B'$ (i.e., $B$ is a strict descendant of~$B'$); we say $B$ is \emph{longer} or \emph{greater} than~$B'$.
+
+\begin{definition}[Vote]\label{def:vote}
+A \emph{vote} is a signed tuple $(\validator,\; \height,\; \target,\; \kind,\; \mathsf{finalize\_height})$ where $\validator$ identifies the signer, $\height$ is a height, $\target$ is a block, $\kind \in \{\notarize, \justify\}$ distinguishes the vote type, and $\mathsf{finalize\_height}$ is either a height or~$\bot$.
+Setting $\mathsf{finalize\_height} = h_j$ implicitly commits to finalize the unique block justified at~$h_j$ (Lemma~\ref{lem:uniqueness}), so no separate finalize target is needed.
+A vote included on a chain is verified to reference a target that actually exists on that chain.
+\end{definition}
+
+\begin{definition}[Fixed-target justification]\label{def:justification}
+A block~$T$ is \emph{justified at height~$h$} if at least $2n/3$ validators cast $\justify$ votes with $\height = h$ and $\target = T$:
+\[
+  \bigl|\{i \,:\, \mathsf{jtargets}[i] = T\}\bigr| \;\geq\; 2n/3.
+\]
+Only votes targeting~$T$ itself contribute; votes for ancestors or descendants do not count.
+\end{definition}
+
+\begin{definition}[Fixed-target notarization]\label{def:notarization}
+A block~$T$ is \emph{notarized at height~$h$} if at least $2n/3$ validators cast $\notarize$ votes with $\height = h$ and $\target = T$:
+\[
+  \bigl|\{i \,:\, \mathsf{ntargets}[i] = T\}\bigr| \;\geq\; 2n/3.
+\]
+Only $\notarize$ votes contribute.
+\end{definition}
+
+\begin{definition}[Finality]\label{def:finality}
+The justified block~$J$ is \emph{finalized} when $|P| \geq 2n/3$.
+We say $J$ is \emph{finalized at height~$h_j$}.
+\end{definition}
+
+\begin{definition}[Slashing conditions]\label{def:slashing}
+A validator is \emph{slashable} (or an \emph{equivocator}) if it signed two votes~$a$, $b$ satisfying either condition:
+
+\emph{E1 (double justify target):} both are $\justify$ votes at the same height with different targets:
+\[
+  a.\kind = \justify
+  \;\wedge\;
+  b.\kind = \justify
+  \;\wedge\;
+  a.\height = b.\height
+  \;\wedge\;
+  a.\target \neq b.\target.
+\]
+
+\emph{E2 (finalize--notarize conflict):} $a$ carries a finalize commitment at a height where $b$ is a $\notarize$ vote:
+\[
+  a.\mathsf{finalize\_height} = b.\height
+  \;\wedge\;
+  b.\kind = \notarize.
+\]
+
+That is: (E1)~a validator cannot cast two $\justify$ votes at the same height with different targets; (E2)~a validator who commits to finalize at height~$h$ (by signing $\mathsf{finalize\_height} = h$) cannot also cast a $\notarize$ vote at height~$h$.
+There is no double-target condition for $\notarize$ votes: validators may cast multiple $\notarize$ votes at the same height without slashing risk.
+\end{definition}
+
+\section{Algorithm}
+
+\emph{Convention.} Maps accessed at an uninitialized key return $\bot$ by default.
+
+\begin{figure}[H]
+\caption{State machine}\label{alg:state-machine}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{$\textsf{processBlock}$}{$s,\; B$}
+  \For{each vote $v$ in $B$} $s \gets \textsf{processVote}(s,\, v,\, B)$ \EndFor
+  \State \Return $\textsf{processHeight}(s,\, B)$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{processVote}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max}),\; v,\; B$}
+  \State $i \gets v.\validator$
+  \If{$v.\height = h$ and $v.\target \preceq B$}
+    \If{$v.\kind = \justify$ and $\mathsf{jtargets}[i] = \bot$}
+      \State $\mathsf{jtargets}[i] \gets v.\target$
+    \EndIf
+    \If{$v.\kind = \notarize$} \Comment{Only notarize votes}
+      \State $\mathsf{ntargets}[i] \gets v.\target$
+    \EndIf
+  \EndIf
+  \If{$v.\mathsf{finalize\_height} = h_j$}
+    \State $P \gets P \cup \{i\}$
+  \EndIf
+  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{processHeight}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max}),\; B$}
+  \If{$|P| \geq 2n/3$} \Comment{Finality}
+    \State $F \gets J$
+  \EndIf
+  \If{$\exists\, T$ s.t.\ $|\{i : \mathsf{jtargets}[i] = T\}| \geq 2n/3$} \Comment{Justification}
+    \If{$T \succeq N^\mathsf{max}$} \Comment{Justified block advances}
+      \State $J \gets T$, \; $h_j \gets h$, \; $P \gets \emptyset$, \; $N^\mathsf{max} \gets T$
+    \EndIf
+    \State $h \gets h + 1$
+    \For{all $i$} $\mathsf{jtargets}[i] \gets \bot$, \; $\mathsf{ntargets}[i] \gets \bot$ \EndFor
+    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+  \EndIf
+  \If{$\exists\, N$ s.t.\ $|\{i : \mathsf{ntargets}[i] = N\}| \geq 2n/3$} \Comment{Notarization}
+    \If{$N \succeq N^\mathsf{max}$}
+      \State $N^\mathsf{max} \gets N$
+    \EndIf
+    \State $h \gets h + 1$
+    \For{all $i$} $\mathsf{jtargets}[i] \gets \bot$, \; $\mathsf{ntargets}[i] \gets \bot$ \EndFor
+    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+  \EndIf
+  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+Height advances via one of two mechanisms, checked in order: (1)~fixed-target justification ($\geq 2n/3$ $\justify$ votes for the same block), or (2)~fixed-target notarization ($\geq 2n/3$ $\notarize$ votes for the same block).
+Only justification updates~$J$, $h_j$, and~$P$; notarization advances the height without changing the justified or finalized checkpoints.
+The state after block~$B$ is written $\sigma[B]$; the genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\, \bot^n,\, \bot^n,\, B_{\mathrm{genesis}},\, 0,\, B_{\mathrm{genesis}},\, \emptyset,\, \bot)$.
+
+\section{Accountable safety}
+
+\begin{lemma}[Height progression]\label{lem:heightprog}
+$\textsf{processHeight}$ increments~$h$ by at most~$1$ (via justification or notarization) or leaves it unchanged.
+For any chain reaching height~$h' > 0$, every intermediate height was advanced by some quorum.
+\end{lemma}
+
+\begin{lemma}[Justification uniqueness per height]\label{lem:uniqueness}
+Unless $\geq n/3$ validators are slashable: at most one block can be justified at any given height across all chains.
+If $T_1$ is justified at height~$h$ on chain~$X$ and $T_2$ at height~$h$ on chain~$Y$, then $T_1 = T_2$.
+\end{lemma}
+
+\begin{proof}
+Justification of~$T_1$ requires $Q_1$ ($\geq 2n/3$) each with $\mathsf{jtargets}[i] = T_1$.
+Justification of~$T_2$ requires $Q_2$ ($\geq 2n/3$) each with $\mathsf{jtargets}[i] = T_2$.
+By quorum intersection: $|Q_1 \cap Q_2| \geq n/3 > f$, so at least one honest validator is in both.
+An honest validator casts at most one $\justify$ vote per height (condition E1), so $T_1 = T_2$.
+\end{proof}
+
+\begin{lemma}[Finalization excludes notarization]\label{lem:finexclude-notarize}
+Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$, then no chain can advance past height~$h$ via notarization.
+\end{lemma}
+
+\begin{proof}
+Finalization of~$C$ at~$h$ requires $Q_F$ ($\geq 2n/3$) each with $\mathsf{finalize\_height} = h$.
+Notarization at~$h$ requires $Q_N$ ($\geq 2n/3$) each with a $\notarize$ vote at~$h$.
+Intersection $\geq n/3$: each member signed a vote with $\mathsf{finalize\_height} = h$ and a $\notarize$ vote at~$h$, satisfying E2.
+\end{proof}
+
+\begin{lemma}[Any chain past a finalized height has $J \succeq C$]\label{lem:mainsafety}
+Unless $\geq n/3$ validators are slashable: if $C$ is finalized at height~$h$, then any chain~$Y$ that progresses past height~$h$ has $J \succeq C$ at all heights $> h$.
+\end{lemma}
+
+\begin{proof}
+Chain~$Y$ advanced through height~$h$ via justification or notarization.
+
+\emph{Notarization:} excluded by \Cref{lem:finexclude-notarize}.
+
+\emph{Justification:} some block~$T$ was justified at~$h$ on chain~$Y$.
+By \Cref{lem:uniqueness}, $T = C$.
+The justification branch sets $J \gets C$ if $C \succ J$; otherwise $J \succeq C$ already.
+Either way $J \succeq C$ after height~$h$, and $J$ is non-decreasing, so $J \succeq C$ at all subsequent heights.
+\end{proof}
+
+\begin{lemma}[Finalized blocks form a chain]\label{lem:finchain}
+Unless $\geq n/3$ validators are slashable: if $(C, h)$ and $(C', h')$ are finalized checkpoints with $h \leq h'$, then $C' \succeq C$.
+\end{lemma}
+
+\begin{proof}
+If $h = h'$: $C = C'$ by \Cref{lem:uniqueness}.
+If $h' > h$: the chain where $C'$ was finalized progressed past height~$h$.
+By \Cref{lem:mainsafety}, $J \succeq C$ on that chain.
+$C'$ was the justified block when the finalize quorum formed, so $C' = J \succeq C$.
+\end{proof}
+
+\begin{theorem}[Accountable safety]\label{thm:safety}
+Unless $\geq n/3$ validators are slashable, no two conflicting blocks can be finalized.
+\end{theorem}
+
+\begin{proof}
+Suppose $C$ finalized at~$h$ and $C'$ at~$h'$ with $h \leq h'$.
+By \Cref{lem:finchain}, $C' \succeq C$, so $C \sim C'$.
+\end{proof}
+
+\section{Fork-choice store}
+
+\begin{figure}[H]
+\caption{Store and voting}\label{alg:store}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{Store:} $J_s \gets B_{\mathrm{genesis}}$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$, \; $C \gets \emptyset$
+\State $\sigma[B_{\mathrm{genesis}}] \gets (0,\; \bot^n,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; B_{\mathrm{genesis}},\; \emptyset,\; \bot)$
+\State \textbf{Per-validator:} $\sentjustify \gets \bot^*$, \; $\sentnotarize \gets \bot^*$, \; $\sentfinalize \gets \bot^*$
+\vspace{3pt}
+
+\Function{$\textsf{onBlock}$}{$B$}
+  \State \textbf{assert} $B.\parent \in \mathcal{T}$ \Comment{Parent already accepted}
+  \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
+  \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
+  \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\parent],\; B)$
+  \State $C \gets C \cup \{(\sigma[B].J,\; \sigma[B].h_j)\}$
+  \State $J_s \gets \textsf{computeJustified}()$
+  \State $\textsf{updateFinalized}(\sigma[B].F)$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{computeJustified}$}{}
+  \State \Return $\arg\max_{(J',\, h') \in C,\; J' \succeq F_s} (h',\, J')$
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{updateFinalized}$}{$F_B$}
+  \If{$F_B \succ F_s$ and $F_B \preceq J_s$}
+    \State $F_s \gets F_B$
+  \EndIf
+\EndFunction
+\vspace{3pt}
+
+\Function{$\textsf{onVote}$}{}
+  \State $h^\mathsf{can}\gets \sigma[\textsf{getHead}()].h$
+  \State $(J_j, h_j) \gets \arg\max_{(J',h')\in C}(h', J')$
+  \State $\mathsf{fh} \gets \bot$ \Comment{Finalize height to attach}
+  \If{$\lnot\, \sentfinalize[h_j] \land \lnot\, \sentnotarize[h_j]$}
+    \State $\mathsf{fh} \gets h_j$
+    \State $\sentfinalize[h_j]\gets \true$
+  \EndIf
+  \If{$\lnot\, \sentjustify[h^\mathsf{can}]$}
+    \State \textbf{send} $(i, h^\mathsf{can}, \getConfirmed(), \justify, \mathsf{fh})$
+    \State $\sentjustify[h^\mathsf{can}]\gets \true$
+  \ElsIf{$\mathsf{fh} = \bot$ or $\mathsf{fh} \neq h^\mathsf{can}$} \Comment{E2: avoid notarize at finalize height}
+    \State \textbf{send} $(i, h^\mathsf{can}, \getKDeep(), \notarize, \bot)$
+    \State $\sentnotarize[h^\mathsf{can}]\gets \true$
+  \EndIf
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\end{document}
