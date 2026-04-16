@@ -64,23 +64,23 @@ We write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \s
 For compatible blocks, we write $B > B'$ to mean $B \succ B'$ (i.e., $B$ is a strict descendant of~$B'$); we say $B$ is \emph{longer} or \emph{greater} than~$B'$.
 
 \begin{definition}[Vote]\label{def:vote}
-A \emph{vote} is a signed tuple $(\validator,\; \height,\; \target,\; \kind,\; \mathsf{finalize\_height})$ where $\validator$ identifies the signer, $\height$ is a height, $\target$ is a block, $\kind \in \{\notarize, \justify\}$ distinguishes the vote type, and $\mathsf{finalize\_height}$ is either a height or~$\bot$.
+A \emph{vote} is a signed tuple $(\validator,\; \height,\; \mathsf{slot},\; \target,\; \kind,\; \mathsf{finalize\_height})$ where $\validator$ identifies the signer, $\height$ is a height, $\mathsf{slot}$ is a slot number, $\target$ is a block, $\kind \in \{\notarize, \justify\}$ distinguishes the vote type, and $\mathsf{finalize\_height}$ is either a height or~$\bot$.
 Setting $\mathsf{finalize\_height} = h_j$ implicitly commits to finalize the unique block justified at~$h_j$ (Lemma~\ref{lem:uniqueness}), so no separate finalize target is needed.
 A vote included on a chain is verified to reference a target that actually exists on that chain.
 \end{definition}
 
 \begin{definition}[Fixed-target justification]\label{def:justification}
-A block~$T$ is \emph{justified at height~$h$} if at least $2n/3$ validators cast $\justify$ votes with $\height = h$ and $\target = T$:
+A block~$T$ is \emph{justified at height~$h$ and slot~$s$} if at least $2n/3$ validators cast $\justify$ votes with $\height = h$, $\mathsf{slot} = s$, and $\target = T$:
 \[
-  \bigl|\{i \,:\, \mathsf{jtargets}[i] = T\}\bigr| \;\geq\; 2n/3.
+  \bigl|\{i \,:\, \mathsf{jtargets}[i] = (T, s)\}\bigr| \;\geq\; 2n/3.
 \]
-Only votes targeting~$T$ itself contribute; votes for ancestors or descendants do not count.
+Only votes with matching target \emph{and} slot contribute.
 \end{definition}
 
 \begin{definition}[Fixed-target notarization]\label{def:notarization}
-A block~$T$ is \emph{notarized at height~$h$} if at least $2n/3$ validators cast $\notarize$ votes with $\height = h$ and $\target = T$:
+A block~$T$ is \emph{notarized at height~$h$ and slot~$s$} if at least $2n/3$ validators cast $\notarize$ votes with $\height = h$, $\mathsf{slot} = s$, and $\target = T$:
 \[
-  \bigl|\{i \,:\, \mathsf{ntargets}[i] = T\}\bigr| \;\geq\; 2n/3.
+  \bigl|\{i \,:\, \mathsf{ntargets}[i] = (T, s)\}\bigr| \;\geq\; 2n/3.
 \]
 Only $\notarize$ votes contribute.
 \end{definition}
@@ -131,44 +131,44 @@ There is no double-target condition for $\notarize$ votes: validators may cast m
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processVote}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max}),\; v,\; B$}
+\Function{$\textsf{processVote}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n),\; v,\; B$}
   \State $i \gets v.\validator$
   \If{$v.\height = h$ and $v.\target \preceq B$}
     \If{$v.\kind = \justify$ and $\mathsf{jtargets}[i] = \bot$}
-      \State $\mathsf{jtargets}[i] \gets v.\target$
+      \State $\mathsf{jtargets}[i] \gets (v.\target,\; v.\mathsf{slot})$
     \EndIf
     \If{$v.\kind = \notarize$} \Comment{Only notarize votes}
-      \State $\mathsf{ntargets}[i] \gets v.\target$
+      \State $\mathsf{ntargets}[i] \gets (v.\target,\; v.\mathsf{slot})$
     \EndIf
   \EndIf
   \If{$v.\mathsf{finalize\_height} = h_j$}
     \State $P \gets P \cup \{i\}$
   \EndIf
-  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n)$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{processHeight}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max}),\; B$}
+\Function{$\textsf{processHeight}$}{$(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n),\; B$}
   \If{$|P| \geq 2n/3$} \Comment{Finality}
     \State $F \gets J$
   \EndIf
-  \If{$\exists\, T$ s.t.\ $|\{i : \mathsf{jtargets}[i] = T\}| \geq 2n/3$} \Comment{Justification}
-    \If{$T \succeq N^\mathsf{max}$} \Comment{Justified block advances}
-      \State $J \gets T$, \; $h_j \gets h$, \; $P \gets \emptyset$, \; $N^\mathsf{max} \gets T$
+  \If{$\exists\, (T, s)$ s.t.\ $|\{i : \mathsf{jtargets}[i] = (T, s)\}| \geq 2n/3$} \Comment{Justification}
+    \If{$T \succeq N$} \Comment{Notarized block advances (justification is a notarization)}
+      \State $J \gets T$, \; $h_j \gets h$, \; $s_j \gets s$, \; $P \gets \emptyset$, \; $N \gets T$, \; $h_n \gets h$, \; $s_n \gets s$
     \EndIf
     \State $h \gets h + 1$
     \For{all $i$} $\mathsf{jtargets}[i] \gets \bot$, \; $\mathsf{ntargets}[i] \gets \bot$ \EndFor
-    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n)$
   \EndIf
-  \If{$\exists\, N$ s.t.\ $|\{i : \mathsf{ntargets}[i] = N\}| \geq 2n/3$} \Comment{Notarization}
-    \If{$N \succeq N^\mathsf{max}$}
-      \State $N^\mathsf{max} \gets N$
+  \If{$\exists\, (T', s)$ s.t.\ $|\{i : \mathsf{ntargets}[i] = (T', s)\}| \geq 2n/3$} \Comment{Notarization}
+    \If{$T' \succeq N$}
+      \State $N \gets T'$, \; $h_n \gets h$, \; $s_n \gets s$
     \EndIf
     \State $h \gets h + 1$
     \For{all $i$} $\mathsf{jtargets}[i] \gets \bot$, \; $\mathsf{ntargets}[i] \gets \bot$ \EndFor
-    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+    \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n)$
   \EndIf
-  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, F,\, P,\, N^\mathsf{max})$
+  \State \Return $(h,\, \mathsf{jtargets},\, \mathsf{ntargets},\, J,\, h_j,\, s_j,\, F,\, P,\, N,\, h_n,\, s_n)$
 \EndFunction
 
 \end{algorithmic}
@@ -178,7 +178,8 @@ There is no double-target condition for $\notarize$ votes: validators may cast m
 
 Height advances via one of two mechanisms, checked in order: (1)~fixed-target justification ($\geq 2n/3$ $\justify$ votes for the same block), or (2)~fixed-target notarization ($\geq 2n/3$ $\notarize$ votes for the same block).
 Only justification updates~$J$, $h_j$, and~$P$; notarization advances the height without changing the justified or finalized checkpoints.
-The state after block~$B$ is written $\sigma[B]$; the genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\, \bot^n,\, \bot^n,\, B_{\mathrm{genesis}},\, 0,\, B_{\mathrm{genesis}},\, \emptyset,\, \bot)$.
+The state after block~$B$ is written $\sigma[B]$; the genesis state is $\sigma[B_{\mathrm{genesis}}] = (0,\, \bot^n,\, \bot^n,\, B_{\mathrm{genesis}},\, 0,\, 0,\, B_{\mathrm{genesis}},\, \emptyset,\, B_{\mathrm{genesis}},\, 0,\, 0)$.
+Entries in $\mathsf{jtargets}$ and $\mathsf{ntargets}$ are pairs $(\target,\, \mathsf{slot})$; justification and notarization require $2n/3$ votes with matching target \emph{and} slot.
 
 \section{Accountable safety}
 
@@ -252,8 +253,8 @@ By \Cref{lem:finchain}, $C' \succeq C$, so $C \sim C'$.
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Store:} $J_s \gets B_{\mathrm{genesis}}$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$, \; $C \gets \emptyset$
-\State $\sigma[B_{\mathrm{genesis}}] \gets (0,\; \bot^n,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; B_{\mathrm{genesis}},\; \emptyset,\; \bot)$
+\State \textbf{Store:} $R_s \gets B_{\mathrm{genesis}}$, \; $F_s \gets B_{\mathrm{genesis}}$, \; $\mathcal{T} \gets \{B_{\mathrm{genesis}}\}$, \; $C \gets \emptyset$
+\State $\sigma[B_{\mathrm{genesis}}] \gets (0,\; \bot^n,\; \bot^n,\; B_{\mathrm{genesis}},\; 0,\; 0,\; B_{\mathrm{genesis}},\; \emptyset,\; B_{\mathrm{genesis}},\; 0,\; 0)$
 \State \textbf{Per-validator:} $\sentjustify \gets \bot^*$, \; $\sentnotarize \gets \bot^*$, \; $\sentfinalize \gets \bot^*$
 \vspace{3pt}
 
@@ -262,19 +263,20 @@ By \Cref{lem:finchain}, $C' \succeq C$, so $C \sim C'$.
   \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
   \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
   \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\parent],\; B)$
-  \State $C \gets C \cup \{(\sigma[B].J,\; \sigma[B].h_j)\}$
-  \State $J_s \gets \textsf{computeJustified}()$
+  \State $C \gets C \cup \{(\sigma[B].J,\; \sigma[B].h_j,\; \sigma[B].s_j)\} \cup \{(\sigma[B].N,\; \sigma[B].h_n,\; \sigma[B].s_n)\}$
+  \State $R_s \gets \textsf{computeGetHeadRoot}()$
   \State $\textsf{updateFinalized}(\sigma[B].F)$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{computeJustified}$}{}
-  \State \Return $\arg\max_{(J',\, h') \in C,\; J' \succeq F_s} (h',\, J')$
+\Function{$\textsf{computeGetHeadRoot}$}{}
+  \State $(T^*,\, h^*,\, s^*) \gets \arg\max_{(T,\, h,\, s) \in C,\; T \succeq F_s} (h,\; s,\; \mathsf{length}(T))$
+  \State \Return $T^*$
 \EndFunction
 \vspace{3pt}
 
 \Function{$\textsf{updateFinalized}$}{$F_B$}
-  \If{$F_B \succ F_s$ and $F_B \preceq J_s$}
+  \If{$F_B \succ F_s$ and $F_B \preceq R_s$}
     \State $F_s \gets F_B$
   \EndIf
 \EndFunction
@@ -282,17 +284,18 @@ By \Cref{lem:finchain}, $C' \succeq C$, so $C \sim C'$.
 
 \Function{$\textsf{onVote}$}{}
   \State $h^\mathsf{can}\gets \sigma[\textsf{getHead}()].h$
-  \State $(J_j, h_j) \gets \arg\max_{(J',h')\in C}(h', J')$
+  \State $s^\mathsf{can}\gets \textsf{currentSlot}()$
+  \State $(J_j, h_j, \_) \gets \arg\max_{(T,h,s)\in C}(h, s, \mathsf{length}(T))$
   \State $\mathsf{fh} \gets \bot$ \Comment{Finalize height to attach}
   \If{$\lnot\, \sentfinalize[h_j] \land \lnot\, \sentnotarize[h_j]$}
     \State $\mathsf{fh} \gets h_j$
     \State $\sentfinalize[h_j]\gets \true$
   \EndIf
   \If{$\lnot\, \sentjustify[h^\mathsf{can}]$}
-    \State \textbf{send} $(i, h^\mathsf{can}, \getConfirmed(), \justify, \mathsf{fh})$
+    \State \textbf{send} $(i, h^\mathsf{can}, s^\mathsf{can}, \getConfirmed(), \justify, \mathsf{fh})$
     \State $\sentjustify[h^\mathsf{can}]\gets \true$
   \ElsIf{$\mathsf{fh} = \bot$ or $\mathsf{fh} \neq h^\mathsf{can}$} \Comment{E2: avoid notarize at finalize height}
-    \State \textbf{send} $(i, h^\mathsf{can}, \getKDeep(), \notarize, \bot)$
+    \State \textbf{send} $(i, h^\mathsf{can}, s^\mathsf{can}, \getKDeep(), \notarize, \bot)$
     \State $\sentnotarize[h^\mathsf{can}]\gets \true$
   \EndIf
 \EndFunction
