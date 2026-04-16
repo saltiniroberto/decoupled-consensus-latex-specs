@@ -263,7 +263,7 @@ By \Cref{lem:finchain}, $C' \succeq C$, so $C \sim C'$.
   \State \textbf{assert} $F_s \preceq B$ \Comment{$B$ descends from finalized}
   \State $\mathcal{T} \gets \mathcal{T} \cup \{B\}$
   \State $\sigma[B] \gets \textsf{processBlock}(\sigma[B.\parent],\; B)$
-  \State $C \gets C \cup \{(\sigma[B].J,\; \sigma[B].h_j,\; \sigma[B].s_j)\} \cup \{(\sigma[B].N,\; \sigma[B].h_n,\; \sigma[B].s_n)\}$
+  \State $C \gets C \cup \{(\sigma[B].N,\; \sigma[B].h_n,\; \sigma[B].s_n)\}$
   \State $R_s \gets \textsf{computeGetHeadRoot}()$
   \State $\textsf{updateFinalized}(\sigma[B].F)$
 \EndFunction
