@@ -38,6 +38,17 @@ Each document is a self-contained \LaTeX{} file.
   An earlier draft with several open review comments and unresolved
   design questions; the model and terminology have since diverged.
 
+\item[\texttt{fresh\_simplex\_with\_notarizations.tex}]
+  \textbf{Fresh Simplex with Prefix Notarizations.}
+  Drops timeouts and snapshots; uses fixed-target justification and
+  prefix notarization as the two height-advancing mechanisms, both
+  gated by a height-freshness rule on vote targets.
+  The fork-choice root is the lex-max over justification and notarization
+  certificates, with justifications preferred on same-height ties.
+  Covers accountable safety, the fork-choice store (root/finalized pair),
+  and the inactivity leak (explicit honest voting rule, leak fairness,
+  amortized tightness).
+
 \end{description}
 
 \end{document}
