@@ -518,14 +518,16 @@ $\textsf{computeRootLeaf}$ returns the same block as $\textsf{computeRoot}$.
 \begin{proof}
 Fix any non-leaf processed block~$B_i$ with post-state tuple $\tau_i = (X_i, h_i, X_i.\slot) \in C_N$.
 Since~$B_i$ is non-leaf, pick any processed leaf $B_\ell$ descending from~$B_i$ (the block tree~$\T$ is finite, so some leaf exists on each branch through~$B_i$); $B_\ell$ contributes a tuple $\tau_\ell = (X_\ell, h_\ell, X_\ell.\slot) \in C_N^{\mathrm{leaf}}$.
-By Lemma~\ref{lem:slotmono} applied along the chain from~$B_i$ to~$B_\ell$, $h_\ell \geq h_i$ and $X_\ell \succeq X_i$.
-Whenever $h_\ell = h_i$, state-height monotonicity forces $X_\ell = X_i$ (no strict advance on~$h_n$ without $h_n \gets h_n + 1$), so $\tau_\ell = \tau_i$ and $\tau_i \in C_N^{\mathrm{leaf}}$ directly.
+By Lemma~\ref{lem:slotmono} applied along the chain from~$B_i$ to~$B_\ell$, both $h_n$ and~$N$ are monotone non-decreasing, so $h_\ell \geq h_i$ and $X_\ell \succeq X_i$.
+Whenever $h_\ell = h_i$, $h_n$-monotonicity combined with the state-machine invariant that $N$ advances only jointly with $h_n \gets h_n + 1$ (Lemma~\ref{lem:slotmono}) forces $X_\ell = X_i$; hence $\tau_\ell = \tau_i$ and $\tau_i \in C_N^{\mathrm{leaf}}$ directly.
 Whenever $h_\ell > h_i$, $\tau_\ell$'s key strictly dominates $\tau_i$'s key by the leading height coordinate, regardless of the $C_J$-bit.
 
 Now run both walks in lockstep from $X^* = F_s$.
-At each step with current position~$X^*$, the full walk's argmax over~$C_N$ is attained at some tuple~$\tau^\star$; if $\tau^\star \in C_N^{\mathrm{leaf}}$, the leaf walk makes the same choice.
-If $\tau^\star = \tau_i$ for some non-leaf~$B_i$, the leaf replacement~$\tau_\ell$ above is either equal to~$\tau_i$ (in which case $\tau_i \in C_N^{\mathrm{leaf}}$) or strictly dominates~$\tau_i$ in key (contradicting maximality of~$\tau^\star$); so $\tau^\star \in C_N^{\mathrm{leaf}}$.
-In either case both walks pick the same tuple, and by induction they terminate at the same block.
+At each step with current position~$X^*$, the full walk's lex-max over~$C_N$ is attained at some tuple~$\tau^\star$.
+If $\tau^\star$ is itself a leaf tuple, the leaf walk makes the same choice.
+If $\tau^\star = \tau_i$ for some non-leaf~$B_i$, then its leaf replacement~$\tau_\ell$ is itself a strict-descendant candidate in~$C_N$ with key at least as large as~$\tau_i$'s, so the lex-max already selects a tuple whose key equals $\tau_\ell$'s.
+This forces $h_\ell = h_i$ (otherwise $\tau_\ell$'s key strictly dominates $\tau_i$'s, yet both are candidates), whence $\tau_\ell = \tau_i \in C_N^{\mathrm{leaf}}$: $\tau^\star$ coincides with a leaf tuple after all, and the leaf walk selects the same tuple.
+By induction both walks terminate at the same block.
 \end{proof}
 
 The leaf-only variant bounds the walk's candidate pool by the number of leaves of~$\T$.
@@ -712,7 +714,7 @@ The (R1) alignment guard --- ``every prior vote at height~$h_j$ was a $\just$ vo
 
 \paragraph{E1 and E2 safety of the rule.}
 The rule issues at most one $\just$ vote per height (only (R1) produces $\just$, and (R1) fires at most once per $h_c$ since the validator marks itself as having voted), which avoids E1 (double-justify).
-For E2 (target / finalize-target conflict) we argue directly.
+For E2 (target / finalize-target conflict) we argue directly; Lemma~\ref{lem:honest-e2-safety} records that honest validators never trigger E2 slashing.
 
 \begin{lemma}[Honest E2 safety]\label{lem:honest-e2-safety}
 Under synchrony, $f < n/3$, and all honest validators following Definition~\ref{def:voting-rule}, an honest~$i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) satisfying $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
@@ -720,10 +722,16 @@ Under synchrony, $f < n/3$, and all honest validators following Definition~\ref{
 
 \begin{proof}
 Only (R1) produces a finalize-bearing vote, with $(f_h, f_t) = (h_j^{(v_2)}, J^{(v_2)})$ from the canonical state at~$v_2$'s firing.
-We show every vote~$v_1$ by~$i$ with $v_1.\height = h_j^{(v_2)}$ has $v_1.\target = J^{(v_2)}$.
-If $v_1$ was cast before~$v_2$: the (R1) alignment guard at~$v_2$ forces $v_1.\target = J^{(v_2)}$.
-If $v_1$ was cast after~$v_2$: under the hypotheses, each canonical advance is a justification firing witnessed by the $> 2n/3$ honest (R1) quorum (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; since $v_2$ was cast at canonical state-height $h_c^{(v_2)} > h_j^{(v_2)}$, canonical cannot return to height $h_j^{(v_2)}$ for a later $v_1$, so this case is vacuous.
-The sub-case $v_1 = v_2$ is also vacuous since $v_2.\height = h_c^{(v_2)} \neq h_j^{(v_2)} = v_2.\mathsf{finalize\_height}$.
+We show every vote~$v_1$ by~$i$ with $v_1.\height = h_j^{(v_2)}$ has $v_1.\target = J^{(v_2)}$, by cases on the temporal relationship between~$v_1$ and~$v_2$.
+
+\emph{Case~A ($v_1$ cast before~$v_2$).}
+The (R1) alignment guard at~$v_2$ forces $v_1.\target = J^{(v_2)}$.
+
+\emph{Case~B ($v_1$ cast after~$v_2$).}
+Under the hypotheses, each canonical advance is a justification firing witnessed by the $> 2n/3$ honest (R1) quorum (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; since $v_2$ was cast at canonical state-height $h_c^{(v_2)} > h_j^{(v_2)}$, canonical cannot return to height $h_j^{(v_2)}$ for a later $v_1$, so this case is vacuous.
+
+\emph{Case~C ($v_1 = v_2$).}
+Also vacuous, since $v_2.\height = h_c^{(v_2)} \neq h_j^{(v_2)} = v_2.\mathsf{finalize\_height}$.
 \end{proof}
 
 \begin{remark}[Scope of Lemma~\ref{lem:honest-e2-safety}]\label{rem:honest-e2-scope}
@@ -767,23 +775,11 @@ So $\mathsf{penalty}_2(i) \in \{0, 1, 2\}$ in an advance round.
 The stall check uses the canonical head as the reference; the target check, evaluated only at advance rounds, uses the firing target~$T^*$.
 Under Definition~\ref{def:voting-rule}, honest votes target the canonical tip $T_c$ at state-height~$h_c$, and the firing target $T^* \preceq T_c$, so every honest vote satisfies both checks.
 
+\begin{definition}[Locked at height~$h$]\label{def:locked}
+A validator~$i$ is \emph{locked at height~$h$} if~$i$ has signed a vote whose $\mathsf{finalize\_height} = h$ and $\mathsf{finalize\_target} \neq \bot$ --- i.e.,~$i$ has committed to finalize some block at height~$h$.
+\end{definition}
+
 \subsection{Leak fairness}
-
-\begin{lemma}[The root pins the canonical height]\label{lem:root-pins}
-Under $f < n/3$ and synchrony: let~$X$ be the canonical chain head and $h_c = \sigma[X].h$ its state-height, with $h_c \geq 1$.
-Then $R_s.h \in \{h_c - 1,\, h_c\}$.
-Moreover $R_s \preceq X$ (the root lies on the canonical chain).
-\end{lemma}
-
-\begin{proof}
-$R_s \preceq X$ since $\textsf{getHead}$ returns a block descending from~$R_s$.
-For the upper bound: every tuple $(X', h', s') \in C_N$ has $\sigma[X'].h = h'$ (Remark~\ref{rem:fresh-equiv}, treating genesis as $h' = 0$), so $R_s.h = \sigma[R_s].h \leq h_c$ by monotonicity along $R_s \preceq X$ (whether $R_s = F_s$ or $R_s$ is the block of some cert).
-
-For the lower bound, let $h_F = \sigma[F_s].h$.
-If $h_F \geq h_c - 1$, the walk starts at~$F_s$ and its height never decreases, so $R_s.h \geq h_F \geq h_c - 1$.
-If $h_F < h_c - 1$, chain~$X$ advanced past height~$h_c - 1$ at some $B \preceq X$ with $\sigma[B.\parent].h = h_c - 1$, writing some $C$ into~$\sigma[B].N$; this inserts $(C, h_c - 1, C.\slot)$ into~$C_N$.
-By Lemma~\ref{lem:mainsafety} at $B$'s post-state, $F_s \preceq B$; with $\sigma[C].h = h_c - 1 > h_F$, monotonicity gives $C \succ F_s$, so $(C, h_c - 1, \cdot)$ is a candidate at the walk's first step and $R_s.h \geq h_c - 1$.
-\end{proof}
 
 \begin{theorem}[Leak fairness]\label{thm:fairness}
 Under $f < n/3$ and synchrony, every honest validator~$i$ following Definition~\ref{def:voting-rule} incurs zero penalty units on the canonical chain in every round:
@@ -800,7 +796,7 @@ Under the hypotheses, each canonical advance is a justification firing (Remark~\
 \emph{Stall and target checks.}
 At~$i$'s first voting opportunity at height~$h_c$, (R1) fires with $T_c \preceq X$ at state-height~$h_c$: the cast vote $v = (i, h_c, \cdot, T_c, \just, \cdot, \cdot)$ is canonical-fresh (Definition~\ref{def:penalty}), so $\mathsf{penalty}_1(i) = 0$.
 Any prior lock $i$ holds at $h' < h_c$ does not constrain votes at $h_c$.
-The locked-at-$h_c$ sub-case is vacuous: being locked at~$h_c$ means $i$ signed some $v_f$ at height $> h_c$ with $v_f.\mathsf{finalize\_height} = h_c$, which requires a justification at $h_c$ on some chain; by Remark~\ref{rem:every-advance-justify}, canonical also justifies at $h_c$, so $h_c$ would be strictly past, contradiction.
+No lock at~$h_c$ is active: a lock at~$h_c$ (Definition~\ref{def:locked}) witnesses a justification at height~$h_c$ on some chain, and Remark~\ref{rem:every-advance-justify} forces the canonical chain to advance past~$h_c$ via justification at the same height; thus whenever any lock at~$h_c$ could exist, canonical state-height is already strictly greater than~$h_c$, so $i$ has no voting opportunity at canonical height~$h_c$ under this lock.
 The canonical advance at $h_c$ fires via justification at $T^* = T_c$ (Remark~\ref{rem:every-advance-justify}), so $v.\target = T_c \succeq T^*$, giving $\mathsf{penalty}_2^{\mathrm{tgt}}(i) = 0$ at the advance round.
 
 \emph{Finalize check.}
