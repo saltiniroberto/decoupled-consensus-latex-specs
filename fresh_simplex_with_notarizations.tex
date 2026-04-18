@@ -745,26 +745,49 @@ equivalently $\sigma[v.\target].h = h_c$ with $v.\target \preceq X$ (Remark~\ref
 Fix the canonical chain $X = \textsf{getHead}(\Sigma)$, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on~$X$ at slot~$t$.
 A \emph{non-finality period} is a maximal interval $[t_1, t_T]$ of consecutive slots processed on~$X$ such that, at every slot~$t$ in the interval,
 \[
-  \sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J
-  \quad\text{and}\quad
   \sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F.
 \]
-Equivalently, $F$ is stuck at some fixed value $F_0 \prec \sigma.J$ throughout the interval: a pending-finality gap is open at every slot's pre-state, and the finality branch of $\textsf{processHeight}$ does not fire anywhere in the interval.
-In particular, the \emph{transition slot} at which $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{pre}}.J$ first becomes $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ (i.e., a $J$-advance that opens the gap) lies \emph{outside} the period: its pre-state has $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{pre}}.J$, not~$\prec$.
+Equivalently, $F$ is stuck at some fixed value $F_0$ throughout the interval: the finality branch of $\textsf{processHeight}$ does not fire anywhere in the interval.
+Each slot~$t$ in the period falls into exactly one of three categories, determined by its pre-state and by whether $J$ advances:
+\begin{itemize}
+  \item \emph{pending-stuck}: $\sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J$ (a pending-finality gap is open at the start of the slot);
+  \item \emph{stable-stuck}: $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.J = \sigma_{\mathrm{pre}}^{(t)}.J$ (no pending gap, and $J$ does not advance at~$t$);
+  \item \emph{transition}: $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.J$ (no pending gap at the start, but the justification branch fires and opens one by the end of the slot).
+\end{itemize}
 \end{definition}
 
 \begin{theorem}[Non-finality period penalty bound]\label{thm:tightness}
-Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is strictly greater than $T \cdot n/3$.
+Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is strictly greater than $(T - 1) \cdot n/3$.
 \end{theorem}
 
 \begin{proof}
-Fix a non-finality period $[t_1, t_T]$ with $T \geq 1$, and let $t \in [t_1, t_T]$.
-By Definition~\ref{def:non-finality-period}, $\sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F$, so the Layer~2 finalize guard in Figure~\ref{alg:leak-processslot} fires at~$t$.
-The finality branch of $\textsf{processHeight}$ did not fire at~$t$ (else $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$), so $|\sigma_{\mathrm{pre}}^{(t)}.P| < 2n/3$, whence $|\{i : i \notin \sigma_{\mathrm{pre}}^{(t)}.P\}| > n/3$.
-Layer~2 finalize therefore charges strictly more than $n/3$ validators at slot~$t$.
-Summing over the $T$ slots of the period, and noting that Layer~1 and the Layer~2 target guard can only add non-negative charges on top, the total penalty increment across all validators is strictly greater than $T \cdot n/3$.
+Fix a non-finality period $[t_1, t_T]$ with $T \geq 1$.
+Every slot $t \in [t_1, t_T]$ is pending-stuck, stable-stuck, or transition by Definition~\ref{def:non-finality-period}.
+We show that (i) at most one slot of the period is transition, and (ii) every pending-stuck or stable-stuck slot contributes strictly more than $n/3$ to the total penalty increment.
 
-The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the canonical chain and counts Layer~2 finalize charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
+\emph{(i) At most one transition slot.}
+A transition at~$t$ requires $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.J$.
+After such a slot, $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$; since $F$ does not advance anywhere in the period, $\sigma_{\mathrm{pre}}^{(t')}.F = \sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t')}.J$ at every later slot $t' > t$ of the period (justification is monotone across slots by Lemma~\ref{lem:slotmono}).
+So every slot after a transition is pending-stuck, and no second transition can occur within the period.
+
+\emph{(ii) Per-slot penalty $> n/3$ for pending-stuck and stable-stuck slots.}
+
+\textbf{Pending-stuck slot~$t$.}
+$\sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F$, so the Layer~2 finalize guard in Figure~\ref{alg:leak-processslot} fires at~$t$.
+The finality branch of $\textsf{processHeight}$ did not fire at~$t$ (else $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$), so $|\sigma_{\mathrm{pre}}^{(t)}.P| < 2n/3$, whence $|\{i : i \notin \sigma_{\mathrm{pre}}^{(t)}.P\}| > n/3$.
+Layer~2 finalize charges strictly more than $n/3$ validators at~$t$.
+
+\textbf{Stable-stuck slot~$t$.}
+$\sigma_{\mathrm{pre}}^{(t)}.J = \sigma_{\mathrm{post}}^{(t)}.J$, so the Layer~2 target guard in Figure~\ref{alg:leak-processslot} fires at~$t$.
+The justification branch of $\textsf{processHeight}$ did not fire at~$t$ (else $J$ would advance), so the plurality count on $\sigma_{\mathrm{pre}}^{(t)}.\mathsf{jtargets}$ is $< 2n/3$ (counting $T^* = \bot$ as~$0$), whence $|\{i : \sigma_{\mathrm{pre}}^{(t)}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}^{(t)}.\mathsf{jtargets}[i] = \bot\}| > n/3$.
+Layer~2 target charges strictly more than $n/3$ validators at~$t$.
+
+\emph{Conclusion.}
+At most one slot of the period is transition, so at least $T - 1$ slots are pending-stuck or stable-stuck.
+Each such slot contributes strictly more than $n/3$ by~(ii); Layer~1 and the remaining guards add only non-negative charges.
+Summing over the period, the total penalty increment across all validators is strictly greater than $(T - 1) \cdot n/3$.
+
+The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the canonical chain and counts charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
 \end{proof}
 
 \subsection{Honest voting rule}
