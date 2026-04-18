@@ -698,7 +698,7 @@ $\textsf{processBlock}$, $\textsf{processHeight}$, and $\textsf{processVote}$ ar
   \If{$\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$} \Comment{Layer 2 target: justification did \emph{not} advance}
     \State $T^* \gets \arg\max_{T' \in \{\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \,:\, \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq \bot\}} |\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T'\}|$ \Comment{$T^* \gets \bot$ if the set is empty; ties broken deterministically}
     \For{each $i \in \{1, \ldots, n\}$}
-      \If{$\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*$}
+      \If{$\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*$ \textbf{or} $\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot$}
         \State $\sigma_{\mathrm{post}}.\mathsf{penalties}[i] \gets \sigma_{\mathrm{post}}.\mathsf{penalties}[i] + 1$
       \EndIf
     \EndFor
@@ -722,7 +722,7 @@ $\textsf{processBlock}$, $\textsf{processHeight}$, and $\textsf{processVote}$ ar
 Figure~\ref{alg:leak-processslot} is the authoritative specification.
 Informally, $\textsf{processInactivityPenalties}$ checks three independent state-logic conditions; each may or may not fire on a given slot, and more than one may fire together.
 \emph{Layer~1 (stall, $\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$)} fires when the slot failed to advance height; it bumps every~$i$ with $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] = \bot$, capturing failure to cast a fresh vote at the current height (note $\mathsf{ntargets}$ is not reset at a stall).
-\emph{Layer~2 target (justification did not advance, $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$)} fires when justification did \emph{not} fire this slot; $T^*$ is the plurality target across $\sigma_{\mathrm{pre}}.\mathsf{jtargets}$ (with a deterministic tiebreak), or $\bot$ if no~$\just$ votes have been registered, and every~$i$ with $\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*$ is bumped (``did not $\just$-vote for the plurality target''). Whenever the justification branch of $\textsf{processHeight}$ fires, its quorum condition gives $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T\}| \geq 2n/3$ and the branch sets $\sigma_{\mathrm{post}}.J \gets T \neq \sigma_{\mathrm{pre}}.J$ (justification strictly advances~$J$ along $\preceq$ by Lemma~\ref{lem:slotmono}), so Layer~2 target is automatically skipped in the good case. When the branch does not fire, $T^*$ has count $< 2n/3$ on $\sigma_{\mathrm{pre}}.\mathsf{jtargets}$, so either $T^* = \bot$ (no~$\just$ votes registered and no validator is bumped) or $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*\}| > n/3$.
+\emph{Layer~2 target (justification did not advance, $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$)} fires when justification did \emph{not} fire this slot; $T^*$ is the plurality target across $\sigma_{\mathrm{pre}}.\mathsf{jtargets}$ (with a deterministic tiebreak), or $\bot$ if no~$\just$ votes have been registered, and every~$i$ with $\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*$ or $\sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot$ is bumped (``did not $\just$-vote for the plurality target, or did not $\just$-vote at all''). Whenever the justification branch of $\textsf{processHeight}$ fires, its quorum condition gives $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T\}| \geq 2n/3$ and the branch sets $\sigma_{\mathrm{post}}.J \gets T \neq \sigma_{\mathrm{pre}}.J$ (justification strictly advances~$J$ along $\preceq$ by Lemma~\ref{lem:slotmono}), so Layer~2 target is automatically skipped in the good case. When the branch does not fire, $T^*$ has count $< 2n/3$ on $\sigma_{\mathrm{pre}}.\mathsf{jtargets}$ (taking the count as~$0$ when $T^* = \bot$), so $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot\}| > n/3$; in particular, when $T^* = \bot$ all~$n$ validators are bumped.
 \emph{Layer~2 finalize (pending finality did not close, $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$ and $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$)} fires when there was a pending finality gap at the start of the slot and~$F$ did not advance during the slot; every $i \notin \sigma_{\mathrm{pre}}.P$ is bumped (``did not commit to finalize the pending justified block'').
 A slot on which the finality branch fires has $\sigma_{\mathrm{post}}.F = \sigma_{\mathrm{pre}}.J \succ \sigma_{\mathrm{pre}}.F$, so Layer~2 finalize is automatically skipped.
 A vote~$v$ by~$i$ processed at the current slot on the canonical chain~$X$ at state-height $h_c = \sigma_{\mathrm{post}}.h$ bumps $\sigma.\mathsf{ntargets}[i]$ on~$X$ iff $v$ is \emph{canonical-fresh}, i.e.
@@ -739,7 +739,7 @@ Consider any slot on~$X$ satisfying at least one of
 \begin{enumerate}
   \item[(i)] \emph{stall}: $\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$;
   \item[(ii)] \emph{pending finality did not close}: $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ and $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$;
-  \item[(iii)] \emph{justification did not advance despite some~$\just$ votes}: $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ and $\exists i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq \bot$.
+  \item[(iii)] \emph{justification did not advance}: $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$.
 \end{enumerate}
 Then $\textsf{processInactivityPenalties}$ satisfies
 \[
@@ -760,21 +760,21 @@ The hypothesis is exactly the Layer~2 finalize guard, so Layer~2 finalize fires.
 $F$ is only updated by the finality branch of $\textsf{processHeight}$ (Lemma~\ref{lem:slotmono}), which sets $\sigma.F \gets \sigma_{\mathrm{pre}}.J$ when it fires; combined with $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ and $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$, the finality branch did not fire, so $|\sigma_{\mathrm{pre}}.P| < 2n/3$.
 Hence at least $n - (2n/3 - 1) > n/3$ validators lie outside $\sigma_{\mathrm{pre}}.P$, each contributing~$1$ via Layer~2 finalize.
 
-\emph{Case~(iii): justification did not advance despite some~$\just$ votes.}
-The hypothesis is exactly the Layer~2 target guard, so Layer~2 target fires with some $T^*$.
-Because $\sigma_{\mathrm{pre}}.\mathsf{jtargets} \neq \bot^n$, the argmax is over a nonempty set and $T^* \neq \bot$.
-The justification branch of $\textsf{processHeight}$, whenever it fires, sets $\sigma_{\mathrm{post}}.J$ to a strict $\preceq$-successor of $\sigma_{\mathrm{pre}}.J$ (Lemma~\ref{lem:slotmono}); the hypothesis $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ thus forces the justification branch not to fire this slot, whence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T^*\}| < 2n/3$.
-Hence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^*\}| > n - 2n/3 = n/3$, each contributing~$1$ via Layer~2 target.
+\emph{Case~(iii): justification did not advance.}
+The hypothesis is exactly the Layer~2 target guard, so Layer~2 target fires with some $T^*$ (possibly $\bot$).
+The justification branch of $\textsf{processHeight}$, whenever it fires, sets $\sigma_{\mathrm{post}}.J$ to a strict $\preceq$-successor of $\sigma_{\mathrm{pre}}.J$ (Lemma~\ref{lem:slotmono}); the hypothesis $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ thus forces the justification branch not to fire this slot, whence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T^*\}| < 2n/3$, with the convention that the count is~$0$ when $T^* = \bot$ (all $\mathsf{jtargets}[i] = \bot$).
+Hence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot\}| \geq n - (2n/3 - 1) > n/3$, each contributing~$1$ via Layer~2 target.
+In the $T^* = \bot$ edge case all~$n$ validators satisfy the second disjunct of the guard and are bumped.
 \end{proof}
 
 The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}$ and $\sigma_{\mathrm{post}}$ on the canonical chain and counts penalty increments by direct inspection of $\textsf{processInactivityPenalties}$.
 No hypothesis on the size of the slashable set, on synchrony, on the honest voting rule, or on determinism of $\textsf{getHead}$ is used.
 
 The three disjuncts together cover every canonical slot at which progress is lacking.
-Stall slots trigger~(i); they additionally trigger~(ii) if there is pending finality, and~(iii) if any $\just$ vote has been processed at the current height.
-Notarization-only advances with pending finality trigger~(ii) since $F$ is not updated on a notarization-only advance, and they additionally trigger~(iii) if any $\just$ vote has been processed.
+Stall slots trigger~(i), and additionally~(iii) since justification cannot advance without a height advance; they additionally trigger~(ii) if there is pending finality.
+Notarization-only advances trigger~(iii) since justification did not advance, and additionally trigger~(ii) if there is pending finality at the start of the slot (since $F$ is not updated on a notarization-only advance).
 Justification-advance slots have $\sigma_{\mathrm{pre}}.J \neq \sigma_{\mathrm{post}}.J$ so~(iii) fails by construction; they trigger~(ii) exactly when finality did not fire alongside justification (a pending-finality slot that merely added a new layer on top rather than closing the pending one).
-The remaining cases --- justification-advance slots that finalize, and notarization-only advances with no pending finality (or all-$\bot$ $\mathsf{jtargets}$) --- are the genuinely good or non-contested slots, where no layer fires and no penalty is accrued.
+The remaining cases --- justification-advance slots that finalize --- are the genuinely good slots, where no layer fires and no penalty is accrued.
 
 \subsection{Honest voting rule}
 
