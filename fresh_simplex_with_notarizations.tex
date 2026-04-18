@@ -783,36 +783,43 @@ Let $T$ denote a target at height~$h_c$: any ancestor of~$X$ with $\sigma[T].h =
 Let $J = \sigma[X].J$ denote the canonical justified block (paired with $h_j$).
 
 \emph{Target selection.}
-Let $T_c$ denote the target of~$i$'s vote at the current canonical height~$h_c$: if $i$ has previously cast a vote at~$h_c$ with target $T_{\mathrm{prior}}$, then $T_c = T_{\mathrm{prior}}$; otherwise $T_c = T$ (the canonical target).
-That is,~$i$ reuses the target of its first vote at~$h_c$, and otherwise picks the canonical target.
+Let $T_c$ denote the target of~$i$'s vote at the current canonical height~$h_c$, chosen at the time of the vote:
+\begin{itemize}
+  \item if $i$ is \emph{locked at~$h_c$} --- i.e., $i$ has previously cast a vote with $\mathsf{finalize\_height} = h_c$ and $\mathsf{finalize\_target} = L \neq \bot$ --- then $T_c = L$ (forced by E1-safety: committing $L$ at~$h_c$ forbids any future height-$h_c$ vote with target $\neq L$);
+  \item otherwise, $T_c = T$: the canonical target \emph{at the time of the current vote}, read from $\sigma[X]$ at the voting opportunity.
+\end{itemize}
+In particular, the non-locked branch picks the canonical target freshly at each voting opportunity; if~$i$'s local canonical view has shifted since a prior vote at~$h_c$, the target selected by (R2) may differ from the target of the (R1) vote.
 
 A validator~$i$ acts at each voting opportunity at the current canonical height~$h_c$ as follows:
 \begin{enumerate}
   \item[(R1)] If $i$ has not yet cast any vote at height~$h_c$: cast a $\just$ vote
-  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T,\; \just,\; f_h,\; f_t) \]
-  with target~$T$ (the canonical target; target selection gives $T_c = T$ since no prior vote at~$h_c$ exists) and finalize-fields
+  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \just,\; f_h,\; f_t) \]
+  with target $T_c$ selected as above (under the honest schedule, the locked-at-$h_c$ branch is vacuous at (R1), since locks at~$h_c$ are only ever created via some prior (R1)-at-$h_c + 1$ with finalize-fields $(h_c, J)$; but since canonical is still at~$h_c$ at (R1), no such prior (R1) can have fired) and finalize-fields
   \[
     (f_h,\, f_t) \;=\;
     \begin{cases}
-      (h_j,\, J) & \parbox[t]{0.55\textwidth}{\raggedright if $i$'s prior vote at height~$h_j$ (if any) had target~$J$ (equivalently, $i$ is not pinned at~$h_j$ to a target other than~$J$);}\\[1.2em]
+      (h_j,\, J) & \parbox[t]{0.55\textwidth}{\raggedright if every prior vote of~$i$ at height~$h_j$ had target~$J$ (equivalently, $i$ is not pinned at~$h_j$ to a target other than~$J$);}\\[1.2em]
       (\bot,\, \bot) & \text{otherwise.}
     \end{cases}
   \]
   \item[(R2)] Else ($i$ has already cast a vote at height~$h_c$): cast a $\notar$ vote
   \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \notar,\; \bot,\; \bot) \]
-  with target $T_c = T_{\mathrm{prior}}$ (the target of~$i$'s first vote at~$h_c$).
+  with target $T_c$ selected as above (canonical~$T$ now, unless locked at~$h_c$).
 \end{enumerate}
 The values $T$, $J$, and~$h_j$ used here are those of the current canonical state $\sigma[X]$ at the time of the voting opportunity.
-Only (R1) produces a $\just$ vote and fires at most once per height, so an honest validator casts at most one $\just$ vote per height, with a single target; target selection then forces all of~$i$'s votes at any fixed height to share that target.
+Only (R1) produces a $\just$ vote and fires at most once per height, so an honest validator casts at most one $\just$ vote per height, with a single target.
 Because (R1)/(R2) are evaluated against the \emph{current} canonical height~$h_c$, voting at~$h_c$ stops naturally once canonical advances past~$h_c$.
 \end{definition}
 
 Under synchrony, $f < n/3$, and deterministic $\textsf{getHead}$, honest validators share the same canonical state (Corollary~\ref{cor:agreement}) and agree on~$T$, so the first-slot $\just$ quorum for~$T$ forms at~$h_c$ and justification fires.
-Rule~(R2) is the \emph{resubmission} fallback for later slots at the same canonical height, when the (R1) $\just$ quorum did not form on canonical (heterogeneous (R1) targets across views): the $\notar$ vote's prefix counting may still notarize a common ancestor; its target~$T_{\mathrm{prior}}$ is fixed by target selection to the target of~$i$'s (R1) vote at~$h_c$, keeping all of~$i$'s height-$h_c$ votes consistent.
-In particular, (R2) fires at every slot while canonical remains at~$h_c$: a validator that committed to finalize at~$h_c$ (via the finalize-fields of its (R1) vote) keeps resubmitting a fresh $\notar$ vote for $T_{\mathrm{prior}}$ each slot, so its $\mathsf{ntargets}$ entry stays populated on every chain that keeps processing its new votes.
+Rule~(R2) is the \emph{resubmission} fallback for later slots at the same canonical height, when the (R1) $\just$ quorum did not form on canonical (heterogeneous (R1) targets across views): the $\notar$ vote's prefix counting may still notarize a common ancestor.
+Selecting the canonical~$T$ freshly at each (R2) ensures the $\notar$ vote points at the block currently judged canonical by~$i$; if~$i$'s canonical view has shifted between (R1) and (R2), (R2) follows the shift.
+The lock clause is included for well-definedness and E1-safety under adversarial views or retries --- under the honest schedule it is unreachable at~$h_c$, since a validator can only be locked at~$h_c$ through a prior (R1)-at-$h_c+1$ with finalize-fields $(h_c, J)$, and such a vote cannot have been cast while the current canonical state is still at height~$h_c$.
+In particular, (R2) fires at every slot while canonical remains at~$h_c$, so the validator's $\mathsf{ntargets}$ entry stays populated on every chain that keeps processing its new votes.
 This means processing old votes is never necessary for progress: validators re-emit their vote every slot while at height~$h_c$, and old votes can be discarded.
 Each (R1) vote optionally commits to finalize the canonical justified block~$J$ at height~$h_j$ via $(\mathsf{finalize\_height},\, \mathsf{finalize\_target}) = (h_j,\, J)$, which places the validator in~$P$ once the $(J, h_j)$-state is processed.
-The (R1) finalize-field conditional --- ``$i$'s prior vote at height~$h_j$ (if any) had target~$J$'' --- keeps the rule E1-safe: any prior target at height~$h_j$ already matches the $\mathsf{finalize\_target}$ being attached.
+The (R1) finalize-field conditional --- ``every prior vote of~$i$ at height~$h_j$ had target~$J$'' --- keeps the rule E1-safe: committing $\mathsf{finalize\_target} = J$ at height~$h_j$ requires (by E1) that every vote of~$i$ at height~$h_j$ have target~$J$; since (R2) under the new target selection may produce a target at~$h_j$ that differs from the (R1) target if~$i$'s canonical view shifted between firings, the conditional checks \emph{all} prior votes at~$h_j$, not just the (R1) one.
+If (R1) and (R2) at height~$h_j$ chose different targets, the conditional fires with $(\bot, \bot)$, so no commit is attempted and~$i$ ``misses'' the finalization at~$h_j$ --- but remains E1-safe.
 
 \paragraph{E1 safety of the rule.}
 The rule is E1-safe: Lemma~\ref{lem:honest-e1-safety} records that honest validators never trigger E1 slashing.
@@ -827,7 +834,7 @@ Only (R1) produces a finalize-bearing vote, with $(f_h, f_t) = (h_j^{(v_2)}, J^{
 We show every vote~$v_1$ by~$i$ with $v_1.\height = h_j^{(v_2)}$ has $v_1.\target = J^{(v_2)}$, by cases on the temporal relationship between~$v_1$ and~$v_2$.
 
 \emph{Case~A ($v_1$ cast before~$v_2$).}
-The (R1) finalize-field conditional at~$v_2$ attached $(h_j^{(v_2)}, J^{(v_2)})$, which fires only when~$i$'s prior vote at height~$h_j^{(v_2)}$ (if any) had target~$J^{(v_2)}$; by target selection, all of~$i$'s votes at~$h_j^{(v_2)}$ share that target, so $v_1.\target = J^{(v_2)}$.
+The (R1) finalize-field conditional at~$v_2$ attached $(h_j^{(v_2)}, J^{(v_2)})$, which fires only when \emph{every} prior vote of~$i$ at height~$h_j^{(v_2)}$ had target~$J^{(v_2)}$; in particular, $v_1.\target = J^{(v_2)}$.
 
 \emph{Case~B ($v_1$ cast after~$v_2$).}
 Under the hypotheses, each canonical advance is a justification firing witnessed by the $> 2n/3$ honest (R1) quorum (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; since $v_2$ was cast at canonical state-height $h_c^{(v_2)} > h_j^{(v_2)}$, canonical cannot return to height $h_j^{(v_2)}$ for a later $v_1$, so this case is vacuous.
@@ -856,8 +863,13 @@ Then for every slot processed on~$X'$ from that point onward while canonical sta
 \end{theorem}
 
 \begin{proof}
-At the voting opportunity, (R1) or (R2) fires with target $T_c \preceq X$ satisfying $\sigma[T_c].h = h_c$ (Remark~\ref{rem:fresh-equiv}).
-The produced vote~$v$ has $v.\height = h_c$, $v.\target = T_c \preceq X$, and $v.\target.\slot \geq \sigma[X].s_h$ (since $\sigma[T_c].h = h_c$).
+At the voting opportunity, (R1) or (R2) fires with target $T_c$ selected per Definition~\ref{def:voting-rule} (target selection).
+We show $T_c \preceq X$ with $\sigma[T_c].h = h_c$ by cases on the target-selection branch:
+\begin{itemize}
+  \item \emph{Non-locked branch.} $T_c = T$ is the canonical target at~$\sigma[X]$ \emph{now}: an ancestor of~$X$ with $\sigma[T].h = h_c$ (Remark~\ref{rem:fresh-equiv}), so $T_c \preceq X$ with $\sigma[T_c].h = h_c$ by construction.
+  \item \emph{Locked branch.} $T_c = L$ is the $\mathsf{finalize\_target}$ of some prior vote of~$i$ with $\mathsf{finalize\_height} = h_c$. Under the honest schedule this branch is unreachable at height~$h_c$ (as noted after Definition~\ref{def:voting-rule}, a lock at~$h_c$ is created only via an (R1)-at-$h_c + 1$ with finalize-fields $(h_c, J)$, which cannot have been cast while canonical is still at~$h_c$); when it does arise under adversarial views,~$i$ will have set $\mathsf{finalize\_target} = L$ at~(R1)-time on a chain where~$L$ was canonical at height~$h_c$, so $L$ is on some height-$h_c$ canonical view of~$i$ and, if $L \preceq X$ on the current canonical view,~$v$ is canonical-fresh on~$X$; otherwise fairness may degrade (an honest~$i$ whose lock-target has fallen off its current canonical chain can only achieve Layer~1 exemption on extensions containing~$L$, not on~$X$ itself).
+\end{itemize}
+The produced vote~$v$ has $v.\height = h_c$, $v.\target = T_c \preceq X$ (non-locked branch, which is the only branch reachable under the honest schedule), and $v.\target.\slot \geq \sigma[X].s_h$ (since $\sigma[T_c].h = h_c$).
 State-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) and the hypothesis $\Sigma'.\sigma[X'].h = h_c$ give $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$ (the slot at which the current height began is the slot of the block that advanced to~$h_c$ on the common prefix; Lemma~\ref{lem:slotmono}), so~$v$ is canonical-fresh on~$X'$.
 Processing~$v$ therefore sets $\Sigma'.\sigma[X'].\mathsf{ntargets}[i] \gets \max_{\preceq}(\Sigma'.\sigma[X'].\mathsf{ntargets}[i],\, T_c) \neq \bot$.
 
