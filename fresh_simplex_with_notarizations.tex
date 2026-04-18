@@ -757,7 +757,7 @@ Each slot~$t$ in the period falls into exactly one of three categories, determin
 \end{definition}
 
 \begin{theorem}[Non-finality period penalty bound]\label{thm:tightness}
-Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is strictly greater than $(T - 1) \cdot n/3$.
+Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is at least $(T - 1) \cdot n/3$.
 \end{theorem}
 
 \begin{proof}
@@ -785,7 +785,7 @@ Layer~2 target charges strictly more than $n/3$ validators at~$t$.
 \emph{Conclusion.}
 At most one slot of the period is transition, so at least $T - 1$ slots are pending-stuck or stable-stuck.
 Each such slot contributes strictly more than $n/3$ by~(ii); Layer~1 and the remaining guards add only non-negative charges.
-Summing over the period, the total penalty increment across all validators is strictly greater than $(T - 1) \cdot n/3$.
+Summing over the period, the total penalty increment across all validators is at least $(T - 1) \cdot n/3$.
 
 The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the canonical chain and counts charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
 \end{proof}
