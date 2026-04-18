@@ -741,49 +741,30 @@ equivalently $\sigma[v.\target].h = h_c$ with $v.\target \preceq X$ (Remark~\ref
 
 \subsection{Leak tightness}
 
-\begin{theorem}[Amortized $n/3$ penalty units per slot]\label{thm:tightness}
-During any period of non-finality on the canonical chain, the total penalty units assessed across all validators by $\textsf{processInactivityPenalties}$ is at least $n/3$ per slot on average.
+\begin{definition}[Non-finality period]\label{def:non-finality-period}
+Fix the canonical chain $X = \textsf{getHead}(\Sigma)$, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on~$X$ at slot~$t$.
+A \emph{non-finality period} is a maximal interval $[t_1, t_T]$ of consecutive slots processed on~$X$ such that, at every slot~$t$ in the interval,
+\[
+  \sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J
+  \quad\text{and}\quad
+  \sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F.
+\]
+Equivalently, $F$ is stuck at some fixed value $F_0 \prec \sigma.J$ throughout the interval: a pending-finality gap is open at every slot's pre-state, and the finality branch of $\textsf{processHeight}$ does not fire anywhere in the interval.
+In particular, the \emph{transition slot} at which $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{pre}}.J$ first becomes $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ (i.e., a $J$-advance that opens the gap) lies \emph{outside} the period: its pre-state has $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{pre}}.J$, not~$\prec$.
+\end{definition}
+
+\begin{theorem}[Non-finality period penalty bound]\label{thm:tightness}
+Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is strictly greater than $T \cdot n/3$.
 \end{theorem}
 
 \begin{proof}
-Fix the canonical chain $X = \textsf{getHead}(\Sigma)$, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on~$X$ at slot~$t$.
-By the period hypothesis, $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{post}}^{(t)}.F$ at every slot~$t$ in the period.
-Partition the slots of the period by whether height advances and, if so, whether~$J$ advances.
+Fix a non-finality period $[t_1, t_T]$ with $T \geq 1$, and let $t \in [t_1, t_T]$.
+By Definition~\ref{def:non-finality-period}, $\sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F$, so the Layer~2 finalize guard in Figure~\ref{alg:leak-processslot} fires at~$t$.
+The finality branch of $\textsf{processHeight}$ did not fire at~$t$ (else $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$), so $|\sigma_{\mathrm{pre}}^{(t)}.P| < 2n/3$, whence $|\{i : i \notin \sigma_{\mathrm{pre}}^{(t)}.P\}| > n/3$.
+Layer~2 finalize therefore charges strictly more than $n/3$ validators at slot~$t$.
+Summing over the $T$ slots of the period, and noting that Layer~1 and the Layer~2 target guard can only add non-negative charges on top, the total penalty increment across all validators is strictly greater than $T \cdot n/3$.
 
-\emph{Case~1: stall slot} ($\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$).
-Neither height-advance branch of $\textsf{processHeight}$ fired, so the prefix-notarization walk summed to $< 2n/3$ on~$X$ from $\sigma.L$ down to genesis.
-By freshness (Remark~\ref{rem:fresh-equiv}), every~$i$ with $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot$ has its target on~$X$, so the walk counts it exactly once; hence $|\{i : \sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot\}| < 2n/3$, and Layer~1 charges $> n/3$ validators.
-
-\emph{Case~2: advance slot, $J$ unchanged} ($\sigma_{\mathrm{pre}}.h < \sigma_{\mathrm{post}}.h$ and $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$).
-The Layer~2 target guard $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ holds, so Layer~2 target fires with plurality target $T^*$ (possibly~$\bot$).
-The justification branch of $\textsf{processHeight}$ strictly advances~$J$ whenever it fires (Lemma~\ref{lem:slotmono}), so it did not fire this slot, giving $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T^*\}| < 2n/3$ (counting $T^* = \bot$ as~$0$).
-Hence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot\}| > n/3$, each charged~$1$ by Layer~2 target.
-
-\emph{Case~3: advance slot, $J$ updates} ($\sigma_{\mathrm{pre}}.h < \sigma_{\mathrm{post}}.h$ and $\sigma_{\mathrm{pre}}.J \neq \sigma_{\mathrm{post}}.J$).
-Call such a slot a \emph{checkpoint-update slot}.
-Layer~2 target may charge~$0$ (if $\geq 2n/3$ validators had $\mathsf{jtargets}[i] = \sigma_{\mathrm{post}}.J$).
-But finality does not advance inside the period, so $\sigma_{\mathrm{post}}.F \prec \sigma_{\mathrm{post}}.J$ --- a pending-finality window is open at the end of the slot.
-We amortize this slot against a distinct Layer~2 finalize slot later in the period.
-
-\emph{Attribution.}
-Let $t_1 < t_2 < \cdots < t_K$ be the checkpoint-update slots of the period.
-Fix a $t_j$ and let $t' > t_j$ be any later slot of the period:
-$\sigma_{\mathrm{pre}}^{(t')}.J = \sigma_{\mathrm{post}}^{(t_j)}.J$ if no checkpoint-update intervened;
-$\sigma_{\mathrm{pre}}^{(t')}.F = \sigma_{\mathrm{post}}^{(t_j)}.F$ since finality does not advance in the period;
-and $\sigma_{\mathrm{post}}^{(t_j)}.F \prec \sigma_{\mathrm{post}}^{(t_j)}.J$ since $J$ strictly advanced at~$t_j$ while~$F$ did not.
-In particular, taking $t' = t_j + 1$ (which lies in the period whenever $t_j$ is not the last slot, and never has an intervening checkpoint-update), the Layer~2 finalize guard holds at $t_j + 1$; since finality did not fire (else it would advance), $|\sigma_{\mathrm{pre}}^{(t_j + 1)}.P| < 2n/3$ and Layer~2 finalize charges $> n/3$ validators there.
-
-For each $j$ such that $t_j$ is not the last slot of the period, attribute $t_j$ to~$t_j + 1$.
-The targets $t_j + 1$ are distinct across~$j$, so the attribution is injective.
-The charge it ``takes'' from $t_j + 1$ is the Layer~2 finalize charge ($> n/3$), which is independent of any Case~1 or Case~2 charge that may also apply at $t_j + 1$; the two are summed by $\textsf{processInactivityPenalties}$.
-At most one checkpoint-update ($t_K$, when $t_K$ is the period's last slot) remains unattributed; dropping it contributes an $O(1)$ correction, negligible in the per-slot average.
-
-Summing over the period:
-every Case~1 or Case~2 slot contributes $> n/3$ via its case-direct charge;
-every attributed Case~3 slot is covered by an injectively-assigned Layer~2 finalize charge at $t_j + 1$, also $> n/3$, disjoint from the case-direct charges.
-The total is $\geq (T - 1) \cdot n/3$ where~$T$ is the period length (at most one slot is excluded), so the average is $\geq (T-1)/T \cdot n/3$, which is~$\geq n/3$ up to an $O(1/T)$ correction.
-
-The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}$ and $\sigma_{\mathrm{post}}$ on the canonical chain and counts penalty increments directly from $\textsf{processInactivityPenalties}$, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
+The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the canonical chain and counts Layer~2 finalize charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
 \end{proof}
 
 \subsection{Honest voting rule}
