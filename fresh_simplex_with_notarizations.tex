@@ -875,13 +875,12 @@ If any $C_J$-tuple exists at height~$h$, the $\mathbf{1}[\cdot \in C_J]$-bit for
 If $h = 0$, then $N = \genesis \preceq R_s$ trivially (Theorem~\ref{thm:fleqr}).
 Assume $h \geq 1$.
 Since $F_s$ is either genesis or a block finalized on some chain (Remark~\ref{rem:fs-invariant}), and $N$'s tuple has height~$h \geq h_{F_s}$ (because~$h$ is the maximum in~$C_N$ and $(F_s, h_{F_s}, F_s.\slot) \in C_J \subseteq C_N$), Lemma~\ref{lem:certchain} gives $F_s \sim N$; strict descent applies when $h > h_{F_s}$.
-We show $N \preceq R_s$ by cases:
+We show $N \preceq R_s$ by cases (exhaustive by $F_s \sim N$, with $F_s = N$ falling into the first case by reflexivity of~$\preceq$):
 \begin{itemize}
   \item If $N \preceq F_s$: Theorem~\ref{thm:fleqr} gives $N \preceq F_s \preceq R_s$.
   \item If $F_s \prec N$: $N$'s tuple is a strict-descendant candidate at the first step of $\textsf{computeRoot}$ from~$F_s$.
   Any other strict-descendant tuple $(X', h', s') \in C_N$ has $h' \leq h$ (maximality of~$h$), so its key is lex-dominated by~$N$'s, unless $h' = h$, where~$N$ is the chosen lex-max by construction (Step~1).
   Hence the walk's first step picks~$N$'s tuple, so $N \preceq R_s$.
-  \item If $F_s = N$: Theorem~\ref{thm:fleqr} gives $N = F_s \preceq R_s$.
 \end{itemize}
 
 \emph{Step 3: $N \preceq X$.}
