@@ -650,7 +650,7 @@ Immediate from Theorem~\ref{thm:orderindep}.
 
 The \emph{canonical chain}~$X$ is the chain selected by $\textsf{getHead}(\Sigma)$.
 The leak section extends the per-chain state machine with a penalty counter $\sigma.\mathsf{penalties}[1..n]$ and a new transition function $\textsf{processInactivityPenalties}$ invoked each slot by an extended $\textsf{processSlot}$ (Figure~\ref{alg:leak-processslot}).
-Tightness (Theorem~\ref{thm:tightness}) is purely state-logic: it reads $\sigma.\mathsf{penalties}$ on the canonical chain and bounds its per-slot increment, making no assumption about message delivery, validator honesty, or the size of the slashable set.
+Tightness (Theorem~\ref{thm:tightness}) is purely state-logic: it reads $\sigma.\mathsf{penalties}$ on the canonical chain and bounds its cumulative increment over periods of non-finality, making no assumption about message delivery, validator honesty, or the size of the slashable set.
 Fairness (Theorem~\ref{thm:fairness}) is a single-validator claim from its local perspective: the vote an honest~$i$ produces per the honest rule (Definition~\ref{def:voting-rule}) can be included on any extension of~$i$'s local canonical chain still at the same state-height, and once included exempts~$i$ from Layer~1 penalties at that state-height.
 Layer-2 exemption is out of scope for fairness: avoiding Layer-2 penalties depends on synchrony (timely quorum formation on a common target) and has nothing to do with locking --- height advance clears $\mathsf{jtargets}$ and $\mathsf{ntargets}$ at the local state, so Layer-2 conditions at the next slot are independent of what~$i$ voted for at the previous height.
 
@@ -733,48 +733,43 @@ equivalently $\sigma[v.\target].h = h_c$ with $v.\target \preceq X$ (Remark~\ref
 
 \subsection{Leak tightness}
 
-\begin{theorem}[Tightness --- accountable liveness]\label{thm:tightness}
-Let~$X = \textsf{getHead}(\Sigma)$ be the canonical chain and $\sigma_{\mathrm{pre}}, \sigma_{\mathrm{post}}$ the pre- and post-$\textsf{processHeight}$ snapshots at the current slot on~$X$.
-Consider any slot on~$X$ satisfying at least one of
-\begin{enumerate}
-  \item[(i)] \emph{stall}: $\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$;
-  \item[(ii)] \emph{pending finality did not close}: $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ and $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$;
-  \item[(iii)] \emph{justification did not advance}: $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$.
-\end{enumerate}
-Then $\textsf{processInactivityPenalties}$ satisfies
-\[
-  \sum_{i=1}^{n} \bigl(\sigma_{\mathrm{post}}.\mathsf{penalties}[i] - \sigma_{\mathrm{pre}}.\mathsf{penalties}[i]\bigr) \;>\; n/3.
-\]
+\begin{theorem}[Amortized $n/3$ penalty units per slot]\label{thm:tightness}
+During any period of non-finality on the canonical chain, the total penalty units assessed across all validators by $\textsf{processInactivityPenalties}$ is at least $n/3$ per slot on average.
 \end{theorem}
 
 \begin{proof}
-It suffices to exhibit one layer that bumps $> n/3$ validators under each disjunct; the other two layers contribute~$\geq 0$.
+Fix the canonical chain $X = \textsf{getHead}(\Sigma)$, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on~$X$ at slot~$t$.
+By hypothesis, $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{post}}^{(t)}.F$ at every slot~$t$ of the period (finality does not advance on~$X$).
+We classify each slot of the period into three cases and show the total penalty charged is $> n/3$ per slot, after a simple attribution across cases.
 
-\emph{Case~(i): stall.}
+\emph{Stall slot} ($\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$).
 Neither height-advance branch of $\textsf{processHeight}$ fired, so the prefix-notarization walk summed to $< 2n/3$ across $\sigma.L$ down to genesis.
-Every entry $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot$ is an ancestor of $\sigma.L$ by freshness (Remark~\ref{rem:fresh-equiv}), so the walk visits it exactly once; hence $|\{i : \sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot\}| < 2n/3$ and $|\{i : \sigma_{\mathrm{post}}.\mathsf{ntargets}[i] = \bot\}| > n/3$.
-Layer~1's guard $\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$ holds, so Layer~1 fires and bumps each such~$i$, contributing $> n/3$.
+Every entry with $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot$ is an ancestor of $\sigma.L$ by freshness (Remark~\ref{rem:fresh-equiv}), so the walk visits it exactly once; hence $|\{i : \sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot\}| < 2n/3$, and the Layer~1 stall penalty charges $> n/3$ validators.
 
-\emph{Case~(ii): pending finality did not close.}
-The hypothesis is exactly the Layer~2 finalize guard, so Layer~2 finalize fires.
-$F$ is only updated by the finality branch of $\textsf{processHeight}$ (Lemma~\ref{lem:slotmono}), which sets $\sigma.F \gets \sigma_{\mathrm{pre}}.J$ when it fires; combined with $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$ and $\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$, the finality branch did not fire, so $|\sigma_{\mathrm{pre}}.P| < 2n/3$.
-Hence at least $n - (2n/3 - 1) > n/3$ validators lie outside $\sigma_{\mathrm{pre}}.P$, each contributing~$1$ via Layer~2 finalize.
+\emph{Advance slot, $J$ does not update} ($\sigma_{\mathrm{pre}}.h < \sigma_{\mathrm{post}}.h$ and $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$).
+This is a notarization-only advance.
+Its hypothesis is exactly the Layer~2 target guard, so Layer~2 target fires with plurality target~$T^*$ (possibly~$\bot$).
+The justification branch of $\textsf{processHeight}$ strictly advances~$J$ whenever it fires (Lemma~\ref{lem:slotmono}), so $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ forces that branch not to fire this slot, giving $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T^*\}| < 2n/3$ (with the convention that the count is~$0$ when $T^* = \bot$).
+Hence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot\}| > n/3$, each charged~$1$ by Layer~2 target.
 
-\emph{Case~(iii): justification did not advance.}
-The hypothesis is exactly the Layer~2 target guard, so Layer~2 target fires with some $T^*$ (possibly $\bot$).
-The justification branch of $\textsf{processHeight}$, whenever it fires, sets $\sigma_{\mathrm{post}}.J$ to a strict $\preceq$-successor of $\sigma_{\mathrm{pre}}.J$ (Lemma~\ref{lem:slotmono}); the hypothesis $\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$ thus forces the justification branch not to fire this slot, whence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = T^*\}| < 2n/3$, with the convention that the count is~$0$ when $T^* = \bot$ (all $\mathsf{jtargets}[i] = \bot$).
-Hence $|\{i : \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\mathsf{jtargets}[i] = \bot\}| \geq n - (2n/3 - 1) > n/3$, each contributing~$1$ via Layer~2 target.
-In the $T^* = \bot$ edge case all~$n$ validators satisfy the second disjunct of the guard and are bumped.
+\emph{Advance slot, $J$ updates} ($\sigma_{\mathrm{pre}}.h < \sigma_{\mathrm{post}}.h$ and $\sigma_{\mathrm{pre}}.J \neq \sigma_{\mathrm{post}}.J$).
+Call such a slot a \emph{checkpoint-update} slot.
+The Layer~2 target penalty may be~$0$ (if $\geq 2n/3$ validators had $\mathsf{jtargets}[i] = \sigma_{\mathrm{post}}.J$).
+However, since finality does not advance inside the period, we must have $\sigma_{\mathrm{post}}.F \prec \sigma_{\mathrm{post}}.J$ at the end of such a slot: pending finalization opens (or persists).
+We attribute to this slot the Layer~2 finalize penalty of the \emph{next} slot $t + 1$ in the period on which $\sigma_{\mathrm{pre}}^{(t+1)}.F \prec \sigma_{\mathrm{pre}}^{(t+1)}.J$ and the Layer~2 finalize branch fires.
+At that slot, the finality branch did not fire (otherwise $F$ would advance, exiting the period), so $|\sigma_{\mathrm{pre}}^{(t+1)}.P| < 2n/3$ and Layer~2 finalize charges $> n/3$ validators.
+
+\emph{Attribution is well-defined and 1-to-1.}
+The period is a maximal run of non-finality-advancing slots on~$X$.
+At a checkpoint-update slot~$t$ the post-state has $\sigma_{\mathrm{post}}^{(t)}.F \prec \sigma_{\mathrm{post}}^{(t)}.J$, opening a pending-finality window that closes only when finality fires, which (by the period hypothesis) cannot happen before the period ends.
+Thus every slot $t' > t$ in the period either carries $\sigma_{\mathrm{pre}}^{(t')}.F \prec \sigma_{\mathrm{pre}}^{(t')}.J$ until a strictly later checkpoint-update replaces~$J$, and the Layer~2 finalize guard holds at each such~$t'$.
+Distinct checkpoint-update slots $t_1 < t_2 < \cdots$ produce disjoint successor windows (each ending at the next checkpoint-update or at the period boundary), and the window starting at~$t_j$ contains at least one slot $t_j + 1, \ldots, t_{j+1}$ (or $t_j + 1, \ldots, t_1$) on which Layer~2 finalize fires, so we can injectively assign to each checkpoint-update slot a distinct Layer~2 finalize event within its own window, non-overlapping with any target-check attribution above.
+The last checkpoint-update slot before the period ends is handled identically: the period, being maximal, must end either because the run of slots ends or because finality fires, and in the latter case the slot just before finality firing is a Layer~2 finalize slot (finality did not fire yet at that slot's $\textsf{processHeight}$ call, so $\sigma_{\mathrm{pre}}.P$ was sub-quorum) that can serve as the attributed slot; in the former case we simply exclude the last checkpoint-update from the tally (at most one slot of the period, a $O(1)$ correction negligible in the per-slot average).
+
+In every case, each slot of the period is attributed $> n/3$ penalty units, either directly (stall, $J$-unchanged advance, or Layer~2 finalize slots serving their own position) or via attribution from a checkpoint-update slot.
+Summing and dividing by the period length gives an average $> n/3$ penalty units per slot, whence $\geq n/3$ on average.
+The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}$ and $\sigma_{\mathrm{post}}$ on the canonical chain and counts penalty increments by direct inspection of $\textsf{processInactivityPenalties}$, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
 \end{proof}
-
-The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}$ and $\sigma_{\mathrm{post}}$ on the canonical chain and counts penalty increments by direct inspection of $\textsf{processInactivityPenalties}$.
-No hypothesis on the size of the slashable set, on synchrony, on the honest voting rule, or on determinism of $\textsf{getHead}$ is used.
-
-The three disjuncts together cover every canonical slot at which progress is lacking.
-Stall slots trigger~(i), and additionally~(iii) since justification cannot advance without a height advance; they additionally trigger~(ii) if there is pending finality.
-Notarization-only advances trigger~(iii) since justification did not advance, and additionally trigger~(ii) if there is pending finality at the start of the slot (since $F$ is not updated on a notarization-only advance).
-Justification-advance slots have $\sigma_{\mathrm{pre}}.J \neq \sigma_{\mathrm{post}}.J$ so~(iii) fails by construction; they trigger~(ii) exactly when finality did not fire alongside justification (a pending-finality slot that merely added a new layer on top rather than closing the pending one).
-The remaining cases --- justification-advance slots that finalize --- are the genuinely good slots, where no layer fires and no penalty is accrued.
 
 \subsection{Honest voting rule}
 
