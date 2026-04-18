@@ -794,7 +794,7 @@ A validator~$i$ acts at each voting opportunity at the current canonical height~
 \begin{enumerate}
   \item[(R1)] If $i$ has not yet cast any vote at height~$h_c$: cast a $\just$ vote
   \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \just,\; f_h,\; f_t) \]
-  with target $T_c$ selected as above (under the honest schedule, the locked-at-$h_c$ branch is vacuous at (R1), since locks at~$h_c$ are only ever created via some prior (R1)-at-$h_c + 1$ with finalize-fields $(h_c, J)$; but since canonical is still at~$h_c$ at (R1), no such prior (R1) can have fired) and finalize-fields
+  with target $T_c$ selected as above and finalize-fields
   \[
     (f_h,\, f_t) \;=\;
     \begin{cases}
@@ -814,7 +814,7 @@ Because (R1)/(R2) are evaluated against the \emph{current} canonical height~$h_c
 Under synchrony, $f < n/3$, and deterministic $\textsf{getHead}$, honest validators share the same canonical state (Corollary~\ref{cor:agreement}) and agree on~$T$, so the first-slot $\just$ quorum for~$T$ forms at~$h_c$ and justification fires.
 Rule~(R2) is the \emph{resubmission} fallback for later slots at the same canonical height, when the (R1) $\just$ quorum did not form on canonical (heterogeneous (R1) targets across views): the $\notar$ vote's prefix counting may still notarize a common ancestor.
 Selecting the canonical~$T$ freshly at each (R2) ensures the $\notar$ vote points at the block currently judged canonical by~$i$; if~$i$'s canonical view has shifted between (R1) and (R2), (R2) follows the shift.
-The lock clause is included for well-definedness and E1-safety under adversarial views or retries --- under the honest schedule it is unreachable at~$h_c$, since a validator can only be locked at~$h_c$ through a prior (R1)-at-$h_c+1$ with finalize-fields $(h_c, J)$, and such a vote cannot have been cast while the current canonical state is still at height~$h_c$.
+The lock clause is included for well-definedness and E1-safety under adversarial views or retries.
 In particular, (R2) fires at every slot while canonical remains at~$h_c$, so the validator's $\mathsf{ntargets}$ entry stays populated on every chain that keeps processing its new votes.
 This means processing old votes is never necessary for progress: validators re-emit their vote every slot while at height~$h_c$, and old votes can be discarded.
 Each (R1) vote optionally commits to finalize the canonical justified block~$J$ at height~$h_j$ via $(\mathsf{finalize\_height},\, \mathsf{finalize\_target}) = (h_j,\, J)$, which places the validator in~$P$ once the $(J, h_j)$-state is processed.
@@ -856,29 +856,79 @@ Layer-2 exemption is out of scope: avoiding Layer-2 target (matching the plurali
 In particular, the freshness-reset of $\mathsf{jtargets}$ and $\mathsf{ntargets}$ at each height advance (Figure~\ref{alg:state-machine}) means that the Layer-2 state at slot~$s+1$ is independent of~$i$'s votes cast at heights strictly below the current height, so there is no ``lock'' issue obstructing fairness.
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
-Let~$i$ be an honest validator following Definition~\ref{def:voting-rule}, $\Sigma$ its local store, $X = \textsf{getHead}(\Sigma)$ the canonical chain it sees, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
+Unless $\geq n/3$ validators are slashable: let~$i$ be an honest validator following Definition~\ref{def:voting-rule}, $\Sigma$ its local store, $X = \textsf{getHead}(\Sigma)$ the canonical chain it sees, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
 Let $v$ be the vote~$i$ produces at the current slot.
 Let $\Sigma'$ be any store obtained by processing a set of additional blocks and votes on top of~$\Sigma$ such that $X' = \textsf{getHead}(\Sigma')$ is an extension of~$X$ with $\Sigma'.\sigma[X'].h = h_c$ (i.e., canonical on~$\Sigma'$ is still at state-height~$h_c$), and suppose~$v$ is included on~$X'$.
 Then for every slot processed on~$X'$ from that point onward while canonical state-height remains~$h_c$, the Layer~1 increment to $\sigma.\mathsf{penalties}[i]$ on canonical is zero.
 \end{theorem}
 
 \begin{proof}
-At the voting opportunity, (R1) or (R2) fires with target $T_c$ selected per Definition~\ref{def:voting-rule} (target selection).
-We show $T_c \preceq X$ with $\sigma[T_c].h = h_c$ by cases on the target-selection branch:
+The proof shows that the target $T_c$ selected by Definition~\ref{def:voting-rule} at~$i$'s voting opportunity satisfies $T_c \preceq X$ with $\sigma[T_c].h = h_c$; canonical-freshness on~$X'$ then follows as before, and Layer~1 does not bump~$i$.
+We argue directly, case-splitting on $h_c$; the locked branch (if reached) is resolved by analyzing the walk $\textsf{computeRoot}$ that produced $R_s$, and showing $T_c \preceq X$ also in that case.
+
+\emph{Step 1: identify the walk's top-tier block~$N$.}
+Let~$h \geq 0$ be the maximum of $h'$ over all tuples $(X', h', s) \in \Sigma.C_N$ (well-defined: the genesis tuple $(\genesis, 0, 0) \in C_N$).
+Let~$N$ be the block of the tuple $(N, h, s_N) \in \Sigma.C_N$ selected as the lex-maximum over the set $\{(X', h, s) \in C_N\}$ under the key $(h, \mathbf{1}[\cdot \in C_J], s, \mathsf{hash}(\cdot))$ (total order; argmax unique since block hashes are unique).
+If any $C_J$-tuple exists at height~$h$, the $\mathbf{1}[\cdot \in C_J]$-bit forces~$N$'s tuple to lie in~$C_J$.
+
+\emph{Step 2: $N \preceq R_s$.}
+If $h = 0$, then $N = \genesis \preceq R_s$ trivially (Theorem~\ref{thm:fleqr}).
+Assume $h \geq 1$.
+Since $F_s$ is either genesis or a block finalized on some chain (Remark~\ref{rem:fs-invariant}), and $N$'s tuple has height~$h \geq h_{F_s}$ (because~$h$ is the maximum in~$C_N$ and $(F_s, h_{F_s}, F_s.\slot) \in C_J \subseteq C_N$), Lemma~\ref{lem:certchain} gives $F_s \sim N$; strict descent applies when $h > h_{F_s}$.
+We show $N \preceq R_s$ by cases:
 \begin{itemize}
-  \item \emph{Non-locked branch.} $T_c = T$ is the canonical target at~$\sigma[X]$ \emph{now}: an ancestor of~$X$ with $\sigma[T].h = h_c$ (Remark~\ref{rem:fresh-equiv}), so $T_c \preceq X$ with $\sigma[T_c].h = h_c$ by construction.
-  \item \emph{Locked branch.} $T_c = L$ is the $\mathsf{finalize\_target}$ of some prior vote of~$i$ with $\mathsf{finalize\_height} = h_c$. Under the honest schedule this branch is unreachable at height~$h_c$ (as noted after Definition~\ref{def:voting-rule}, a lock at~$h_c$ is created only via an (R1)-at-$h_c + 1$ with finalize-fields $(h_c, J)$, which cannot have been cast while canonical is still at~$h_c$); when it does arise under adversarial views,~$i$ will have set $\mathsf{finalize\_target} = L$ at~(R1)-time on a chain where~$L$ was canonical at height~$h_c$, so $L$ is on some height-$h_c$ canonical view of~$i$ and, if $L \preceq X$ on the current canonical view,~$v$ is canonical-fresh on~$X$; otherwise fairness may degrade (an honest~$i$ whose lock-target has fallen off its current canonical chain can only achieve Layer~1 exemption on extensions containing~$L$, not on~$X$ itself).
+  \item If $N \preceq F_s$: Theorem~\ref{thm:fleqr} gives $N \preceq F_s \preceq R_s$.
+  \item If $F_s \prec N$: $N$'s tuple is a strict-descendant candidate at the first step of $\textsf{computeRoot}$ from~$F_s$.
+  Any other strict-descendant tuple $(X', h', s') \in C_N$ has $h' \leq h$ (maximality of~$h$), so its key is lex-dominated by~$N$'s, unless $h' = h$, where~$N$ is the chosen lex-max by construction (Step~1).
+  Hence the walk's first step picks~$N$'s tuple, so $N \preceq R_s$.
+  \item If $F_s = N$: Theorem~\ref{thm:fleqr} gives $N = F_s \preceq R_s$.
 \end{itemize}
-The produced vote~$v$ has $v.\height = h_c$, $v.\target = T_c \preceq X$ (non-locked branch, which is the only branch reachable under the honest schedule), and $v.\target.\slot \geq \sigma[X].s_h$ (since $\sigma[T_c].h = h_c$).
-State-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) and the hypothesis $\Sigma'.\sigma[X'].h = h_c$ give $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$ (the slot at which the current height began is the slot of the block that advanced to~$h_c$ on the common prefix; Lemma~\ref{lem:slotmono}), so~$v$ is canonical-fresh on~$X'$.
-Processing~$v$ therefore sets $\Sigma'.\sigma[X'].\mathsf{ntargets}[i] \gets \max_{\preceq}(\Sigma'.\sigma[X'].\mathsf{ntargets}[i],\, T_c) \neq \bot$.
+
+\emph{Step 3: $N \preceq X$.}
+$X = \textsf{getHead}(\Sigma)$ returns a block descending from~$R_s$ (Figure~\ref{alg:store}), so $R_s \preceq X$; combining with Step~2, $N \preceq X$.
+Freshness (Remark~\ref{rem:fresh-equiv}) gives $\sigma[N].h = h$; with $N \preceq X$ and state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}), $\sigma[X].h \geq h$, i.e., $h_c \geq h$.
+
+\emph{Step 4: $h_c \in \{h, h+1\}$.}
+Every state-height advance from some $h'$ to~$h' + 1$ on~$X$ is gated by a height-$h'$ justification or prefix-notarization quorum (Lemma~\ref{lem:heightprog}), which at processing time inserts a tuple $(N', h', N'.\slot) \in C_N$.
+Since~$h$ is the maximum height in~$C_N$, no advance past state-height~$h + 1$ can have fired on~$X$ (such an advance would require a height-$(h+1)$ cert, hence a tuple at height~$h+1$ in~$C_N$, contradicting maximality of~$h$).
+Combined with Step~3, $h \leq h_c \leq h+1$.
+
+\emph{Step 5: Case $h_c = h + 1$.}
+The current voting opportunity is at height~$h + 1$, not~$h$; Definition~\ref{def:voting-rule}'s lock condition \emph{at~$h_c$} concerns prior votes with $\mathsf{finalize\_height} = h_c = h+1$.
+Since~$i$ follows Definition~\ref{def:voting-rule}, such a lock can only have been created via a prior (R1) with finalize-fields $(h_c, J_\ast) = (h + 1, J_\ast)$, where $J_\ast$ was justified at $h_j = h + 1$ at that firing.
+Justification at height~$h+1$ inserts a $C_J$-tuple at height~$h+1$ into~$\Sigma.C_J \subseteq \Sigma.C_N$ (and the tuple is never removed; cf.~the $(J, h_j)$-tracking in Figure~\ref{alg:store}), which contradicts the maximality of~$h$ in~$C_N$ (Step~1).
+Hence no such prior (R1) can have fired, and the locked-at-$h_c$ branch is empty.
+The non-locked branch gives $T_c = T$, the canonical target at $\sigma[X]$ now: $T \preceq X$ with $\sigma[T].h = h_c = h + 1$ (Remark~\ref{rem:fresh-equiv}).
+
+\emph{Step 6: Case $h_c = h$, sub-case ``justification at height~$h$ exists''.}
+Sub-case hypothesis: some $C_J$-tuple at height~$h$ is in~$\Sigma.C_J$.
+By Step~1's tiebreak,~$N$ is the block of a $C_J$-tuple at height~$h$; hence~$N$ was justified at height~$h$ on some chain~$Y$, so $\sigma_Y[N].h_j = h$ on that chain.
+\emph{Uniqueness of justified blocks at height~$h$}: under $f < n/3$ (the $\geq n/3$-slashable hypothesis is negated by the theorem statement) and all honest validators following Definition~\ref{def:voting-rule}, each honest validator casts at most one $\just$ vote at height~$h$ (R1 fires at most once per height per validator); if two blocks~$N$,~$N'$ were each justified at height~$h$ (each backed by a $\just$-quorum of size $\geq 2n/3$), quorum intersection would yield $\geq n/3$ validators each casting two distinct-target $\just$ votes at height~$h$, contradicting the honest R1-once-per-height behavior for all but $< n/3$ of them, i.e.,~$\geq n/3$ slashable under the faultset accounting; under the theorem's hypothesis this is excluded.
+Hence any $C_J$-tuple at height~$h$ has block exactly~$N$.
+
+If~$i$ is \emph{locked at}~$h_c = h$, then~$i$ previously cast an (R1) vote with finalize-fields $(h, J_\ast)$ where $J_\ast$ was the canonical justified block at $h_j = h$ at that firing; by the argument above, $J_\ast = N$ (the unique block justifiable at height~$h$).
+Hence $T_c = L = J_\ast = N$, and by Step~3 $T_c = N \preceq X$ with $\sigma[T_c].h = \sigma[N].h = h = h_c$.
+If~$i$ is \emph{not locked at}~$h_c = h$, the non-locked branch gives $T_c = T \preceq X$ with $\sigma[T].h = h_c$ directly from Remark~\ref{rem:fresh-equiv}.
+
+\emph{Step 7: Case $h_c = h$, sub-case ``no justification at height~$h$''.}
+Sub-case hypothesis: no $C_J$-tuple at height~$h$ exists in~$\Sigma.C_J$.
+No honest validator (in particular~$i$) can be locked at~$h_c = h$: a lock at~$h_c$ is created only via a prior (R1) with finalize-fields $(h_c, J_\ast)$ where $J_\ast$ was justified at $h_j = h_c = h$ at that firing.
+At that firing, the block justified at height~$h$ on~$i$'s canonical view must have been processed into~$i$'s store and entered~$C_J$ at height~$h$ (blocks are processed parent-first, and a $J$-update on a post-state carries a $(J, h_j)$ that gets recorded in~$C_J$); the $C_J$-tuple is never removed thereafter.
+Since no such tuple exists now, no such prior firing happened, and~$i$ is not locked at~$h_c = h$.
+The non-locked branch applies: $T_c = T \preceq X$ with $\sigma[T].h = h_c$ (Remark~\ref{rem:fresh-equiv}).
+
+\emph{Step 8: freshness and Layer~1.}
+In all cases above, $T_c \preceq X$ with $\sigma[T_c].h = h_c$.
+The produced vote~$v$ has $v.\height = h_c$, $v.\target = T_c \preceq X$, and $v.\target.\slot \geq \sigma[X].s_h$ (since $\sigma[T_c].h = h_c$, Remark~\ref{rem:fresh-equiv}).
+By Lemma~\ref{lem:slotmono} and the hypothesis $\Sigma'.\sigma[X'].h = h_c$, $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$, so~$v$ is canonical-fresh on~$X'$.
+Processing~$v$ sets $\Sigma'.\sigma[X'].\mathsf{ntargets}[i] \gets \max_{\preceq}(\Sigma'.\sigma[X'].\mathsf{ntargets}[i],\, T_c) \neq \bot$.
 
 Layer~1 of $\textsf{processInactivityPenalties}$ (Figure~\ref{alg:leak-processslot}) fires at a slot iff $\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$, in which case it bumps every~$j$ with $\sigma_{\mathrm{post}}.\mathsf{ntargets}[j] = \bot$.
-$\mathsf{ntargets}$ is reset to~$\bot^n$ only when $\textsf{processHeight}$ advances~$h$; along the extension of~$X'$ while canonical state-height stays at~$h_c$, no height advance fires on the canonical post-state, so $\mathsf{ntargets}[i] \neq \bot$ persists on canonical from the slot at which~$v$ is included onward, for as long as canonical stays at~$h_c$.
-Hence $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot$ from the slot at which~$v$ is included onward, for as long as canonical stays at~$h_c$, and Layer~1 does not bump~$i$.
+$\mathsf{ntargets}$ is reset to~$\bot^n$ only when $\textsf{processHeight}$ advances~$h$; along the extension of~$X'$ while canonical state-height stays at~$h_c$, no height advance fires, so $\mathsf{ntargets}[i] \neq \bot$ persists on canonical from the slot at which~$v$ is included onward.
+Hence Layer~1 does not bump~$i$.
 \end{proof}
 
-The statement makes no assumption about $f < n/3$, synchrony, determinism of $\textsf{getHead}$, or what other validators vote; it only requires that~$i$ follow Definition~\ref{def:voting-rule} locally and that~$v$ actually be included on the extension.
-Layer~2 analysis would require additional hypotheses (synchrony, $f < n/3$, enough honest validators on the relevant chain at the relevant slot) that are genuinely orthogonal to fairness as a local guarantee.
+The hypothesis ``$\geq n/3$ validators are not slashable'' is used only in Step~6 (uniqueness of justified blocks at height~$h$) and implicitly in Step~2 (Lemma~\ref{lem:certchain}); it is what forces the locked branch's target~$L$ to coincide with the walk's~$N$, hence to lie on canonical.
+Layer~2 analysis would require additional hypotheses (synchrony, enough honest validators on the relevant chain at the relevant slot) that are genuinely orthogonal to fairness as a local guarantee.
 
 \end{document}
