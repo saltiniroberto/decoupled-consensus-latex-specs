@@ -329,7 +329,7 @@ Reaching $h'$ from $h$ therefore requires $h' - h$ successive increments, each s
 
 \begin{lemma}[Checkpoint monotonicity]\label{lem:slotmono}
 On any chain, the fields $s$, $h$, $h_j$, $h_n$, $s_h$, $F$, $J$, $N$ are non-decreasing along~$\preceq$, with $F \preceq J \preceq N$ at all times.
-Moreover $J$ and $h_j$ advance only on justification events, and $s_h$ advances only on height-advances, each time being set to the slot of the advancing block.
+Moreover $J$ and $h_j$ advance only on justification events, $h_n$ advances only on height-advances, and $s_h$ advances only on height-advances, each time being set to the slot of the advancing block.
 Consequently, whenever $\sigma[Y].h = h$, the blocks on~$Y$ at state-height exactly~$h$ are $\{B' \preceq Y : B'.\slot \geq \sigma[Y].s_h\}$.
 \end{lemma}
 
@@ -365,12 +365,13 @@ Unless $\geq n/3$ validators are slashable: if~$C$ is finalized at height~$h$, t
 \end{lemma}
 
 \begin{proof}
-Since $\sigma[B].h > h$, Lemma~\ref{lem:heightprog} gives a block $B^* \preceq B$ at which the advance from height~$h$ to~$h+1$ fired, via a height-$h$ justification or prefix-notarization quorum~$Q$: each $i \in Q$ contributed a vote~$a_i$ with $a_i.\height = h$ processed freshly on the chain ending at~$B^*$ (directly for $\just$; for prefix $\notar$, the $\mathsf{ntargets}$-update rule records only fresh votes).
+Since $\sigma[B].h > h$, Lemma~\ref{lem:heightprog} gives a block $B^* \preceq B$ at which the advance from height~$h$ to~$h+1$ fired, via a height-$h$ justification or prefix-notarization quorum~$Q$.
+Each $i \in Q$ contributed a vote~$a_i$ with $a_i.\height = h$ processed freshly on the chain ending at~$B^*$ (directly for $\just$; for prefix $\notar$, the $\mathsf{ntargets}$-update rule records only fresh votes).
 Finality of~$C$ at height~$h$ gives a quorum~$Q_F$ of validators each signing a vote~$b$ with $b.\mathsf{finalize\_height} = h$ and $b.\mathsf{finalize\_target} = C$.
 
 By quorum intersection $|Q \cap Q_F| \geq n/3$; pick any $v \in Q \cap Q_F$ not slashable.
-Applying E1 to $v$'s votes~$a \in Q$ and $b \in Q_F$: $b$ carries a finalize commitment to~$C$ at height~$h$, and $a.\height = h$, so $a.\target \neq C$ would be slashable.
-Hence $a.\target = C$, and freshness of~$a$ on~$B^*$'s chain gives $C = a.\target \preceq B^* \preceq B$.
+Applying E1 (Definition~\ref{def:slashing}) to $v$'s votes~$a \in Q$ and $b \in Q_F$: $b$ carries a finalize commitment to~$C$ at height~$h$, and $a.\height = h$, so $a.\target \neq C$ would be slashable.
+Hence $a.\target = C$, and freshness gives $a.\target \preceq B^*$, so $C \preceq B^* \preceq B$.
 \end{proof}
 
 \begin{lemma}[Finalized blocks form a chain]\label{lem:finchain}
@@ -383,8 +384,8 @@ Relabelling if necessary, assume $h \leq h'$.
 \emph{Case $h = h'$.}
 Finality of~$C$ at height~$h$ gives a quorum~$Q_F$ each signing a vote with $\mathsf{finalize\_height} = h$ and $\mathsf{finalize\_target} = C$.
 Finality of~$C'$ at height~$h$ implies justification of~$C'$ at height~$h$, giving a $\just$-quorum~$Q'$ each signing a vote with $\height = h$ and $\target = C'$.
-By quorum intersection $|Q_F \cap Q'| \geq n/3$; for any shared signer~$v$, E1 applied to $v$'s votes in~$Q_F$ and~$Q'$ forces $C = C'$ or renders~$v$ slashable.
-Under the hypothesis, some such~$v$ is not slashable, so $C = C'$.
+By quorum intersection $|Q_F \cap Q'| \geq n/3$; since $< n/3$ validators are slashable, pick $v \in Q_F \cap Q'$ not slashable.
+E1 (Definition~\ref{def:slashing}) applied to $v$'s votes in~$Q_F$ and~$Q'$ forces $C = C'$.
 
 \emph{Case $h < h'$.}
 Let~$Z$ be the chain (identified with its tip) on which~$C'$ was finalized, taken at the post-state where the finalize-quorum for~$C'$ closed.
@@ -647,7 +648,7 @@ The leak section extends the per-chain state of Section~1 (Figure~\ref{alg:state
 The extension is active in this section only; $\textsf{processBlock}$, $\textsf{processHeight}$, and $\textsf{processVote}$ are unchanged.
 
 Two results follow.
-Tightness (Theorem~\ref{thm:tightness}) is purely state-logic: it reads $\sigma.\mathsf{penalties}$ on the canonical chain and bounds its cumulative increment over periods of non-finality, assuming nothing about message delivery, honesty, or the size of the slashable set.
+Tightness (Theorem~\ref{thm:tightness}) is purely state-logic: it reads $\sigma.\mathsf{penalties}$ on any single chain and bounds its cumulative increment over periods of non-finality on that chain, assuming nothing about message delivery, honesty, or the size of the slashable set.
 Fairness (Theorem~\ref{thm:fairness}) is local to a single validator: the vote an honest~$i$ produces per the honest rule (Definition~\ref{def:voting-rule}), once included on any extension of~$i$'s canonical chain still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
 Layer-2 exemption is out of scope: it depends on timely quorum formation on a common target, not on any local property of~$i$.
 Height advances reset $\mathsf{jtargets}$ and $\mathsf{ntargets}$, so the next slot's Layer-2 state does not depend on~$i$'s votes at prior heights and no ``lock'' issue arises.
@@ -742,8 +743,8 @@ equivalently $\sigma[v.\target].h = h_c$ with $v.\target \preceq X$ (Remark~\ref
 \subsection{Leak tightness}
 
 \begin{definition}[Non-finality period]\label{def:non-finality-period}
-Fix the canonical chain $X = \textsf{getHead}(\Sigma)$, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on~$X$ at slot~$t$.
-A \emph{non-finality period} is a maximal interval $[t_1, t_T]$ of consecutive slots processed on~$X$ such that, at every slot~$t$ in the interval,
+Fix any chain on which slots are processed, and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for the pre/post-$\textsf{processHeight}$ snapshots on that chain at slot~$t$.
+A \emph{non-finality period} is a maximal interval $[t_1, t_T]$ of consecutive slots processed on the chain such that, at every slot~$t$ in the interval,
 \[
   \sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F.
 \]
@@ -757,7 +758,7 @@ Each slot~$t$ in the period falls into exactly one of three categories, determin
 \end{definition}
 
 \begin{theorem}[Non-finality period penalty bound]\label{thm:tightness}
-Over any non-finality period of length $T \geq 1$ on the canonical chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ is at least $(T - 1) \cdot n/3$.
+Over any non-finality period of length $T \geq 1$ on any chain, the total penalty increment across all validators assessed by $\textsf{processInactivityPenalties}$ on that chain is at least $(T - 1) \cdot n/3$.
 \end{theorem}
 
 \begin{proof}
@@ -767,7 +768,7 @@ We show that (i) at most one slot of the period is transition, and (ii) every pe
 
 \emph{(i) At most one transition slot.}
 A transition at~$t$ requires $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.J$.
-After such a slot, $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$; since $F$ does not advance anywhere in the period, $\sigma_{\mathrm{pre}}^{(t')}.F = \sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t')}.J$ at every later slot $t' > t$ of the period (justification is monotone across slots by Lemma~\ref{lem:slotmono}).
+After such a slot, $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$; since $F$ does not advance anywhere in the period, $\sigma_{\mathrm{pre}}^{(t')}.F = \sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t')}.J$ at every later slot $t' > t$ of the period (the justification branch of $\textsf{processHeight}$ only reassigns $J \gets T$ when it strictly advances along~$\preceq$, so~$J$ is monotone across slots).
 So every slot after a transition is pending-stuck, and no second transition can occur within the period.
 
 \emph{(ii) Per-slot penalty $> n/3$ for pending-stuck and stable-stuck slots.}
@@ -787,7 +788,7 @@ At most one slot of the period is transition, so at least $T - 1$ slots are pend
 Each such slot contributes strictly more than $n/3$ by~(ii); Layer~1 and the remaining guards add only non-negative charges.
 Summing over the period, the total penalty increment across all validators is at least $(T - 1) \cdot n/3$.
 
-The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the canonical chain and counts charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
+The bound is purely state-logic: the proof reads $\sigma_{\mathrm{pre}}^{(t)}$ and $\sigma_{\mathrm{post}}^{(t)}$ on the fixed chain and counts charges directly from Figure~\ref{alg:leak-processslot}, with no hypothesis on synchrony, on the honest voting rule, or on the size of the slashable set.
 \end{proof}
 
 \subsection{Honest voting rule}
@@ -853,8 +854,9 @@ We show every vote~$v_1$ of~$i$ with $v_1.\height = h_*$ has $v_1.\target = T_*$
 The (R1) finalize-field conditional at~$v_2$ attached $(h_*, T_*)$ only because every prior vote of~$i$ at height~$h_*$ had target~$T_*$; in particular, $v_1.\target = T_*$.
 
 \emph{Case~B ($v_1$ cast after~$v_2$).}
-Under the hypotheses, every canonical height-advance is witnessed by the $> 2n/3$ honest (R1) quorum agreeing on~$T$ (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time.
-Since $v_2$ was cast at canonical height $h_c > h_*$, canonical cannot return to height~$h_*$ for any later~$v_1$; the case is vacuous.
+If $h_* = 0$ (so $v_2$ attached its finalize commitment before any justification had fired, with $T_* = \genesis$), the lock clause of Definition~\ref{def:voting-rule} pins $T_c = \genesis$ at any later height-$0$ voting opportunity of~$i$, so $v_1.\target = \genesis = T_*$; the case reduces to target-matching.
+Otherwise $h_* \geq 1$, so $v_2$ fired at canonical height $h_c > h_*$.
+Under the hypotheses, every canonical height-advance is witnessed by the $> 2n/3$ honest (R1) quorum agreeing on~$T$ (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; canonical cannot return to height~$h_*$ for any later~$v_1$, and the case is vacuous.
 
 \emph{Case~C ($v_1 = v_2$).}
 Vacuous: $v_2.\height = h_c \neq h_* = v_2.\mathsf{finalize\_height}$.
