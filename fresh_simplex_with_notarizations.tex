@@ -17,6 +17,10 @@
 \newcommand{\roberto}[1]{{\todo[inline, color=xblue]{\textbf{Roberto:} #1}}}
 \newcommand{\luca}[1]{{\todo[inline, color=xgreen]{\textbf{Luca:} #1}}}
 \newcommand{\yann}[1]{\todo[inline, color=xyellow]{\textbf{Yann:} #1}}
+\newcommand{\RSfn}[1]{%
+  {\renewcommand{\thefootnote}{\textcolor{red}{\arabic{footnote}}}%
+   \footnote{\textcolor{red}{#1}}}%
+}
 \usepackage{booktabs,tabularx,makecell,hyperref}
 \definecolor{rowgray}{RGB}{246,246,246}
 
@@ -412,7 +416,7 @@ Immediate from Lemma~\ref{lem:finchain}: for any two finalized $(C, h)$ and $(C'
 
 \begin{remark}[Ancestor notarizations are permitted]\label{rem:notarization-safety}
 Because $\just$ votes also contribute to $\mathsf{ntargets}$ (Figure~\ref{alg:state-machine}), the prefix-notarization endpoint at height~$h$ on a chain containing a finalized block~$C$ may sit at some ancestor $T^* \preceq C$ on that chain.
-This is consistent with safety, but means the per-chain invariants never rely on a strict $N \succeq C$ relation; the fork-choice store (Section~\ref{sec:store}) uses a greedy walk to handle this.
+This is consistent with safety, but means the per-chain invariants never rely on a strict $N \succeq C$ relation; the fork-choice store (Section~\ref{sec:store}) uses the lex-max argmax to handle this.
 \end{remark}
 
 \section{Fork-choice store}\label{sec:store}
@@ -420,8 +424,8 @@ This is consistent with safety, but means the per-chain invariants never rely on
 A node may track multiple chains simultaneously.
 The \emph{store} is the node-local data structure that mediates which chain the node follows.
 It tracks two sets of checkpoint records: a primary set $C_N$ of \emph{notarized checkpoint records}, one per height advance (justification or prefix notarization), and a sub-layer $C_J \subseteq C_N$ of \emph{justified checkpoint records} --- those records whose block was justified on some chain.
-The store's root $R_s$ is computed by a greedy walk from the store-finalized block~$F_s$, following the highest-height notarized record that strictly descends from the current walk position, with $C_J$-membership as a tiebreak at equal heights.
-The walk guarantees $R_s \succeq F_s$ even when lower-height records for strict ancestors of finalized blocks remain in~$C_N$ (cf.\ Remark~\ref{rem:notarization-safety}).
+The store's root $R_s$ is the lex-maximum notarized record over all $(X, h, s) \in C_N$ with $X \succeq F_s$, with $C_J$-membership serving as a tiebreak at equal heights.
+Since $(F_s, h_{F_s}, F_s.\slot) \in C_J$ is always a candidate, the argmax is well-defined and $R_s \succeq F_s$ at all times, even when lower-height records for strict ancestors of finalized blocks remain in~$C_N$ (cf.\ Remark~\ref{rem:notarization-safety}).
 
 \begin{definition}[Store]\label{def:store}
 A node maintains a \emph{store}
@@ -448,11 +452,11 @@ Starting from the parent's post-state, we first invoke $\textsf{processSlot}$ on
 The resulting post-state is stored as $\Sigma.\sigma[B]$; we insert the tuple $(N_B, h_n^B, N_B.\slot)$ into~$\Sigma.C_N$ and $(J_B, h_B, J_B.\slot)$ into~$\Sigma.C_J$ (where subscripts denote the corresponding fields of $\Sigma.\sigma[B]$), recompute $\Sigma.R_s$, and update $\Sigma.F_s$.
 A justification fires $(J, N) \gets (T, T)$ and $(h_j, h_n) \gets (h, h)$ jointly, preserving $C_J \subseteq C_N$.
 
-\emph{Store root (greedy walk).}
-$\Sigma.R_s$ is computed by $\textsf{computeRoot}(\Sigma)$ (Figure~\ref{alg:store}): starting from~$\Sigma.F_s$, at each step pick the tuple $(X, h, s) \in \Sigma.C_N$ with $X$ a strict descendant of the current walk position maximizing the lex key $\bigl(h,\; \mathbf{1}[(X, h, s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$, and move to~$X$.
-The walk terminates when no strict descendant exists in~$\Sigma.C_N$.
+\emph{Store root.}
+$\Sigma.R_s$ is computed by $\textsf{computeRoot}(\Sigma)$ (Figure~\ref{alg:store}): the block~$X$ of the unique tuple maximizing the lex key $\bigl(h,\; \mathbf{1}[(X, h, s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$ over $\{(X,h,s) \in \Sigma.C_N : X \succeq \Sigma.F_s\}$.
+$(F_s, h_{F_s}, F_s.\slot) \in C_J$ is always a candidate, so the candidate set is non-empty and $R_s \succeq F_s$.
 The bit after~$h$ makes a $C_J$-tuple strictly beat any $C_N \setminus C_J$-tuple at the same height.
-Since each step moves to a strict descendant of~$\Sigma.F_s$, we have $\Sigma.R_s \succeq \Sigma.F_s$ by construction; the argmax is unique (hashes are unique per block) and the walk terminates in at most $|\Sigma.C_N|$ steps.
+The argmax is unique (hashes are unique per block), so $\Sigma.R_s$ is a deterministic function of $(\Sigma.C_N, \Sigma.C_J, \Sigma.F_s)$.
 
 \emph{Updating finalized.}
 If the post-state's $F_B \succ \Sigma.F_s$ and $F_B \preceq \Sigma.R_s$, then $\Sigma.F_s \gets F_B$.
@@ -485,11 +489,8 @@ If the post-state's $F_B \succ \Sigma.F_s$ and $F_B \preceq \Sigma.R_s$, then $\
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{computeRoot}$}{$\Sigma$} \Comment{Greedy walk from $\Sigma.F_s$}
-  \State $X^* \gets \Sigma.F_s$
-  \While{$\exists\, (X, h, s) \in \Sigma.C_N$ with $X \succ X^*$}
-    \State $(X^*, \_, \_) \gets \arg\max_{(X,h,s) \in \Sigma.C_N,\; X \succ X^*} \bigl(h,\; \mathbf{1}[(X,h,s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$
-  \EndWhile
+\Function{$\textsf{computeRoot}$}{$\Sigma$} \Comment{Single argmax from $\Sigma.F_s$}
+  \State $(X^*, \_, \_) \gets \arg\max_{(X,h,s) \in \Sigma.C_N,\; X \succeq \Sigma.F_s} \bigl(h,\; \mathbf{1}[(X,h,s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$
   \State \Return $X^*$
 \EndFunction
 \vspace{3pt}
@@ -511,7 +512,7 @@ If the post-state's $F_B \succ \Sigma.F_s$ and $F_B \preceq \Sigma.R_s$, then $\
 \end{center}
 \end{figure}
 
-Whenever $R_s \neq F_s$, $R_s$ is the last-visited block of the walk, so $R_s$ is the block of some record $(R_s, R_s.h, R_s.\slot) \in C_N$.
+$R_s$ is the block of the argmax tuple, so $R_s$ is the block of some record $(R_s, R_s.h, R_s.\slot) \in C_N$.
 
 \paragraph{Leaf-only variant.}
 Define $C_N^{\mathrm{leaf}} \subseteq \Sigma.C_N$ to be the subset of tuples $(X, h, s)$ contributed by the post-state of a \emph{leaf} block of~$\Sigma.\T$ (a block with no processed descendant), and analogously $C_J^{\mathrm{leaf}} \subseteq \Sigma.C_J$.
@@ -522,21 +523,18 @@ $\textsf{computeRootLeaf}(\Sigma)$ returns the same block as $\textsf{computeRoo
 \end{theorem}
 
 \begin{proof}
-Fix any non-leaf processed block~$B_i$ with post-state tuple $\tau_i = (X_i, h_i, X_i.\slot) \in C_N$.
-Since~$B_i$ is non-leaf, pick any processed leaf $B_\ell$ descending from~$B_i$ (the block tree~$\T$ is finite, so some leaf exists on each branch through~$B_i$); $B_\ell$ contributes a tuple $\tau_\ell = (X_\ell, h_\ell, X_\ell.\slot) \in C_N^{\mathrm{leaf}}$.
-By Lemma~\ref{lem:slotmono} applied along the chain from~$B_i$ to~$B_\ell$, both $h_n$ and~$N$ are monotone non-decreasing, so $h_\ell \geq h_i$ and $X_\ell \succeq X_i$.
-Whenever $h_\ell = h_i$, $h_n$-monotonicity combined with the state-machine invariant that $N$ advances only jointly with $h_n \gets h_n + 1$ (Lemma~\ref{lem:slotmono}) forces $X_\ell = X_i$; hence $\tau_\ell = \tau_i$ and $\tau_i \in C_N^{\mathrm{leaf}}$ directly.
-Whenever $h_\ell > h_i$, $\tau_\ell$'s key strictly dominates $\tau_i$'s key by the leading height coordinate, regardless of the $C_J$-bit.
+Let $\tau^\star = (X^\star, h^\star, X^\star.\slot)$ be the full argmax over $\{(X, h, s) \in C_N : X \succeq F_s\}$, so $\textsf{computeRoot}$ returns $X^\star$.
+We show $\tau^\star \in C_N^{\mathrm{leaf}}$, which implies $\textsf{computeRootLeaf}$ picks the same tuple (the leaf argmax has key $\geq \tau^\star$'s, and $\tau^\star$ itself is one of its candidates once we confirm $\tau^\star \in C_N^{\mathrm{leaf}}$; since the argmax is unique, the leaf argmax is $\tau^\star$).
 
-Now run both walks in lockstep from $X^* = F_s$.
-At each step with current position~$X^*$, the full walk's lex-max over~$C_N$ is attained at some tuple~$\tau^\star$.
-If $\tau^\star$ is itself a leaf tuple, the leaf walk makes the same choice.
-If $\tau^\star = \tau_i$ for some non-leaf~$B_i$, then its leaf replacement~$\tau_\ell$ is itself a strict-descendant candidate in~$C_N$ with key at least as large as~$\tau_i$'s, so the lex-max already selects a tuple whose key equals $\tau_\ell$'s.
-This forces $h_\ell = h_i$ (otherwise $\tau_\ell$'s key strictly dominates $\tau_i$'s, yet both are candidates), whence $\tau_\ell = \tau_i \in C_N^{\mathrm{leaf}}$: $\tau^\star$ coincides with a leaf tuple after all, and the leaf walk selects the same tuple.
-By induction both walks terminate at the same block.
+Let $B^\star$ be any processed block whose post-state contributed~$\tau^\star$.
+If $B^\star$ is a leaf, $\tau^\star \in C_N^{\mathrm{leaf}}$ directly.
+Otherwise pick any processed leaf $B_\ell \succ B^\star$ (the block tree $\T$ is finite, so one exists on each branch through $B^\star$); its post-state contributes a tuple $\tau_\ell = (X_\ell, h_\ell, X_\ell.\slot) \in C_N^{\mathrm{leaf}}$.
+By Lemma~\ref{lem:slotmono} along the chain from $B^\star$ to $B_\ell$, $h_\ell \geq h^\star$ and $X_\ell \succeq X^\star$; so $\tau_\ell$ is also a candidate (its block satisfies $X_\ell \succeq X^\star \succeq F_s$).
+If $h_\ell > h^\star$, $\tau_\ell$'s key strictly dominates $\tau^\star$'s by the leading height coordinate, contradicting $\tau^\star$ being the argmax.
+Hence $h_\ell = h^\star$, and the state-machine invariant that $N$ advances only jointly with $h_n \gets h_n + 1$ (Lemma~\ref{lem:slotmono}) forces $X_\ell = X^\star$, so $\tau_\ell = \tau^\star \in C_N^{\mathrm{leaf}}$.
 \end{proof}
 
-The leaf-only variant bounds the walk's candidate pool by the number of leaves of~$\T$.
+The leaf-only variant bounds the argmax's candidate pool by the number of leaves of~$\T$.
 
 \subsection{Store invariants and safety}
 
@@ -548,7 +546,7 @@ The store maintains $F_s \preceq R_s$ at all times.
 
 \begin{proof}
 Initially $F_s = R_s = \genesis$.
-$\textsf{computeRoot}$ starts at $X^* = F_s$ and only moves to strict descendants of the current walk position, so $R_s \succeq F_s$ holds just after $\textsf{computeRoot}$.
+$\textsf{computeRoot}$ returns the block of a tuple with $X \succeq F_s$, so $R_s \succeq F_s$ holds just after $\textsf{computeRoot}$.
 $\textsf{updateFinalized}$ sets $F_s$ only to values $F_B \preceq R_s$ (explicit guard), preserving the invariant.
 \end{proof}
 
@@ -569,6 +567,7 @@ By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq F_s \preceq R_s$, 
 \end{proof}
 
 \subsubsection*{Further properties under $f < n/3$}
+\RSfn{all the properties in this section seem to be ``under $< n/3$ slashable'', which is stronger than ``under $f < n/3$''}
 
 The key tool for the remaining store theorems is Lemma~\ref{lem:certchain}: every notarized checkpoint record whose height is at least that of a finalized block~$C$ is compatible with~$C$, and strictly descends from~$C$ when its height strictly exceeds that of~$C$.
 
@@ -587,13 +586,12 @@ By Remark~\ref{rem:fresh-equiv}, $\sigma[X].h = h'$ and $\sigma[C].h = h_F$.
 State-height is non-decreasing along~$\preceq$ on~$Y$ (Lemma~\ref{lem:slotmono}); with $\sigma[C].h = h_F < h' = \sigma[X].h$ and both $C, X \preceq Y$, the comparable pair is ordered $C \prec X$.
 \end{proof}
 
-\begin{lemma}[Upgrade property of the walk]\label{lem:upgrade}
+\begin{lemma}[Upgrade property of the root]\label{lem:upgrade}
 Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$, $(F, h_F, F.\slot) \in C_J$, and $F_s \prec F$, then $\textsf{computeRoot}$ produces $R_s \succeq F$.
 \end{lemma}
 
 \begin{proof}
-The walk starts at $X^* = F_s \prec F$.
-Since $(F, h_F, F.\slot) \in C_J \subseteq C_N$ is a strict-descendant candidate, the loop's first step picks some tuple $(X, h, s)$ with key $\geq (h_F, 1, F.\slot, \mathsf{hash}(F))$, so $h \geq h_F$.
+Since $(F, h_F, F.\slot) \in C_J \subseteq C_N$ and $F \succ F_s$ implies $F \succeq F_s$, it is a candidate for $\textsf{computeRoot}$'s argmax, so the returned tuple $(X, h, s) = R_s$ has key $\geq (h_F, 1, F.\slot, \mathsf{hash}(F))$, and in particular $h \geq h_F$.
 
 If $h > h_F$, Lemma~\ref{lem:certchain} (strict descent) gives $F \prec X$.
 
@@ -602,7 +600,7 @@ With $h = h_F$, the key lower bound $(h_F, 1, F.\slot, \mathsf{hash}(F))$ forces
 If $X \prec F$, then~$X$ lies on~$F$'s chain, and blocks on a chain have strictly increasing slots, so $X.\slot < F.\slot$, incompatible with $X.\slot \geq F.\slot$.
 Hence $F \preceq X$.
 
-Either way $X \succeq F$, and subsequent steps move to strict descendants of~$X$, so $R_s \succeq F$.
+Either way, $R_s = X \succeq F$.
 \end{proof}
 
 \begin{theorem}[Local acceptance of justification updates]\label{thm:justlive}
@@ -616,9 +614,8 @@ We first show $F_s \prec J_B$.
 Let~$h_F$ denote the height at which~$F_s$ was finalized; by definition $(F_s, h_F, F_s.\slot) \in C_J \subseteq C_N$ and $h_F \leq$ every prior tuple's height, so $h_B > h_F$.
 Lemma~\ref{lem:certchain} applied to the finalized~$F_s$ and $(J_B, h_B, \cdot) \in C_N$ gives $F_s \prec J_B$.
 
-The walk from~$F_s$ thus has $(J_B, h_B, J_B.\slot)$ as an eligible strict-descendant candidate at every step where $X^* \prec J_B$.
-Every other record in~$C_N$ has $h \leq h_B$, and only $(J_B, h_B, \cdot)$ attains $h = h_B$, so the max-key at each such step picks~$J_B$.
-After that step, $X^* = J_B$ and no strict descendant of~$J_B$ has been inserted yet (by the $h_B$-maximality assumption), so the walk terminates at $R_s = J_B$.
+Hence $(J_B, h_B, J_B.\slot)$ is a candidate for $\textsf{computeRoot}$'s argmax.
+Every other record in~$C_N$ has $h \leq h_B$, and only $(J_B, h_B, \cdot)$ attains $h = h_B$, so the argmax picks $(J_B, h_B, \cdot)$ and $R_s = J_B$.
 \end{proof}
 
 \begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
@@ -660,7 +657,7 @@ Since each block is processed at most once and the post-state is parent-determin
 $C_J$ and $C_N$ are sets; inserting the same tuple twice is a no-op, and $C_J \subseteq C_N$ is preserved under inserts.
 Both sets are recomputed deterministically from~$\sigma$, so they depend only on the processed set.
 
-$R_s$ is the output of $\textsf{computeRoot}$, a deterministic function of $(C_N, C_J, F_s)$: at each step of the walk, the key $(h, \mathbf{1}[(X,h,s) \in C_J], s, \mathsf{hash}(X))$ is totally ordered (components are integers or unique hashes), so the argmax is a deterministic function of $C_N$ and the current walk position; the walk terminates after at most $|C_N|$ steps.
+$R_s$ is the output of $\textsf{computeRoot}$, a deterministic function of $(C_N, C_J, F_s)$: the key $(h, \mathbf{1}[(X,h,s) \in C_J], s, \mathsf{hash}(X))$ is totally ordered (components are integers or unique hashes), so the argmax over $\{(X,h,s) \in C_N : X \succeq F_s\}$ is a unique, deterministic function of $(C_N, C_J, F_s)$.
 
 For $F_s$: by Theorem~\ref{thm:safety}, finalized blocks across all post-states form a chain, with unique maximum $F_{\max}$.
 By Theorem~\ref{thm:finlive}, after processing the block carrying $F_{\max}$ the guard passes and $F_s \gets F_{\max}$.
@@ -798,37 +795,41 @@ Let $T$ denote a target at height~$h_c$: any ancestor of~$X$ with $\sigma[T].h =
 
 Let $J = \sigma[X].J$ denote the canonical justified block (paired with $h_j$).
 
-\emph{Target selection.}
-Let $T_c$ denote the target of~$i$'s vote at the current canonical height~$h_c$: if $i$ has previously cast a vote at~$h_c$ with target $T_{\mathrm{prior}}$, then $T_c = T_{\mathrm{prior}}$; otherwise $T_c = T$ (the canonical target).
-That is,~$i$ reuses the target of its first vote at~$h_c$, and otherwise picks the canonical target.
+Define the per-height target
+\[
+  T_c \;=\;
+  \begin{cases}
+    v'.\mathsf{finalize\_target} & \parbox[t]{0.55\textwidth}{\raggedright if $i$ has previously cast a vote $v'$ with $v'.\mathsf{finalize\_height} = h_c$;}\\[1.2em]
+    T & \text{otherwise (the canonical target).}
+  \end{cases}
+\]
 
 A validator~$i$ acts at each voting opportunity at the current canonical height~$h_c$ as follows:
 \begin{enumerate}
   \item[(R1)] If $i$ has not yet cast any vote at height~$h_c$: cast a $\just$ vote
   \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \just,\; f_h,\; f_t) \]
-  with target $T_c = T$ (the canonical target) and finalize-fields
+  with finalize-fields
   \[
     (f_h,\, f_t) \;=\;
     \begin{cases}
-      (h_j,\, J) & \parbox[t]{0.55\textwidth}{\raggedright if $i$'s prior vote at height~$h_j$ (if any) had target~$J$ (equivalently, $i$ is not pinned at~$h_j$ to a target other than~$J$);}\\[1.2em]
+      (h_j,\, J) & \parbox[t]{0.55\textwidth}{\raggedright if $i$ has not cast any vote at height~$h_j$ for a target $\neq J$;}\\[1.2em]
       (\bot,\, \bot) & \text{otherwise.}
     \end{cases}
   \]
   \item[(R2)] Else ($i$ has already cast a vote at height~$h_c$): cast a $\notar$ vote
-  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \notar,\; \bot,\; \bot) \]
-  with target $T_c = T_{\mathrm{prior}}$ (the target of~$i$'s first vote at~$h_c$).
+  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \notar,\; \bot,\; \bot). \]
 \end{enumerate}
 The values $T$, $J$, and~$h_j$ used here are those of the current canonical state $\sigma[X]$ at the time of the voting opportunity.
-Only (R1) produces a $\just$ vote and fires at most once per height, so an honest validator casts at most one $\just$ vote per height, with a single target; target selection then forces all of~$i$'s votes at any fixed height to share that target.
+Only (R1) produces a $\just$ vote and fires at most once per height, so an honest validator casts at most one $\just$ vote per height.
 Because (R1)/(R2) are evaluated against the \emph{current} canonical height~$h_c$, voting at~$h_c$ stops naturally once canonical advances past~$h_c$.
 \end{definition}
 
-Under synchrony, $f < n/3$, and deterministic $\textsf{getHead}$, honest validators share the same canonical state (Corollary~\ref{cor:agreement}) and agree on~$T$, so the first-slot $\just$ quorum for~$T$ forms at~$h_c$ and justification fires.
-Rule~(R2) is the \emph{resubmission} fallback for later slots at the same canonical height, when the (R1) $\just$ quorum did not form on canonical (heterogeneous (R1) targets across views): the $\notar$ vote's prefix counting may still notarize a common ancestor; its target~$T_{\mathrm{prior}}$ is fixed by target selection to the target of~$i$'s (R1) vote at~$h_c$, keeping all of~$i$'s height-$h_c$ votes consistent.
-In particular, (R2) fires at every slot while canonical remains at~$h_c$: a validator that committed to finalize at~$h_c$ (via the finalize-fields of its (R1) vote) keeps resubmitting a fresh $\notar$ vote for $T_{\mathrm{prior}}$ each slot, so its $\mathsf{ntargets}$ entry stays populated on every chain that keeps processing its new votes.
+Under synchrony, $f < n/3$, and deterministic $\textsf{getHead}$, honest validators share the same canonical state (Corollary~\ref{cor:agreement}) and canonical state-height is monotone over time, so the first branch of $T_c$ never fires (it requires a prior vote at state-height strictly greater than~$h_c$) and $T_c = T$; honest validators agree on~$T$, the first-slot $\just$ quorum for~$T$ forms at~$h_c$, and justification fires.
+Rule~(R2) is the \emph{resubmission} fallback for later slots at the same canonical height, when the (R1) $\just$ quorum did not form on canonical (heterogeneous (R1) targets across views): the $\notar$ vote's prefix counting may still notarize a common ancestor.
+The first branch of~$T_c$ forces the target to match any outstanding finalize-commitment at~$h_c$ (keeping~$i$ E1-consistent with that commitment under a canonical fork-switch back to height~$h_c$); the second branch picks the current canonical target, guaranteeing $T_c \preceq X$.
 This means processing old votes is never necessary for progress: validators re-emit their vote every slot while at height~$h_c$, and old votes can be discarded.
 Each (R1) vote optionally commits to finalize the canonical justified block~$J$ at height~$h_j$ via $(\mathsf{finalize\_height},\, \mathsf{finalize\_target}) = (h_j,\, J)$, which places the validator in~$P$ once the $(J, h_j)$-state is processed.
-The (R1) finalize-field conditional --- ``$i$'s prior vote at height~$h_j$ (if any) had target~$J$'' --- keeps the rule E1-safe: any prior target at height~$h_j$ already matches the $\mathsf{finalize\_target}$ being attached.
+The (R1) finalize-field conditional --- ``$i$ has not cast any vote at height~$h_j$ for a target $\neq J$'' --- keeps the rule E1-safe: every prior target at height~$h_j$ already matches the $\mathsf{finalize\_target}$ being attached.
 
 \paragraph{E1 safety of the rule.}
 The rule is E1-safe: Lemma~\ref{lem:honest-e1-safety} records that honest validators never trigger E1 slashing.
@@ -843,7 +844,7 @@ Only (R1) produces a finalize-bearing vote, with $(f_h, f_t) = (h_j^{(v_2)}, J^{
 We show every vote~$v_1$ by~$i$ with $v_1.\height = h_j^{(v_2)}$ has $v_1.\target = J^{(v_2)}$, by cases on the temporal relationship between~$v_1$ and~$v_2$.
 
 \emph{Case~A ($v_1$ cast before~$v_2$).}
-The (R1) finalize-field conditional at~$v_2$ attached $(h_j^{(v_2)}, J^{(v_2)})$, which fires only when~$i$'s prior vote at height~$h_j^{(v_2)}$ (if any) had target~$J^{(v_2)}$; by target selection, all of~$i$'s votes at~$h_j^{(v_2)}$ share that target, so $v_1.\target = J^{(v_2)}$.
+The (R1) finalize-field conditional at~$v_2$ attached $(h_j^{(v_2)}, J^{(v_2)})$, which fires only when~$i$ has cast no vote at height~$h_j^{(v_2)}$ for a target $\neq J^{(v_2)}$; applied to~$v_1$ (a prior vote by~$i$ at height~$h_j^{(v_2)}$), this gives $v_1.\target = J^{(v_2)}$.
 
 \emph{Case~B ($v_1$ cast after~$v_2$).}
 Under the hypotheses, each canonical advance is a justification firing witnessed by the $> 2n/3$ honest (R1) quorum (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; since $v_2$ was cast at canonical state-height $h_c^{(v_2)} > h_j^{(v_2)}$, canonical cannot return to height $h_j^{(v_2)}$ for a later $v_1$, so this case is vacuous.
@@ -852,9 +853,30 @@ Under the hypotheses, each canonical advance is a justification firing witnessed
 Also vacuous, since $v_2.\height = h_c^{(v_2)} \neq h_j^{(v_2)} = v_2.\mathsf{finalize\_height}$.
 \end{proof}
 
-\begin{remark}[Scope of Lemma~\ref{lem:honest-e1-safety}]\label{rem:honest-e1-scope}
-All three hypotheses are load-bearing for Case~B.
-A validator that wishes not to rely on them may always set $(f_h, f_t) = (\bot, \bot)$ at (R1), trivially avoiding E1 at the cost of not contributing to finalization.
+\begin{lemma}[Honest E1 safety, asynchronous]\label{lem:honest-e1-safety-asynchrony}
+Under asynchrony and all honest validators following Definition~\ref{def:voting-rule}, an honest~$i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) satisfying $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
+\end{lemma}
+
+\begin{proof}
+Only (R1) produces a finalize-bearing vote, so $v_2$ was cast via~(R1) with $(f_h, f_t) = (h_j^{(v_2)}, J^{(v_2)})$ from the canonical state at~$v_2$'s firing.
+We show every vote~$v_1$ by~$i$ with $v_1.\height = h_j^{(v_2)}$ has $v_1.\target = J^{(v_2)}$, by induction on the order in which~$i$ casts its votes.
+
+\emph{Case~A ($v_1$ cast before~$v_2$).}
+The (R1) finalize-field conditional at~$v_2$ attached $(h_j^{(v_2)}, J^{(v_2)})$, which fires only when~$i$ has cast no vote at height~$h_j^{(v_2)}$ for a target $\neq J^{(v_2)}$; applied to~$v_1$ (a prior vote by~$i$ at height~$h_j^{(v_2)}$), this gives $v_1.\target = J^{(v_2)}$.
+
+\emph{Case~B ($v_1$ cast after~$v_2$).}
+At the time~$v_1$ is cast, the current canonical height is $h_c = v_1.\height = h_j^{(v_2)}$.
+The prior vote~$v_2$ satisfies $v_2.\mathsf{finalize\_height} = h_j^{(v_2)} = h_c$ with $v_2.\mathsf{finalize\_target} = J^{(v_2)}$, so the first branch of~$T_c$ applies with $v' = v_2$.
+Whichever of~(R1) or~(R2) fires, the rule sets $v_1.\target = T_c = J^{(v_2)}$.
+Well-definedness of the branch: if $i$ had two distinct candidate witnesses $v'_1, v'_2$ with equal $\mathsf{finalize\_height} = h_c$ but different $\mathsf{finalize\_target}$s, the pair $(v'_1, v'_2)$ would itself witness the lemma's conclusion for a strictly earlier pair, contradicting the induction hypothesis.
+
+\emph{Case~C ($v_1 = v_2$).}
+Vacuous: $v_2$ was cast at canonical state-height $h_c^{(v_2)}$, and every height advance sets $h_j \gets h$ before $h \gets h + 1$ (Figure~\ref{alg:state-machine}), so $h_j^{(v_2)} < h_c^{(v_2)} = v_2.\height$.
+\end{proof}
+
+\begin{remark}[Implication for the synchronous case]\label{rem:honest-e1-scope}
+The asynchronous proof above makes no use of synchrony, $f < n/3$, or determinism of $\textsf{getHead}$; Lemma~\ref{lem:honest-e1-safety} is an immediate corollary.
+Under synchrony the first branch of~$T_c$ is vacuous (canonical state-height is monotone), so Case~B never fires and Case~A alone suffices.
 \end{remark}
 
 \subsection{Leak fairness}
@@ -884,5 +906,112 @@ Hence $\sigma_{\mathrm{post}}.\mathsf{ntargets}[i] \neq \bot$ at every such slot
 
 The statement makes no assumption about $f < n/3$, synchrony, determinism of $\textsf{getHead}$, or what other validators vote; it only requires that~$i$ follow Definition~\ref{def:voting-rule} locally and that~$v$ actually be included on the extension.
 Layer~2 analysis would require additional hypotheses (synchrony, $f < n/3$, enough honest validators on the relevant chain at the relevant slot) that are genuinely orthogonal to fairness as a local guarantee.
+
+\subsection{Leak Fairness 2}
+
+\begin{lemma}[Unique justified block per height]\label{lem:unique-just-per-height}
+If $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}, then for any two blocks~$C_1$ and~$C_2$ justified at the same height~$h$ (on possibly different chains), $C_1 = C_2$.
+\end{lemma}
+
+\begin{proof}
+Justification of~$C_k$ at height~$h$ (for $k \in \{1, 2\}$) gives a $\just$-quorum~$Q_k$ of size $\geq 2n/3$, each validator in~$Q_k$ having signed a $\just$ vote at height~$h$ with target~$C_k$.
+By quorum intersection,
+\[
+  |Q_1 \cap Q_2| \;\geq\; 2n/3 + 2n/3 - n \;=\; n/3.
+\]
+Since $f < n/3$, some $v \in Q_1 \cap Q_2$ is honest and thus follows Definition~\ref{def:voting-rule}.
+That rule produces $\just$ votes only via (R1), which fires at most once per height, so~$v$ casts at most one $\just$ vote at height~$h$.
+Since~$v$ signed a $\just$ vote at height~$h$ with target~$C_1$ (as member of $Q_1$) and another with target~$C_2$ (as member of $Q_2$), the two are the same vote and $C_1 = C_2$.
+\end{proof}
+
+\begin{lemma}[Root-height exclusivity]\label{lem:root-height-cj-exclusive}
+Unless $\geq n/3$ validators are slashable: assume that  $(R_s, R_s.h, \cdot) \in C_N \setminus C_J$ and $(B, h, s) \in C_J$, then $h \neq R_s.h$.
+\end{lemma}
+
+\begin{proof}
+Write $h_R \coloneqq R_s.h$.
+$(F_s, h_{F_s}, F_s.\slot) \in C_J$ is always an argmax candidate of $\textsf{computeRoot}$, so the hypothesis $(R_s, h_R, \cdot) \in C_N \setminus C_J$ forces $R_s \neq F_s$; hence $R_s \succ F_s$ strictly, and in particular $h_R \geq h_{F_s}$ by state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}).
+
+Suppose for contradiction that some $(B, h_R, s) \in C_J$ exists.
+
+\emph{Case $h_R > h_{F_s}$.}
+Lemma~\ref{lem:certchain} applied to the finalized~$F_s$ (at height $h_{F_s}$) and $(B, h_R, s) \in C_J \subseteq C_N$ gives $F_s \prec B$, so $B \succeq F_s$ and $(B, h_R, s)$ is an argmax candidate.
+Its key $(h_R, 1, s, \mathsf{hash}(B))$ strictly dominates $R_s$'s key $(h_R, 0, R_s.\slot, \mathsf{hash}(R_s))$ on the $C_J$-bit, contradicting $R_s$'s maximality.
+
+\emph{Case $h_R = h_{F_s}$.}
+$(B, h_{F_s}, s) \in C_J$ means~$B$ was justified at height $h_{F_s}$ on some chain; $F_s$ is finalized at $h_{F_s}$.
+By quorum intersection --- the same argument that powers Lemma~\ref{lem:finchain} --- the finalize-quorum for~$F_s$ at $h_{F_s}$ and the justify-quorum for~$B$ at $h_{F_s}$ share a signer, forcing $B = F_s$ or triggering E1; under $<n/3$ slashable, $B = F_s$.
+Then $(B, h, s) = (F_s, h_{F_s}, F_s.\slot)$ is itself an argmax candidate, and its key $(h_{F_s}, 1, F_s.\slot, \mathsf{hash}(F_s))$ strictly dominates $R_s$'s key on the $C_J$-bit, again contradicting $R_s$'s maximality.
+\end{proof}
+
+\begin{lemma}[Head state-height range]\label{lem:head-height-range}
+Let $(R_s, R_s.h, \cdot) \in C_N$.
+Then $\sigma[\textsf{getHead}(\Sigma)].h \in \{h_R,\, h_R+1\}$.
+\end{lemma}
+
+\begin{proof}
+Write $h_R \coloneqq R_s.h$, and let $Y = \textsf{getHead}(\Sigma)$, so $Y \succeq R_s$.
+
+\emph{Lower bound.}
+State-height is non-decreasing along~$\preceq$ (Lemma~\ref{lem:slotmono}), and $\sigma[R_s].h = h_R$ (Remark~\ref{rem:fresh-equiv}), so $\sigma[Y].h \geq h_R$.
+
+\emph{Upper bound.}
+Suppose for contradiction $\sigma[Y].h \geq h_R + 2$.
+By Lemma~\ref{lem:heightprog}, the chain from~$R_s$ to~$Y$ advanced through every intermediate state-height, so at least two height advances fired on it after~$R_s$; pick~$B^\star \preceq Y$ with $B^\star \succ R_s$ at which the second such advance fired, with pre-state height $h_R + 1$.
+This advance inserts $(\sigma[B^\star].N,\; h_R+1,\; \sigma[B^\star].N.\slot)$ into $C_N$; write $X^\star \coloneqq \sigma[B^\star].N$.
+By Remark~\ref{rem:fresh-equiv}, $\sigma[X^\star].h = h_R+1$, and $X^\star \preceq B^\star$.
+Both $R_s$ and $X^\star$ lie on the chain ending at~$B^\star$, hence are comparable; state-height monotonicity along~$\preceq$ with $\sigma[R_s].h = h_R < h_R + 1 = \sigma[X^\star].h$ forces $R_s \prec X^\star$, so $X^\star \succ R_s \succeq F_s$.
+Therefore $(X^\star,\, h_R+1,\, X^\star.\slot)$ is an argmax candidate of $\textsf{computeRoot}$ whose key $(h_R+1, \ldots)$ strictly dominates $R_s$'s key $(h_R, \ldots)$ on the leading coordinate, contradicting $R_s$'s maximality.
+\end{proof}
+
+\begin{lemma}[No finalize vote without a $C_J$ record]\label{lem:no-finalize-without-cj}
+Let~$i$ be a validator with local store~$\Sigma$, and $h$ a height with $(X, h, s) \notin \Sigma.C_J$ for all $X, s$.
+Then~$i$ has not cast a vote $v$ with $v.\mathsf{finalize\_height} = h$.
+\end{lemma}
+
+\begin{proof}
+Suppose for contradiction that~$i$ cast a vote $v$ with $v.\mathsf{finalize\_height} = h$.
+Only (R1) of Definition~\ref{def:voting-rule} produces a vote with $\mathsf{finalize\_height} \neq \bot$, so~$v$ came from (R1) at some earlier moment in~$i$'s history, with store~$\Sigma_0$ and canonical $X_0 = \textsf{getHead}(\Sigma_0)$.
+At that firing, (R1) set $(v.\mathsf{finalize\_height},\; v.\mathsf{finalize\_target}) = (\sigma[X_0].h_j,\; \sigma[X_0].J)$, so $\sigma[X_0].h_j = h$.
+
+A state has $h_j = h$ only after a justification at state-height~$h$ has fired on its chain (Lemma~\ref{lem:slotmono}: $h_j$ advances only on justification events, and each such event sets $h_j \gets h$ jointly with $h \gets h + 1$).
+Let~$B \preceq X_0$ be the block at which this justification fired; then $\sigma[B].J$ is the justified target at~$B$ and $\sigma[B].h_j = h$.
+Since $B \preceq X_0$ and~$\Sigma_0$ has processed the blocks on its canonical chain, the store insertion $(\sigma[B].J,\; \sigma[B].h_j,\; \sigma[B].J.\slot) = (\sigma[B].J,\, h,\, \sigma[B].J.\slot)$ into $\Sigma_0.C_J$ has fired.
+
+$C_J$ is monotone under block processing (inserts only, no removals), so $(\sigma[B].J,\, h,\, \sigma[B].J.\slot) \in \Sigma.C_J$, contradicting the hypothesis that no tuple at height~$h$ belongs to~$\Sigma.C_J$.
+\end{proof}
+
+
+
+
+\begin{lemma}[Canonical-fresh honest vote]\label{lem:canonical-fresh-honest-vote}
+Assume $f < n/3$ and that all honest validators follow Definition~\ref{def:voting-rule}.
+Let~$i$ be an honest validator, $\Sigma$ its local store, $H = \textsf{getHead}(\Sigma)$, and $h_c = \sigma[H].h$.
+Let $v$ be the vote~$i$ produces at the current slot.
+Then $v$ is canonical-fresh on every extension~$H'$ of~$H$ satisfying $\sigma[H'].h = h_c$.
+\end{lemma}
+
+\begin{proof}
+By Definition~\ref{def:voting-rule}, $v$ has $v.\height = h_c$ and $v.\target = T_c$, where $T_c$ is either the canonical target~$T \preceq H$ at height~$h_c$, or $v'.\mathsf{finalize\_target}$ for some prior vote~$v'$ of~$i$ with $v'.\mathsf{finalize\_height} = h_c$.
+It suffices to show $T_c \preceq H$: state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) and the hypothesis $\sigma[H'].h = h_c = \sigma[H].h$ then give $\sigma[H'].s_h = \sigma[H].s_h$, so $T_c \preceq H \preceq H'$ with $T_c.\slot \geq \sigma[H'].s_h$ --- i.e.,~$v$ is canonical-fresh on~$H'$.
+
+Since $H \succeq R_s$ (spec of $\textsf{getHead}$ and Theorem~\ref{thm:fleqr}), state-height monotonicity gives $h_c \geq R_s.h$; split on the two subcases.
+
+\emph{Case $h_c > R_s.h$.}
+We first show no $(Z, h_c, s) \in \Sigma.C_J$ exists.
+If such a $(Z, h_c, s)$ were in $\Sigma.C_N$, Lemma~\ref{lem:certchain} applied to the finalized~$F_s$ (at height $h_{F_s} \leq R_s.h < h_c$) would give $F_s \prec Z$, so $Z \succeq F_s$ and $(Z, h_c, s)$ is an argmax candidate of $\textsf{computeRoot}$; its key $(h_c, \ldots)$ dominates $R_s$'s key $(R_s.h, \ldots)$ on the leading coordinate, contradicting $R_s$'s maximality.
+Hence no such tuple is in $C_N$, a fortiori none is in $C_J \subseteq C_N$.
+By Lemma~\ref{lem:no-finalize-without-cj}, $i$ has not cast any vote~$v'$ with $v'.\mathsf{finalize\_height} = h_c$, so the first branch of~$T_c$ does not fire and $T_c = T \preceq H$.
+
+\emph{Case $h_c = R_s.h$ and $(R_s, h_c, R_s.\slot) \notin \Sigma.C_J$.}
+By Lemma~\ref{lem:root-height-cj-exclusive}, no $(B, h_c, s) \in C_J$ exists at all.
+By Lemma~\ref{lem:no-finalize-without-cj}, $i$ has cast no~$v'$ with $v'.\mathsf{finalize\_height} = h_c$, so $T_c = T \preceq H$.
+
+\emph{Case $h_c = R_s.h$ and $(R_s, h_c, R_s.\slot) \in \Sigma.C_J$.}
+If~$i$ has cast no~$v'$ with $v'.\mathsf{finalize\_height} = h_c$, then $T_c = T \preceq H$ as above.
+Otherwise, pick such~$v'$; then $v'.\mathsf{finalize\_target}$ is a block justified at height~$h_c$ on some chain.
+So is~$R_s$ (by the case hypothesis). By Lemma~\ref{lem:unique-just-per-height}, $v'.\mathsf{finalize\_target} = R_s$, giving $T_c = R_s$.
+Since~$H$ descends from~$R_s$ (Theorem~\ref{thm:fleqr} and the spec of $\textsf{getHead}$), $T_c = R_s \preceq H$.
+\end{proof}
 
 \end{document}
