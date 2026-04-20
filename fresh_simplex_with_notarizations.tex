@@ -525,15 +525,6 @@ Every $h_n$-update is paired with $\sigma.h \gets \sigma.h + 1$ (Lemma~\ref{lem:
 For $h > h_F$: $\sigma[F].h = h_F < h = \sigma[C].h$ by Remark~\ref{rem:fresh-equiv}, and state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) forces $F \prec C$ on the comparable pair $F \sim C$.
 \end{proof}
 
-\begin{lemma}[Per-height justification uniqueness]\label{lem:just-unique-height}
-Unless $\geq n/3$ validators are slashable, and assuming all honest validators follow Definition~\ref{def:voting-rule}: for any two blocks $C_1, C_2$ justified at the same height~$h$ on any chains processed by the node, $C_1 = C_2$.
-\end{lemma}
-
-\begin{proof}
-Each justification at height~$h$ on a chain yields a $\just$-quorum $Q_k$ ($k \in \{1, 2\}$) of size $\geq 2n/3$ signing a $\just$ vote at height~$h$ for $C_k$; quorum intersection gives $|Q_1 \cap Q_2| \geq n/3$.
-Since fewer than $n/3$ validators are slashable, some $v \in Q_1 \cap Q_2$ is not slashable and (by the hypothesis) honest; by Definition~\ref{def:voting-rule}, only (R1) emits a $\just$ vote and it fires at most once per height, so $v$'s single $\just$ vote at~$h$ has both $C_1$ and $C_2$ as target, forcing $C_1 = C_2$.
-\end{proof}
-
 \begin{lemma}[Upgrade property]\label{lem:upgrade}
 Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B$ whose post-state has $(F, h_F)$ as its justified checkpoint has been processed by the node, then $R_s \succeq F$ at all future times.
 \end{lemma}
@@ -549,7 +540,10 @@ $R_s \succeq F_s^0 \succeq F$ already holds by Theorem~\ref{thm:fleqr}; Theorem~
 The filter passes, so after the call $\Sigma.\mathsf{key}_R \geq (h_F,\, 1,\, F.\slot,\, \mathsf{hash}(F))$; Lemma~\ref{lem:Rs-key-monotone} preserves this bound thereafter.
 Write $h_R \coloneqq \Sigma.\mathsf{key}_R.h$ and $\mathsf{bit}_R \coloneqq \Sigma.\mathsf{key}_R.b$; the bound gives $h_R \geq h_F$.
 If $h_R > h_F$, Lemma~\ref{lem:certchain} applied to the cert event $(R_s,\, h_R,\, \mathsf{bit}_R)$ gives $F \prec R_s$.
-If $h_R = h_F$, the bound forces $\mathsf{bit}_R = 1$, so $R_s$ is justified at height~$h_F$, and Lemma~\ref{lem:just-unique-height} gives $R_s = F$.
+If $h_R = h_F$, the bound forces $\mathsf{bit}_R = 1$, so $R_s$ was justified at height~$h_F$ on some processed chain, giving a $\just$-quorum~$Q'$ of size $\geq 2n/3$ with target~$R_s$ at height~$h_F$.
+Finality of~$F$ at~$h_F$ gives a quorum~$Q_F$ with $\mathsf{finalize\_height} = h_F$ and $\mathsf{finalize\_target} = F$.
+By quorum intersection, $|Q' \cap Q_F| \geq n/3$; pick $v \in Q' \cap Q_F$ not slashable.
+E1 (Definition~\ref{def:slashing}) applied to $v$'s votes in~$Q', Q_F$ forces $R_s = F$.
 \end{proof}
 
 \begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
@@ -583,7 +577,7 @@ Remark~\ref{rem:fs-invariant} forces $F_s$ into this chain, so $F_s \preceq F_{\
 
 \emph{$R_s$.} The multiset~$D$ of descriptors offered to $\textsf{updateForkChoiceRoot}$ is a deterministic function of the processed set: each block contributes its post-state's two descriptors exactly once.
 Write $K_{\max} \coloneqq (h_{F_{\max}},\, 1,\, F_{\max}.\slot,\, \mathsf{hash}(F_{\max}))$.
-For any $(h, b, C) \in D$ with $h \geq h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succeq F_{\max}$ (strict when $h > h_{F_{\max}}$); at $h = h_{F_{\max}}$, Remark~\ref{rem:fs-invariant} with $F_{\max}$ justified gives $\Sigma.\mathsf{key}_R \geq K_{\max}$, forcing any competitive descriptor to have bit~$1$, and Lemma~\ref{lem:just-unique-height} then gives $C = F_{\max}$.
+For any $(h, b, C) \in D$ with $h \geq h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succeq F_{\max}$ (strict when $h > h_{F_{\max}}$); at $h = h_{F_{\max}}$, Remark~\ref{rem:fs-invariant} with $F_{\max}$ justified gives $\Sigma.\mathsf{key}_R \geq K_{\max}$, forcing any competitive descriptor to have bit~$1$, hence a $\just$-quorum~$Q_C$ of size $\geq 2n/3$ targeting~$C$ at height~$h_{F_{\max}}$, while finality of~$F_{\max}$ gives a quorum~$Q_F$ with $\mathsf{finalize\_height} = h_{F_{\max}}$ and $\mathsf{finalize\_target} = F_{\max}$; quorum intersection and E1 (as in Lemma~\ref{lem:upgrade}) force $C = F_{\max}$.
 Descriptors with $h < h_{F_{\max}}$ have key strictly below $K_{\max}$ on the leading coordinate, so once $\mathsf{key}_R \geq K_{\max}$ holds they are dominated.
 Hence $R_s$'s final value is the lex-max over $\{(h, b, C) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
 \end{proof}
@@ -733,17 +727,16 @@ The first-vote check in the (R1) branch ensures at most one $\just$ vote per hei
 \Function{$\textsf{constructVote}$}{$V,\; \Sigma$}
   \State $X \gets \textsf{getHead}(\Sigma)$
   \State $h_c \gets \sigma[X].h$; \;\; $h_j \gets \sigma[X].h_j$; \;\; $J \gets \sigma[X].J$
-  \State $T \gets$ any ancestor of $X$ with $\sigma[T].h = h_c$ \Comment{e.g.~$X$ itself}
   \vspace{3pt}
   \State \textbf{-- Target selection --}
   \If{$\exists\, v \in V$ with $v.\mathsf{finalize\_height} = h_c$ and $v.\mathsf{finalize\_target} \neq \bot$}
     \State $T_c \gets v.\mathsf{finalize\_target}$ \Comment{$i$ is locked at $h_c$}
   \Else
-    \State $T_c \gets T$
+    \State $T_c \gets$ any ancestor of $X$ with $\sigma[T].h = h_c$ \Comment{e.g.~$X$ itself}
   \EndIf
   \vspace{3pt}
   \State \textbf{-- Vote kind and finalize fields --}
-  \If{no $v \in V$ has $v.\height = h_c$} \Comment{first vote at $h_c$: cast $\just$ (R1)}
+  \If{$\not \exists v \in V$ s.t. $v.\height = h_c$} \Comment{first vote at $h_c$: cast $\just$ (R1)}
     \If{every $v \in V$ with $v.\height = h_j$ has $v.\target = J$}
       \State $(f_h,\, f_t) \gets (h_j,\, J)$
     \Else
@@ -790,45 +783,85 @@ Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~
 The claim is that the vote~$v$ produced by Definition~\ref{def:voting-rule}, once included on any extension of~$X$ still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
 Height advances reset $\mathsf{jtargets}$ and $\mathsf{ntargets}$ (Figure~\ref{alg:state-machine}), so Layer-2 state at the next height is independent of~$i$'s prior votes and no ``lock'' issue propagates.
 
+The proof proceeds via four supporting lemmas: per-height justification uniqueness (Lemma~\ref{lem:just-unique-height}), root-height exclusivity of the notarize-only bit (Lemma~\ref{lem:root-h-notarize-only}), the absence of finalize votes without a matching justification cert event (Lemma~\ref{lem:no-finalize-without-just}), and a canonical-freshness statement for~$i$'s vote (Lemma~\ref{lem:canonical-fresh-honest-vote}).
+
+\begin{lemma}[Per-height justification uniqueness]\label{lem:just-unique-height}
+If $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: for any two blocks $C_1, C_2$ justified at the same height~$h$ on any chains processed by the node, $C_1 = C_2$.
+\end{lemma}
+
+\begin{proof}
+Each justification at height~$h$ on a chain yields a $\just$-quorum $Q_k$ ($k \in \{1, 2\}$) of size $\geq 2n/3$ signing a $\just$ vote at height~$h$ for $C_k$; quorum intersection gives $|Q_1 \cap Q_2| \geq n/3$.
+Since $f < n/3$, some $v \in Q_1 \cap Q_2$ is honest; by Definition~\ref{def:voting-rule}, only (R1) emits a $\just$ vote and it fires at most once per height, so~$v$'s single $\just$ vote at~$h$ has both $C_1$ and $C_2$ as target, forcing $C_1 = C_2$.
+\end{proof}
+
+\begin{lemma}[Root-height exclusivity of the notarize-only bit]\label{lem:root-h-notarize-only}
+Unless $\geq n/3$ validators are slashable: if $\Sigma.\mathsf{key}_R.b = 0$, then no justification at height $\Sigma.\mathsf{key}_R.h$ has fired on any processed chain.
+\end{lemma}
+
+\begin{proof}
+Write $h_R \coloneqq \Sigma.\mathsf{key}_R.h$ and suppose some justification at~$h_R$ fired on a processed chain, producing $J_\ast$ justified at~$h_R$.
+$\textsf{onBlock}$ offered the descriptor $(h_R,\, 1,\, J_\ast)$ to $\textsf{updateForkChoiceRoot}$ at that time, with key $(h_R,\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$.
+Let $F_s^0 \coloneqq \Sigma.F_s$ at that moment; $F_s^0$ is finalized or genesis (Remark~\ref{rem:fs-invariant}) at some height $h_{F_s^0}$.
+When $F_s^0$ was set, the cert event $(F_s^0,\, h_{F_s^0},\, 1)$ had already raised the cache height to $\geq h_{F_s^0}$ (the $\textsf{updateFinalized}$ guard $F_B \preceq R_s$ ensures the cache covered it), and Lemma~\ref{lem:Rs-key-monotone} preserves $h_{F_s^0} \leq h_R$.
+We show $F_s^0 \preceq J_\ast$, so the filter in $\textsf{updateForkChoiceRoot}$ passes.
+If $h_R > h_{F_s^0}$, Lemma~\ref{lem:certchain} applied to $F_s^0$ and the cert event at $J_\ast$ gives $F_s^0 \prec J_\ast$.
+If $h_R = h_{F_s^0}$, finality of $F_s^0$ at~$h_R$ gives a finalize-quorum $Q_F$ with $\mathsf{finalize\_height} = h_R$ and $\mathsf{finalize\_target} = F_s^0$, and $J_\ast$ being justified at~$h_R$ gives a $\just$-quorum~$Q'$ targeting~$J_\ast$ at~$h_R$; quorum intersection and E1 (as in Lemma~\ref{lem:upgrade}) force $F_s^0 = J_\ast$.
+Either way $F_s^0 \preceq J_\ast$, so $\textsf{updateForkChoiceRoot}$ raises the cache to $\Sigma.\mathsf{key}_R \geq (h_R,\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$ at that moment; Lemma~\ref{lem:Rs-key-monotone} preserves this bound.
+At the present moment $\Sigma.\mathsf{key}_R.h = h_R$, so lex-comparison with the first coordinate fixed forces $\Sigma.\mathsf{key}_R.b \geq 1$, contradicting $\mathsf{key}_R.b = 0$.
+\end{proof}
+
+\begin{lemma}[Finalize vote implies justification]\label{lem:no-finalize-without-just}
+If~$i$ has cast a vote~$v$ with $v.\mathsf{finalize\_height} = h'$ and $v.\mathsf{finalize\_target} = T_f \neq \bot$, then~$T_f$ was justified at height~$h'$ on some processed chain by the time~$v$ was cast.
+\end{lemma}
+
+\begin{proof}
+Only (R1) produces $\mathsf{finalize\_height} \neq \bot$, so~$v$ came from (R1) at an earlier moment with~$i$'s local store~$\Sigma_0$; by the (R1) finalize-field conditional, $(f_h, f_t) = (h_j, J) = (h', T_f)$ read from~$i$'s then-canonical $X_0 = \textsf{getHead}(\Sigma_0)$, so $\sigma[X_0].h_j = h'$ and $\sigma[X_0].J = T_f$.
+A state has $(h_j, J) = (h', T_f)$ only after the justification branch of $\textsf{processHeight}$ fired on that chain with target~$T_f$ at pre-state height~$h'$, i.e.\ some ancestor $B' \preceq X_0$ triggered justification of~$T_f$ at height~$h'$.
+\end{proof}
+
+\begin{lemma}[Canonical-fresh honest vote]\label{lem:canonical-fresh-honest-vote}
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be honest with local store~$\Sigma$, $X = \textsf{getHead}(\Sigma)$, and $h_c = \sigma[X].h$.
+Let~$v$ be the vote~$i$ produces at the current slot.
+Then $v.\target \preceq X$ with $\sigma[v.\target].h = h_c$.
+In particular, $v$ is canonical-fresh on every extension $X' \succeq X$ with $\sigma[X'].h = h_c$.
+\end{lemma}
+
+\begin{proof}
+Write $h_R \coloneqq \Sigma.\mathsf{key}_R.h$ and $\mathsf{bit}_R \coloneqq \Sigma.\mathsf{key}_R.b$.
+$X$ descends from~$R_s$ (Figure~\ref{alg:store}), so $R_s \preceq X$; the cached cert event fired at height~$h_R$ on a processed chain with $\sigma[R_s].h = h_R$ (Remark~\ref{rem:fresh-equiv}, genesis trivial).
+State-height monotonicity (Lemma~\ref{lem:slotmono}) gives $h_c \geq h_R$.
+Every state-height advance on~$X$ fires a cert event whose descriptor is offered to $\textsf{updateForkChoiceRoot}$, raising $\mathsf{key}_R.h$ if it exceeds the cached value; hence no advance from $h_R + 1$ to $h_R + 2$ has fired on~$X$, so $h_c \in \{h_R,\, h_R + 1\}$.
+By Definition~\ref{def:voting-rule}, $v.\height = h_c$ and $v.\target = T_c$, where $T_c = T \preceq X$ with $\sigma[T].h = h_c$ in the unlocked case, and $T_c = L$ where~$L$ is a lock target from a prior (R1) vote of~$i$ with $\mathsf{finalize\_height} = h_c$ in the locked case.
+
+\emph{Case $h_c = h_R + 1$.}
+A lock at~$h_c$ would, by Lemma~\ref{lem:no-finalize-without-just}, require some~$J_\ast$ justified at~$h_c$ on a processed chain.
+The filter-passing argument of Lemma~\ref{lem:root-h-notarize-only} applies (with $h_R$ there replaced by~$h_c$, using $h_{F_s^0} \leq h_R < h_c$), so $\textsf{updateForkChoiceRoot}$ raised the cache to $\Sigma.\mathsf{key}_R.h \geq h_c = h_R + 1$ and Lemma~\ref{lem:Rs-key-monotone} preserves this, contradicting $\mathsf{key}_R.h = h_R$.
+So~$i$ is unlocked at~$h_c$ and $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
+
+\emph{Case $h_c = h_R$ with $\mathsf{bit}_R = 0$.}
+By Lemma~\ref{lem:root-h-notarize-only}, no justification at~$h_c$ has fired on any processed chain; by Lemma~\ref{lem:no-finalize-without-just},~$i$ has not cast a finalize-bearing vote at~$h_c$, so~$i$ is unlocked and $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
+
+\emph{Case $h_c = h_R$ with $\mathsf{bit}_R = 1$.}
+If~$i$ is unlocked, $T_c = T \preceq X$ directly.
+Otherwise~$i$ is locked at~$h_c$ with target~$L$; Lemma~\ref{lem:no-finalize-without-just} gives $L$ justified at~$h_c$ on some processed chain, and $\mathsf{bit}_R = 1$ gives $R_s$ justified at~$h_R = h_c$ on some processed chain.
+Lemma~\ref{lem:just-unique-height} then gives $L = R_s \preceq X$, with $\sigma[T_c].h = \sigma[R_s].h = h_c$.
+\end{proof}
+
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
-Unless $\geq n/3$ validators are slashable, and assuming all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $X = \textsf{getHead}(\Sigma)$ its canonical chain, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $X = \textsf{getHead}(\Sigma)$ its canonical chain, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
 Let $v$ be the vote~$i$ produces at the current slot.
 Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$ such that $X' = \textsf{getHead}(\Sigma')$ is an extension of~$X$ with $\Sigma'.\sigma[X'].h = h_c$, and suppose~$v$ is included on~$X'$.
 Then for every slot processed on~$X'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\mathsf{penalties}[i]$ on canonical is zero.
 \end{theorem}
 
 \begin{proof}
-It suffices to show $T_c \preceq X$ with $\sigma[T_c].h = h_c$: freshness (Remark~\ref{rem:fresh-equiv}) then makes~$v$ canonical-fresh on any $X' \succeq X$ at state-height $h_c$, processing~$v$ populates $\mathsf{ntargets}[i]$, and Layer~1 does not bump a validator with $\mathsf{ntargets}[i] \neq \bot$.
-
-\emph{Step 1: $R_s \preceq X$ and $\sigma[X].h \geq \Sigma.\mathsf{key}_R.h$.}
-$X$ descends from~$R_s$ (Figure~\ref{alg:store}), so $R_s \preceq X$.
-$R_s$ is either genesis or was set by a cert event firing at height $\Sigma.\mathsf{key}_R.h$ on a processed chain, so $\sigma[R_s].h = \Sigma.\mathsf{key}_R.h$ (Remark~\ref{rem:fresh-equiv}, with genesis trivial).
-State-height monotonicity (Lemma~\ref{lem:slotmono}) then gives $h_c \geq \Sigma.\mathsf{key}_R.h$.
-
-\emph{Step 2: $h_c \leq \Sigma.\mathsf{key}_R.h + 1$.}
-Every state-height advance on~$X$ from $h'$ to $h'+1$ fires a cert event at height $h'$ (Lemma~\ref{lem:heightprog}) and is passed through $\textsf{updateForkChoiceRoot}$; the key $(h',\, \cdot,\, \cdot,\, \cdot)$ raises $\Sigma.\mathsf{key}_R.h$ to at least $h'$ whenever $h' > \Sigma.\mathsf{key}_R.h$.
-Hence no advance from $\Sigma.\mathsf{key}_R.h + 1$ to $\Sigma.\mathsf{key}_R.h + 2$ has fired on~$X$, and $h_c \in \{\Sigma.\mathsf{key}_R.h,\; \Sigma.\mathsf{key}_R.h + 1\}$.
-
-\emph{Step 3: lock characterization.}
-A lock at height~$h'$ requires a prior (R1) firing of~$i$ with finalize-fields $(h',\, J_\ast)$, meaning~$J_\ast$ was justified at height~$h'$ on some processed chain.
-That justification fired a cert event with key $(h',\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$, which $\textsf{updateForkChoiceRoot}$ passed into $\Sigma.\mathsf{key}_R$; Lemma~\ref{lem:Rs-key-monotone} preserves this bound, so $\Sigma.\mathsf{key}_R \geq (h',\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$ thereafter.
-
-\emph{Step 4: $h_c = \Sigma.\mathsf{key}_R.h + 1$.}
-By Step~3, a lock at $h_c$ would force $\Sigma.\mathsf{key}_R.h \geq h_c = \Sigma.\mathsf{key}_R.h + 1$ --- absurd.
-So $i$ is not locked, and $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
-
-\emph{Step 5: $h_c = \Sigma.\mathsf{key}_R.h$.}
-If $i$ is not locked, $T_c = T \preceq X$ directly.
-If~$i$ is locked at $h_c$ with target~$L$, Step~3 gives $\Sigma.\mathsf{key}_R \geq (h_c,\, 1,\, L.\slot,\, \mathsf{hash}(L))$; matching leading coordinates forces $\Sigma.\mathsf{key}_R.b = 1$, so $R_s$ was itself justified at height~$h_c$ on some processed chain.
-The locking (R1) also justified~$L$ at height~$h_c$, so Lemma~\ref{lem:just-unique-height} gives $L = R_s$, and Step~1 yields $T_c = L = R_s \preceq X$ with $\sigma[T_c].h = h_c$.
-
-\emph{Conclusion.} Each case gives $T_c \preceq X \preceq X'$ and $\sigma[T_c].h = h_c$.
+Lemma~\ref{lem:canonical-fresh-honest-vote} gives $T_c \coloneqq v.\target \preceq X \preceq X'$ with $\sigma[T_c].h = h_c$.
 The hypothesis $\Sigma'.\sigma[X'].h = h_c$ with Lemma~\ref{lem:slotmono} gives $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$; Remark~\ref{rem:fresh-equiv} then gives $T_c.\slot \geq \Sigma'.\sigma[X'].s_h$.
 So~$v$ is canonical-fresh on~$X'$, and processing~$v$ sets $\mathsf{ntargets}[i] \neq \bot$.
 $\mathsf{ntargets}$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\mathsf{ntargets}[i] \neq \bot$ persists and Layer~1 does not bump~$i$.
 \end{proof}
 
-The slashable-set hypothesis is used only in Step~5, via Lemma~\ref{lem:just-unique-height}, to collapse the locked-branch target~$L$ onto $R_s$.
+The $f < n/3$ hypothesis is used only in Lemma~\ref{lem:canonical-fresh-honest-vote} via Lemma~\ref{lem:just-unique-height}, to collapse the lock target~$L$ onto $R_s$ in the $h_c = h_R$, $\mathsf{bit}_R = 1$ case.
 
 \section{Roberto's review}\label{sec:roberto-review}
 
