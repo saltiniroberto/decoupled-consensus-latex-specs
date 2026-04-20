@@ -840,7 +840,7 @@ The rule is E1-safe: Lemma~\ref{lem:honest-e1-safety} records that an honest val
 Per-height $\just$-uniqueness is immediate: only (R1) produces a $\just$ vote, and (R1) fires at most once per~$h_c$.
 
 \begin{lemma}[Honest E1 safety]\label{lem:honest-e1-safety}
-If validator~$i$ follows Definition~\ref{def:voting-rule}, then $i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
+If validator~$i$ follows Definition~\ref{def:voting-rule}, then $i$ never produces a vote-pair $(v_1, v_2)$ with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
 \end{lemma}
 
 \begin{proof}
@@ -857,8 +857,6 @@ Hence $v_1.\target = T_c = T_\ast$.
 \emph{Case~C ($v_1 = v_2$).}
 Vacuous: $v_2.\height = h_c \neq h_\ast = v_2.\mathsf{finalize\_height}$ (every height advance sets $h_j \gets h$ before $h \gets h + 1$, so $h_j < h$ in any post-advance state).
 \end{proof}
-
-The proof uses neither synchrony, nor determinism of $\textsf{getHead}$, nor any agreement on the canonical view across validators --- the lock clause carries Case~B on its own.
 
 \subsection{Leak fairness}
 
