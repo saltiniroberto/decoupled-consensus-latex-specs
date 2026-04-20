@@ -276,7 +276,7 @@ $\textsf{processBlock}$ does not itself advance~$h$: height advances are the res
   \If{$|\sigma.P| \geq 2n/3$} \Comment{Finality}
     \State $\sigma.F \gets \sigma.J$
   \EndIf
-  \State $T \gets \arg\max_{T' \in \{\sigma.\mathsf{jtargets}[i] \,:\, \sigma.\mathsf{jtargets}[i] \neq \bot\}} |\{i : \sigma.\mathsf{jtargets}[i] = T'\}|$ \Comment{$T \gets \bot$ if the set is empty; the next guard then skips this branch via the $2n/3$ check}
+  \State $T \gets \arg\max_{T' \in \{\sigma.\mathsf{jtargets}[i] \,:\, \sigma.\mathsf{jtargets}[i] \neq \bot\}} |\{i : \sigma.\mathsf{jtargets}[i] = T'\}|$ \Comment{$T \gets \bot$ if the set is empty;}
   \If{$T \neq \bot$ \textbf{and} $|\{i : \sigma.\mathsf{jtargets}[i] = T\}| \geq 2n/3$} \Comment{Justification (also a notarization)}
     \State $\sigma.J \gets T$, \; $\sigma.h_j \gets \sigma.h$, \; $\sigma.P \gets \emptyset$
     \State $\sigma.N \gets T$, \; $\sigma.h_n \gets \sigma.h$
@@ -312,10 +312,6 @@ $\textsf{processBlock}$ does not itself advance~$h$: height advances are the res
 \end{boxedminipage}
 \end{center}
 \end{figure}
-
-\paragraph{Freshness as a structural invariant.}
-If $v$ is recorded on chain~$L$ at state-height~$h$, then $v.\target \preceq L$ with $\sigma[v.\target].h = h$ (Remark~\ref{rem:fresh-equiv}).
-Consequently any block justified or notarized at height~$h$ on some chain has $\geq 2n/3$ witnessing targets, each at state-height~$h$ on its own chain.
 
 \section{Accountable safety}
 
