@@ -100,6 +100,7 @@
 
 \crefname{condition}{condition}{conditions}
 \newtheorem{condition}{Condition}
+\newtheorem{assumption}[theorem]{Assumption}
 
 
 \title{Fresh Simplex with Prefix Notarizations}
@@ -790,7 +791,7 @@ Stall slots are automatically covered: the finality branch does not fire without
 We state the honest rule explicitly, as it underpins the leak fairness proof.
 
 \begin{definition}[Honest voting rule]\label{def:voting-rule}
-Let~$X = \textsf{getHead}(\Sigma)$ be the canonical chain head, $\sigma[X]$ its post-state, $h_c = \sigma[X].h$ the current canonical height, and $h_j = \sigma[X].h_j$ the canonical justified height.
+Let~$X = \textsf{getHead}(\Sigma)$ be the canonical chain head,\RSfn{Does \textsf{getHead} return a confirmed block? If not, the target $T$ might be a non-confirmed block} $\sigma[X]$ its post-state, $h_c = \sigma[X].h$ the current canonical height, and $h_j = \sigma[X].h_j$ the canonical justified height.
 Let $T$ denote a target at height~$h_c$: any ancestor of~$X$ with $\sigma[T].h = h_c$. In particular, $X$ itself is a valid choice.
 
 Let $J = \sigma[X].J$ denote the canonical justified block (paired with $h_j$).
@@ -1012,6 +1013,209 @@ If~$i$ has cast no~$v'$ with $v'.\mathsf{finalize\_height} = h_c$, then $T_c = T
 Otherwise, pick such~$v'$; then $v'.\mathsf{finalize\_target}$ is a block justified at height~$h_c$ on some chain.
 So is~$R_s$ (by the case hypothesis). By Lemma~\ref{lem:unique-just-per-height}, $v'.\mathsf{finalize\_target} = R_s$, giving $T_c = R_s$.
 Since~$H$ descends from~$R_s$ (Theorem~\ref{thm:fleqr} and the spec of $\textsf{getHead}$), $T_c = R_s \preceq H$.
+\end{proof}
+
+
+\subsection{Healing from Asynchrony}
+
+To state the conditions under which the protocol \emph{heals} after a prolonged period of asynchrony, we enrich the system model of Section~\ref{sec:store} with slot-based timing and a per-slot view-merge mechanism.
+The view-merge mechanism is detailed in Appendix~\ref{app:view-merge}; in this subsection we abstract it via an assumption sufficient for the healing arguments.
+
+\begin{definition}[Slots and voting time]\label{def:slots}
+Physical time is partitioned into an infinite sequence of discrete \emph{slots} indexed by $t \in \mathbb{N}$.
+Slot~$t$ has a \emph{start time} $\mathsf{start}(t) \in \mathbb{R}_{\geq 0}$, with $\mathsf{start}(t+1) \geq \mathsf{start}(t) + 2\Delta$, and a \emph{voting time} $\mathsf{vote}(t) \coloneqq \mathsf{start}(t) + \Delta$ at which every honest validator~$i$ invokes the honest voting rule (Definition~\ref{def:voting-rule}) on its local store~$\Sigma_i$ to produce (at most) one slot-$t$ vote.
+\end{definition}
+
+\begin{definition}[Syncer]\label{def:syncer}
+A publicly known function $\mathsf{syncer} \colon \mathbb{N} \to \{1, \ldots, n\}$ assigns to each slot~$t$ a validator $\mathsf{syncer}(t)$, called the \emph{syncer} for slot~$t$.
+During the portion of slot~$t$ preceding $\mathsf{vote}(t)$, $\mathsf{syncer}(t)$ is responsible for executing the \emph{view-merge protocol}: it collects messages (blocks and votes) observable in its own view and forwards them to every validator, so that each honest recipient can merge them into its local store before~$\mathsf{vote}(t)$.
+\end{definition}
+
+\begin{assumption}[View-merge guarantee]\label{ass:view-merge}
+If $\mathsf{syncer}(t)$ is honest, then there exists a store $\Sigma^\star_t$ such that every honest validator~$i$ satisfies $\Sigma_i = \Sigma^\star_t$ at time $\mathsf{vote}(t)$.
+Equivalently, any two honest validators have processed identical sets of blocks and votes at $\mathsf{vote}(t)$.
+\end{assumption}
+
+% \begin{assumption}[Post-GST fork-choice consistency]\label{ass:gethead-postgst}
+% If $\mathsf{start}(t) - \Delta \geq \GST$, then at time $\mathsf{vote}(t)$, for any two honest validators~$i$ and~$j$ with $\Sigma_i.R_s = \Sigma_j.R_s$, the blocks $\textsf{getHead}(\Sigma_i)$ and $\textsf{getHead}(\Sigma_j)$ are comparable under~$\preceq$.
+% \end{assumption}
+
+By Theorem~\ref{thm:orderindep} applied to~$\Sigma^\star_t$, if additionally $f < n/3$ and $\textsf{getHead}$ is deterministic, the components $(R_s, F_s, C_J, C_N)$ and the canonical chain $H = \textsf{getHead}(\Sigma^\star_t)$ are common to every honest validator at $\mathsf{vote}(t)$.
+
+\begin{lemma}[Monotonicity of the root height]\label{lem:Rs-height-monotone}
+$R_s.h$ is non-decreasing over time.
+\end{lemma}
+
+\begin{proof}
+$R_s$ changes only inside $\textsf{onBlock}$, which (i) inserts tuples into~$C_N$ and~$C_J$, (ii) recomputes $R_s$ via $\textsf{computeRoot}$, and (iii) possibly advances~$F_s$ via $\textsf{updateFinalized}$, whose guard enforces $F_s \preceq R_s$ at the moment of the update.
+Let $R_s^{\text{old}}, F_s^{\text{old}}$ be the values immediately after an $\textsf{onBlock}$ call, and $R_s^{\text{new}}, F_s^{\text{new}}$ the values after the next call.
+The update $F_s^{\text{old}} \to F_s^{\text{new}}$ (if any) occurred under the guard $F_s^{\text{new}} \preceq R_s^{\text{old}}$; otherwise $F_s^{\text{new}} = F_s^{\text{old}} \preceq R_s^{\text{old}}$ by Theorem~\ref{thm:fleqr}.
+Either way $R_s^{\text{old}} \succeq F_s^{\text{new}}$, and since~$C_N$ is monotone, the tuple $(R_s^{\text{old}}, R_s^{\text{old}}.h, R_s^{\text{old}}.\slot)$ is still in~$C_N$ and satisfies the argmax constraint $X \succeq F_s^{\text{new}}$.
+Hence it is a candidate of the next $\textsf{computeRoot}$, whose argmax key therefore has leading coordinate $\geq R_s^{\text{old}}.h$, giving $R_s^{\text{new}}.h \geq R_s^{\text{old}}.h$.
+\end{proof}
+
+\begin{lemma}[Root is independent of the argmax starting point]\label{lem:Rs-start-anywhere}
+Unless $\geq n/3$ validators are slashable, the block~$R_s$ returned by $\textsf{computeRoot}$ coincides with the block of the argmax
+\[
+  \arg\max_{(X,h,s) \in C_N,\; X \succeq \genesis} \bigl(h,\; \mathbf{1}[(X,h,s) \in C_J],\; s,\; \mathsf{hash}(X)\bigr).
+\]
+\end{lemma}
+
+\begin{proof}
+Let $R_s^{\genesis}$ be the block of the argmax taken over $\{(X,h,s) \in C_N : X \succeq \genesis\}$.
+Since $\{X \succeq F_s\} \subseteq \{X \succeq \genesis\}$, $R_s^{\genesis}$'s key is $\geq R_s$'s key; in particular $R_s^{\genesis}.h \geq R_s.h \geq h_{F_s}$ (the second inequality by Theorem~\ref{thm:fleqr}).
+
+We show $R_s^{\genesis} \succeq F_s$, which makes $R_s^{\genesis}$ a candidate of $\textsf{computeRoot}$'s argmax and forces $R_s^{\genesis} = R_s$ by uniqueness.
+
+\emph{Case $R_s^{\genesis}.h > h_{F_s}$.}
+Lemma~\ref{lem:certchain} applied to the finalized~$F_s$ and $(R_s^{\genesis}, R_s^{\genesis}.h, \cdot) \in C_N$ gives $F_s \prec R_s^{\genesis}$.
+
+\emph{Case $R_s^{\genesis}.h = h_{F_s}$.}
+$(F_s, h_{F_s}, F_s.\slot) \in C_J$ is a candidate of the $\{X \succeq \genesis\}$ argmax with key $(h_{F_s}, 1, F_s.\slot, \mathsf{hash}(F_s))$, so $R_s^{\genesis}$'s key is at least this; hence $R_s^{\genesis}$'s $C_J$-bit is~$1$, i.e., $(R_s^{\genesis}, h_{F_s}, \cdot) \in C_J$, meaning~$R_s^{\genesis}$ is justified at height~$h_{F_s}$ on some chain.
+$F_s$ is finalized at~$h_{F_s}$, so by the quorum-intersection argument in Lemma~\ref{lem:finchain}, $R_s^{\genesis} = F_s$; in particular $R_s^{\genesis} \succeq F_s$.
+\end{proof}
+
+\begin{corollary}[No $C_N$ record above the root]\label{cor:no-high-cn}
+Unless $\geq n/3$ validators are slashable, every $(X, h, s) \in C_N$ satisfies $h \leq R_s.h$.
+In particular, the same holds for every $(X, h, s) \in C_J \subseteq C_N$.
+\end{corollary}
+
+\begin{proof}
+By Lemma~\ref{lem:Rs-start-anywhere}, $R_s$ is the block of the argmax over $\{(X, h, s) \in C_N : X \succeq \genesis\}$; so every tuple in~$C_N$ has key $\leq R_s$'s key, which has leading coordinate $R_s.h$.
+If $(X, h, s) \in C_N$ had $h > R_s.h$, its key would strictly dominate $R_s$'s on the leading coordinate, contradicting maximality.
+\end{proof}
+
+\begin{corollary}[Processed-block height bound]\label{cor:processed-height-bound}
+Unless $\geq n/3$ validators are slashable, every processed block~$B$ satisfies $\sigma[B].h \leq R_s.h + 1$.
+\end{corollary}
+
+\begin{proof}
+Write $h_B \coloneqq \sigma[B].h$; if $h_B = 0$ the bound is trivial, so assume $h_B \geq 1$.
+By Lemma~\ref{lem:heightprog}, the chain ending at~$B$ advanced through every state-height $0, 1, \ldots, h_B$; in particular the last advance fired at some ancestor $B' \preceq B$ with pre-state height $h_B - 1$, inserting a tuple $(\sigma[B'].N,\; h_B - 1,\; \sigma[B'].N.\slot) \in C_N$.
+By Corollary~\ref{cor:no-high-cn}, $h_B - 1 \leq R_s.h$, hence $h_B \leq R_s.h + 1$.
+\end{proof}
+
+
+\begin{lemma}[Healing: one-slot advance]\label{lem:healing-one-slot}
+Assume:
+\begin{enumerate}
+  \item $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule};
+  \item $\textsf{getHead}$ is deterministic: equal stores yield equal canonical heads;
+  \item $\mathsf{start}(t) - \Delta \geq \GST$, so synchrony holds from $\mathsf{start}(t) - \Delta$ onward;
+  \item $\mathsf{syncer}(t)$ is honest; let $\Sigma^\star_t$ denote the common store given by Assumption~\ref{ass:view-merge}, write $H \coloneqq \textsf{getHead}(\Sigma^\star_t)$, and let $h^\star \coloneqq R_s^{(t)}.h$ be the root height in~$\Sigma^\star_t$;
+  \item $H.h = h^\star + 1$ (canonical at $\mathsf{vote}(t)$ is one state-height above the root);
+  \item no honest validator has cast any vote at height $> h^\star$ at any time strictly before $\mathsf{vote}(t)$;
+  \item (Slot-$t$ votes bundled.) By the slot-$(t+1)$ freeze time $\mathsf{start}(t+1) - \Delta$, in every honest validator's view, there exists a chain $X \succeq H$ such that every vote cast at $\mathsf{vote}(t)$ by an honest validator with target $\preceq H$ is included in~$X$.
+\end{enumerate}
+Then at $\mathsf{vote}(t+1)$, every honest validator has:
+\begin{itemize}
+  \item the same $R_s$, with $R_s.h = H.h = h^\star + 1$;
+  \item $(R_s,\, R_s.h,\, R_s.\slot) \in C_J$;
+  \item no honest validator has cast any $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+1)$.
+\end{itemize}
+\end{lemma}
+
+\begin{proof}
+By Assumption~\ref{ass:view-merge} and honest $\mathsf{syncer}(t)$, every honest~$i$ has $\Sigma_i = \Sigma^\star_t$ at $\mathsf{vote}(t)$; determinism~(2) gives all honest the same $H$ and the same canonical state-height $h_c^{(t)} = H.h = h^\star + 1$.
+Hypothesis~(6) rules out any prior honest vote at height $h^\star + 1$ (or above), so (R1) of Definition~\ref{def:voting-rule} fires at every honest, and Lemma~\ref{lem:canonical-fresh-honest-vote} gives $v^{(t)}_i = (i,\; h^\star + 1,\; \mathsf{vote}(t),\; T,\; \just,\; \ldots)$ with common target $T \preceq H$.
+These $\geq 2n/3$ honest $\just$ votes form a $\just$-quorum for~$T$ at height $h^\star + 1$.
+
+Hypothesis~(7) places chain $X \succeq H$ in every honest validator's view by the slot-$(t+1)$ freeze time $\mathsf{start}(t+1) - \Delta$, with all honest slot-$t$ votes included; since views are monotone, $X$ remains in every honest validator's store at $\mathsf{vote}(t+1)$.
+On~$X$ the $\just$-quorum for~$T$ at state-height $h^\star + 1$ fires justification with $\sigma[X].J = T$ and $\sigma[X].h_j = h^\star + 1$.
+Processing~$X$ inserts $(T,\, h^\star + 1,\, T.\slot) \in C_J$ into every honest validator's store.
+
+By Lemma~\ref{lem:unique-just-per-height}, $T$ is the unique block justified at height $h^\star + 1$, so $(T, h^\star + 1, T.\slot)$ is the unique $C_J$ tuple at that height.
+Honest votes strictly before $\mathsf{vote}(t+1)$ consist of the pre-$\mathsf{vote}(t)$ votes (all at heights $\leq h^\star$, by hypothesis~(6)) together with the slot-$t$ votes (all at height $h^\star + 1$); none exceed $h^\star + 1$.
+Under $f < n/3$, no $\just$- or $\notar$-quorum at height $> h^\star + 1$ can have formed by $\mathsf{vote}(t+1)$, so no $C_N$ tuple at height $> h^\star + 1$ exists.
+The argmax of $\textsf{computeRoot}$ at $\mathsf{vote}(t+1)$ therefore has leading coordinate $h^\star + 1$ and is attained by $(T,\, h^\star + 1,\, T.\slot) \in C_J$, giving the three conclusions uniformly across all honest validators.
+\end{proof}
+
+\begin{lemma}[Healing advance across two slots]\label{lem:healing-advance}
+Assume:
+\begin{enumerate}
+  \item $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule};
+  \item $\textsf{getHead}$ is deterministic: equal stores yield equal canonical heads;
+  \item $\mathsf{start}(t) - \Delta \geq \GST$, so synchrony holds from $\mathsf{start}(t) - \Delta$ onward;
+  \item $\mathsf{syncer}(t)$ and $\mathsf{syncer}(t+1)$ are honest; let $\Sigma^\star_t$ and $\Sigma^\star_{t+1}$ denote the common stores given by Assumption~\ref{ass:view-merge} applied at slot~$t$ and slot~$t+1$ respectively;
+  \item (No honest vote above $H.h$ before slot~$t$.) Writing $H \coloneqq \textsf{getHead}(\Sigma^\star_t)$, no honest validator has cast any vote at height $> H.h$ at any time strictly before $\mathsf{vote}(t)$;
+  \item (Slot-$t$ votes bundled into $\mathsf{syncer}(t+1)$'s canonical.) At $\mathsf{start}(t+1)$, $\textsf{getHead}$ applied to $\mathsf{syncer}(t+1)$'s store returns a chain $X \succeq H$ such that every vote cast at $\mathsf{vote}(t)$ by an honest validator with target $\preceq H$ is included in~$X$;
+  \item (Slot-$(t+1)$ votes bundled.) By the slot-$(t+2)$ freeze time $\mathsf{start}(t+2) - \Delta$, in every honest validator's view, there exists a chain $X' \succeq X$ such that every vote cast at $\mathsf{vote}(t+1)$ by an honest validator with target $\preceq H^{(t+1)}$ is included in~$X'$, where $H^{(t+1)} \coloneqq \textsf{getHead}(\Sigma^\star_{t+1})$.
+\end{enumerate}
+Then at $\mathsf{vote}(t+2)$, every honest validator has:
+\begin{itemize}
+  \item the same $R_s$, with $R_s.h = H.h + 1$;
+  \item $(R_s,\, R_s.h,\, R_s.\slot) \in C_J$;
+  \item no honest validator has cast any $\just$ vote $v$ with $v.\height > R_s.h$ at any time strictly before $\mathsf{vote}(t+2)$.
+\end{itemize}
+\end{lemma}
+
+\begin{proof}
+\emph{Step 1 --- slot-$t$ votes force $R_s^{(t+1)}.h = H.h$ and canonical at $H.h + 1$.}
+By Assumption~\ref{ass:view-merge} and honest $\mathsf{syncer}(t)$, every honest~$i$ has $\Sigma_i = \Sigma^\star_t$ at $\mathsf{vote}(t)$; determinism~(2) gives all honest the same $H$ and the same canonical state-height $h_c^{(t)} = H.h$.
+By Lemma~\ref{lem:canonical-fresh-honest-vote}, each honest~$i$'s slot-$t$ vote $v^{(t)}_i$ (of either kind) has $v^{(t)}_i.\height = H.h$ and $v^{(t)}_i.\target = T \preceq H$ for a common~$T$, and is canonical-fresh on every extension of~$H$ at state-height~$H.h$.
+Both $\just$ and $\notar$ votes update $\mathsf{ntargets}[i]$ (Figure~\ref{alg:state-machine}, $\textsf{processVote}$), so each of the $\geq 2n/3$ honest validators contributes $\mathsf{ntargets}[i] \succeq T$ on~$X$.
+
+Hypothesis~(6) makes $X \succeq H$ the canonical chain of $\mathsf{syncer}(t+1)$ at $\mathsf{start}(t+1)$, with the slot-$t$ honest votes included in~$X$.
+On~$X$ the prefix-count walk at state-height $H.h$ accumulates $\geq 2n/3$ contributions along the interval ending at a block $B^\star \succeq T$; prefix notarization fires with target~$B^\star$, so $\sigma[X].N = B^\star$, $\sigma[X].h_n = H.h$, and $\sigma[X].h = H.h + 1$, inserting $(B^\star,\, H.h,\, B^\star.\slot) \in C_N$.
+By Assumption~\ref{ass:view-merge} and honest $\mathsf{syncer}(t+1)$, every honest~$i$ has $\Sigma_i = \Sigma^\star_{t+1} = \Sigma_{\mathsf{syncer}(t+1)}$ (at $\mathsf{start}(t+1)$) at $\mathsf{vote}(t+1)$, and by determinism~(2) all compute the same canonical head $H^{(t+1)} = X$, so $\sigma[H^{(t+1)}].h = H.h + 1$.
+
+By Lemma~\ref{lem:Rs-height-monotone} and the new $(B^\star, H.h, \cdot) \in C_N$, $R_s^{(t+1)}.h \geq H.h$; by hypothesis~(5) and Corollary~\ref{cor:no-high-cn}, no $C_N$ tuple at height $> H.h$ existed at $\mathsf{vote}(t)$, and the only advance processed between $\mathsf{vote}(t)$ and $\mathsf{vote}(t+1)$ sits at height $H.h$, so $R_s^{(t+1)}.h = H.h$.
+
+\emph{Step 2 --- no honest vote above $H.h$ before $\mathsf{vote}(t+1)$.}
+Hypothesis~(5) directly rules out such a vote at any time strictly before $\mathsf{vote}(t)$; at $\mathsf{vote}(t)$ every honest casts exactly at height~$H.h$, and no voting event occurs between $\mathsf{vote}(t)$ and $\mathsf{vote}(t+1)$.
+Hence no honest has cast a vote at height $> H.h$ at any time strictly before $\mathsf{vote}(t+1)$.
+
+\emph{Step 3 --- invoke Lemma~\ref{lem:healing-one-slot} at slot~$t+1$.}
+We verify its hypotheses with~$t$ replaced by~$t+1$:
+\begin{itemize}
+\item (1)--(2) are inherited from the present hypotheses;
+\item (3) $\mathsf{start}(t+1) - \Delta \geq \mathsf{start}(t) + \Delta \geq \GST$ by hypothesis~(3) and slot spacing;
+\item (4) $\mathsf{syncer}(t+1)$ honest by hypothesis~(4), with $\Sigma^\star_{t+1}$, $H^{(t+1)}$, and $h^\star = R_s^{(t+1)}.h = H.h$ as set up in Step~1;
+\item (5) $H^{(t+1)}.h = H.h + 1 = h^\star + 1$ by Step~1;
+\item (6) no honest has cast any vote at height $> H.h = h^\star$ before $\mathsf{vote}(t+1)$ by Step~2;
+\item (7) is exactly the present hypothesis~(7).
+\end{itemize}
+Lemma~\ref{lem:healing-one-slot} yields the claimed conclusion at $\mathsf{vote}(t+2)$: uniform $R_s$ with $R_s.h = H.h + 1$, $(R_s, R_s.h, R_s.\slot) \in C_J$, and no honest $\just$ vote at height $> R_s.h$ before $\mathsf{vote}(t+2)$.
+\end{proof}
+
+\appendix
+
+\section{View-merge mechanism}\label{app:view-merge}
+
+This appendix details the view-merge mechanism abstracted by Assumption~\ref{ass:view-merge} and discharges that assumption under a synchronous-slot hypothesis.
+Throughout, $\Delta$ denotes the synchronous network-delivery bound.
+
+\begin{definition}[Slot timing]\label{def:slot-timing}
+Each slot~$t$ is anchored at a real-valued \emph{slot time} $\mathsf{start}(t)$ with $T_{t+1} - \mathsf{start}(t) \geq 2\Delta$, and contains three ordered events:
+\begin{itemize}
+  \item \emph{Freeze time} $\mathsf{start}(t) - \Delta$: every validator~$i$ records its current local store as its slot-$t$ frozen snapshot, $\Sigma^{\mathrm{frozen}}_{i,t} \coloneqq \Sigma_i$ evaluated at $\mathsf{start}(t) - \Delta$.
+  \item \emph{Syncer time} $\mathsf{start}(t)$: the syncer of slot~$t$ broadcasts its current (unfrozen) local store to every validator; write
+    \[
+      \Sigma^{\mathrm{sent}}_t \;\coloneqq\; \Sigma_{\mathsf{syncer}(t)}\ \text{evaluated at time } \mathsf{start}(t)
+    \]
+    for the broadcast content.
+  \item \emph{Voting time} $\mathsf{start}(t) + \Delta$ (the instant $\mathsf{vote}(t)$ of Definition~\ref{def:slots}): every honest validator~$i$ invokes the honest voting rule on its slot-$t$ merged view
+    \[
+      \Sigma^{\mathrm{merge}}_{i,t} \;\coloneqq\; \Sigma^{\mathrm{frozen}}_{i,t} \,\cup\, \Sigma^{\mathrm{sent}}_t,
+    \]
+    where the union is taken over the processed blocks and votes of the two stores.
+\end{itemize}
+Honest validators vote on $\Sigma^{\mathrm{merge}}_{i,t}$ rather than on their live store.
+\end{definition}
+
+\begin{definition}[Synchronous slot]\label{def:synchrony-window}
+Slot~$t$ is \emph{synchronous} if every message sent during the interval $[\mathsf{start}(t) - 2\Delta,\; \mathsf{start}(t) + \Delta]$ is delivered to every honest validator within~$\Delta$ of its sending time.
+\end{definition}
+
+\begin{lemma}[View-merge under an honest synchronous syncer]\label{lem:view-merge}
+If slot~$t$ is synchronous and $\mathsf{syncer}(t)$ is honest, then every honest validator~$i$ has $\Sigma^{\mathrm{frozen}}_{i,t} \subseteq \Sigma^{\mathrm{sent}}_t$, hence $\Sigma^{\mathrm{merge}}_{i,t} = \Sigma^{\mathrm{sent}}_t$.
+In particular, all honest validators share the same merged view at voting time~$\mathsf{start}(t) + \Delta$, discharging Assumption~\ref{ass:view-merge} with $\Sigma^\star_t = \Sigma^{\mathrm{sent}}_t$.
+\end{lemma}
+
+\begin{proof}
+Any block or vote in $\Sigma^{\mathrm{frozen}}_{i,t}$ was received (and hence sent) no later than $\mathsf{start}(t) - \Delta$.
+By Definition~\ref{def:synchrony-window}, such a message is delivered to every honest validator --- in particular to $\mathsf{syncer}(t)$ --- by time $(\mathsf{start}(t) - \Delta) + \Delta = \mathsf{start}(t)$, so it belongs to $\Sigma^{\mathrm{sent}}_t$.
+The broadcast of $\Sigma^{\mathrm{sent}}_t$ issued at $\mathsf{start}(t)$ reaches every honest validator by $\mathsf{start}(t) + \Delta$ by synchrony, so $\Sigma^{\mathrm{merge}}_{i,t}$ is well-defined at voting time and equals $\Sigma^{\mathrm{frozen}}_{i,t} \cup \Sigma^{\mathrm{sent}}_t = \Sigma^{\mathrm{sent}}_t$ for every honest~$i$.
 \end{proof}
 
 \end{document}
