@@ -485,7 +485,7 @@ Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets \sigma[B].F$ whenever
 
 \Function{$\textsf{updateForkChoiceRoot}$}{$\Sigma,\; (h,\, b,\, C)$} \Comment{Filter by $\Sigma.F_s \preceq C$, then running max}
   \State $\mathsf{newKey} \gets (h,\; b,\; C.\slot,\; \mathsf{hash}(C))$
-  \If{$\mathsf{newKey} > \Sigma.\mathsf{key}_R$ and $F_s \preceq C$}
+  \If{$\mathsf{newKey} > \Sigma.\mathsf{key}_R$ and $\Sigma.F_s \preceq C$}
     \State $\Sigma.R_s \gets C$; \;\; $\Sigma.\mathsf{key}_R \gets \mathsf{newKey}$
   \EndIf
   \State \Return $\Sigma$
