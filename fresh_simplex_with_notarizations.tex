@@ -146,7 +146,7 @@ A block~$B'$ is \emph{on the chain ending at~$B$} iff $B' \preceq B$.
   \item $h$: the \emph{current height}.
   \item $s_h$: the \emph{slot at which the current height began on this chain} --- the slot of the block whose processing last advanced~$h$ on this chain (genesis's slot~$0$ if no advance has yet occurred).
   \item $\mathsf{jtargets}[1..n]$: for each validator~$i$, the block~$i$ voted for with a $\just$ vote at the current height ($\bot$ if no such vote has been processed).
-  \item $\mathsf{ntargets}[1..n]$: for each validator~$i$, the block~$i$ voted for with a $\notar$ vote at the current height ($\bot$ if no such vote has been processed).
+  \item $\mathsf{ntargets}[1..n]$: for each validator~$i$, the $\preceq$-max target of~$i$'s fresh votes at the current height, across both $\just$ and $\notar$ kinds ($\bot$ if no such vote has been processed). A $\just$ vote for~$T$ thus already contributes to prefix-notarizing~$T$ and all its ancestors at the current state-height; it is therefore not necessary for~$i$ to cast a $\notar$ vote in order to notarize~$T$.
   \item $J$: the \emph{justified block}, from the most recent justification event.
   \item $h_j$: the height at which~$J$ was justified.
   \item $N$: the \emph{latest notarized block}, from the most recent justification or notarization event ($J$ is automatically also a notarization, as noted in Definition~\ref{def:notarization}).
