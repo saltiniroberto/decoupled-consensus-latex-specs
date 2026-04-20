@@ -1183,12 +1183,17 @@ Assume:
   \item $f < n/3$ and all honest validators follow \Cref{def:voting-rule};
   \item $\textsf{getHead}$ is deterministic: equal stores yield equal canonical heads;
   \item $\mathsf{start}(t) - \Delta \geq \GST$;
-  \item $\mathsf{syncer}(t)$ is honest; let $\Sigma^\star_t$ be the common store, $H \coloneqq \textsf{getHead}(\Sigma^\star_t)$, and $h^\star \coloneqq R_s^{(t)}.h$;
+  \item $\mathsf{syncer}(t)$ is honest; let $\Sigma^\star_t$ be the common store, $H \coloneqq \textsf{getHead}(\Sigma^\star_t)$, and $h^\star \coloneqq R_s^t.h$;
   \item $H.h = h^\star + 1$;
   \item no honest validator has cast any vote at height $> h^\star$ at any time strictly before $\mathsf{vote}(t)$;
   \item by $\mathsf{start}(t+1) - \Delta$, in every honest validator's view, there exists a chain $X \succeq H$ such that every vote cast at $\mathsf{vote}(t)$ by an honest validator with target $\preceq H$ is included in~$X$.
 \end{enumerate}
-Then at $\mathsf{vote}(t+1)$, every honest validator has the same $R_s$ with $R_s.h = h^\star + 1$, $(R_s, R_s.h, R_s.\slot) \in C_J$, and no honest has cast a $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+1)$.
+Then at $\mathsf{vote}(t+1)$, every honest validator has:
+\begin{enumerate}
+  \item the same $R_s$, with $R_s.h = h^\star + 1$;
+  \item $(R_s,\, R_s.h,\, R_s.\slot) \in C_J$;
+  \item no honest validator has cast a $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+1)$.
+\end{enumerate}
 \end{lemma}
 
 \begin{proof}
@@ -1202,6 +1207,8 @@ Before $\mathsf{vote}(t+1)$, honest votes are at heights $\leq h^\star$ (hypothe
 The argmax of $\textsf{computeRoot}$ at $\mathsf{vote}(t+1)$ therefore lands on $(T, h^\star + 1, T.\slot) \in C_J$, giving $R_s = T$ uniformly.
 \end{proof}
 
+
+
 \begin{lemma}[Healing advance across two slots]\label{rev:lem:healing-advance}
 Assume:
 \begin{enumerate}
@@ -1213,13 +1220,18 @@ Assume:
   \item at $\mathsf{start}(t+1)$, $\textsf{getHead}$ applied to $\mathsf{syncer}(t+1)$'s store returns a chain $X \succeq H$ such that every vote cast at $\mathsf{vote}(t)$ by an honest validator with target $\preceq H$ is included in~$X$;
   \item by $\mathsf{start}(t+2) - \Delta$, in every honest validator's view, there exists a chain $X' \succeq X$ such that every vote cast at $\mathsf{vote}(t+1)$ by an honest validator with target $\preceq H^{(t+1)}$ is included in~$X'$, where $H^{(t+1)} \coloneqq \textsf{getHead}(\Sigma^\star_{t+1})$.
 \end{enumerate}
-Then at $\mathsf{vote}(t+2)$ every honest validator has the same $R_s$ with $R_s.h = H.h + 1$, $(R_s, R_s.h, R_s.\slot) \in C_J$, and no honest has cast a $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+2)$.
+Then at $\mathsf{vote}(t+2)$, every honest validator has:
+\begin{enumerate}
+  \item the same $R_s$, with $R_s.h = H.h + 1$;
+  \item $(R_s,\, R_s.h,\, R_s.\slot) \in C_J$;
+  \item no honest validator has cast a $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+2)$.
+\end{enumerate}
 \end{lemma}
 
 \begin{proof}
 \emph{Step 1.}
 Under \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t)$ + determinism, $h_c^{(t)} = H.h$ and honest slot-$t$ votes (either kind) all target the common $T \preceq H$; both kinds update $\mathsf{ntargets}[i]$, so on~$X$ the prefix walk at state-height $H.h$ accumulates $\geq 2n/3$ to some $B^\star \succeq T$, firing prefix notarization and inserting $(B^\star, H.h, B^\star.\slot) \in C_N$.
-By \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t+1)$ + determinism, every honest at $\mathsf{vote}(t+1)$ shares $\Sigma^\star_{t+1} = \Sigma_{\mathsf{syncer}(t+1)}$ (at $\mathsf{start}(t+1)$) and its canonical is~$X$ (hypothesis~(6)), so $\sigma[H^{(t+1)}].h = H.h + 1$; combined with \Cref{rev:lem:Rs-height-monotone} and \Cref{rev:cor:no-high-cn}, $R_s^{(t+1)}.h = H.h$.
+By \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t+1)$ + determinism, every honest at $\mathsf{vote}(t+1)$ shares $\Sigma^\star_{t+1} = \Sigma_{\mathsf{syncer}(t+1)}$ (at $\mathsf{start}(t+1)$) and its canonical is~$X$ (hypothesis~(6)), so $\sigma[H^{(t+1)}].h = H.h + 1$; combined with \Cref{rev:lem:Rs-height-monotone} and \Cref{rev:cor:no-high-cn}, $R_s^{t+1}.h = H.h$.
 
 \emph{Step 2.}
 Hypothesis~(5) directly rules out any honest vote at $> H.h$ before $\mathsf{vote}(t)$; at $\mathsf{vote}(t)$ every honest casts at height~$H.h$ exactly, and no voting event occurs between $\mathsf{vote}(t)$ and $\mathsf{vote}(t+1)$, so no honest has cast at $> H.h$ before $\mathsf{vote}(t+1)$.
@@ -1227,6 +1239,48 @@ Hypothesis~(5) directly rules out any honest vote at $> H.h$ before $\mathsf{vot
 \emph{Step 3.}
 Invoke \Cref{rev:lem:healing-one-slot} at slot~$t+1$, with $h^\star = H.h$: hypotheses (1)--(4) are inherited; (5) is Step~1; (6) is Step~2; (7) is the present hypothesis~(7).
 The conclusion at $\mathsf{vote}((t+1) + 1) = \mathsf{vote}(t+2)$ is exactly what is claimed.
+\end{proof}
+
+
+\begin{lemma}
+Assume:
+\begin{enumerate}
+  \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\textsf{getHead}$ is deterministic;
+  \item $\mathsf{start}(t) - \Delta \geq \GST$;
+  \item $\mathsf{syncer}(t)$, $\mathsf{syncer}(t+1)$, and $\mathsf{syncer}(t+2)$ are honest; let $\Sigma^\star_t, \Sigma^\star_{t+1}, \Sigma^\star_{t+2}$ be the common stores, $R_s^t \coloneqq \Sigma^\star_t.R_s$ and $R_s^{t+1} \coloneqq \Sigma^\star_{t+1}.R_s$ the common roots at $\mathsf{vote}(t)$ and $\mathsf{vote}(t+1)$ respectively, $H \coloneqq \textsf{getHead}(\Sigma^\star_t)$, and $H^{t+1} \coloneqq \textsf{getHead}(\Sigma^\star_{t+1})$;
+  \item $H.h = R_s^t.h$;
+  % \item no honest has cast any vote at height $> R_s^t.h$ at any time strictly before $\mathsf{vote}(t)$;
+  \item at $\mathsf{start}(t+1)$, $\textsf{getHead}$ applied to $\mathsf{syncer}(t+1)$'s store returns a chain $Y \succeq H$ such that every vote cast at $\mathsf{vote}(t)$ by an honest validator with target $\preceq H$ is included in~$Y$;
+  \item at $\mathsf{start}(t+2)$, $\textsf{getHead}$ applied to $\mathsf{syncer}(t+2)$'s store returns a chain $X \succeq H^{t+1}$ such that every vote cast at $\mathsf{vote}(t+1)$ by an honest validator with target $\preceq H^{t+1}$ is included in~$X$;
+  \item by $\mathsf{start}(t+3) - \Delta$, in every honest validator's view, there exists a chain $X' \succeq X$ such that every vote cast at $\mathsf{vote}(t+2)$ by an honest validator with target $\preceq H^{(t+2)}$ is included in~$X'$, where $H^{(t+2)} \coloneqq \textsf{getHead}(\Sigma^\star_{t+2})$.
+\end{enumerate}
+Then at $\mathsf{vote}(t+3)$, every honest validator has:
+\begin{enumerate}
+  \item the same $R_s$, with $R_s.h = H^{t+1}.h + 1$;
+  \item $(R_s,\, R_s.h,\, R_s.\slot) \in C_J$;
+  \item no honest validator has cast a $\just$ vote at height $> R_s.h$ at any time strictly before $\mathsf{vote}(t+3)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+We invoke \Cref{rev:lem:healing-advance} after renaming its slot parameter $t$ to $t+1$, so that its $H$ becomes our $H^{t+1}$, its common stores become $\Sigma^\star_{t+1}, \Sigma^\star_{t+2}$, and its conclusion at $\mathsf{vote}(t+2)$ becomes ours at $\mathsf{vote}(t+3)$.
+Under this renaming, hypotheses (1)--(4) and (7)--(8) of the present lemma map to hypotheses~(1)--(4), (6), (7) of \Cref{rev:lem:healing-advance} directly (hypothesis~(3) via $\mathsf{start}(t+1) \geq \mathsf{start}(t) + 2\Delta$).
+It remains to establish the renamed hypothesis~(5): no honest has cast a vote at height $> H^{t+1}.h$ strictly before $\mathsf{vote}(t+1)$.
+We do this in two steps: Step~1 bounds all honest vote heights by $R_s^t.h + 1$, and Step~2 shows $H^{t+1}.h = R_s^t.h + 1$.
+
+\emph{Step 1: no honest has cast a vote at height $> R_s^t.h + 1$ strictly before $\mathsf{vote}(t+1)$.}
+By \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t)$ + determinism, every honest at $\mathsf{vote}(t)$ shares $\Sigma^\star_t$ and hence $R_s^t$, so \Cref{rev:lem:Rs-height-monotone} gives $R_s.h \leq R_s^t.h$ in every honest view at every time $\tau \leq \mathsf{vote}(t)$.
+Under $f < n/3$ (hypothesis~(1)), \Cref{rev:lem:head-height-range} bounds the canonical state-height by $R_s.h + 1 \leq R_s^t.h + 1$ at such $\tau$, and \Cref{def:voting-rule} requires each honest vote to be cast at the voter's canonical state-height.
+Therefore no honest vote cast at $\tau \leq \mathsf{vote}(t)$ has height $> R_s^t.h + 1$, and since no voting event occurs in $(\mathsf{vote}(t), \mathsf{vote}(t+1))$, the claim extends to all of $\tau < \mathsf{vote}(t+1)$.
+
+\emph{Step 2: $H^{t+1}.h = R_s^t.h + 1$.}
+By hypothesis~(5), $h_c^{(t)} = H.h = R_s^t.h$ in every honest view at $\mathsf{vote}(t)$.
+\Cref{rev:lem:canonical-fresh-honest-vote} then makes every honest slot-$t$ vote (either kind) target a common $T \preceq H$; both kinds update $\mathsf{ntargets}[i]$, so on~$Y$ the prefix walk at state-height $R_s^t.h$ accumulates $\geq 2n/3$ to some $B^\star \succeq T$, firing prefix notarization and inserting $(B^\star, R_s^t.h, B^\star.\slot) \in C_N$.
+By \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t+1)$ + determinism, $\Sigma^\star_{t+1} = \Sigma_{\mathsf{syncer}(t+1)}$ at $\mathsf{start}(t+1)$ and its canonical is~$Y$ (hypothesis~(6)), hence $\sigma[H^{t+1}].h = R_s^t.h + 1$.
+
+Steps~1 and~2 together give ``no honest has cast a vote at height $> H^{t+1}.h$ strictly before $\mathsf{vote}(t+1)$'', which is the renamed hypothesis~(5).
+\Cref{rev:lem:healing-advance} therefore applies and yields exactly the claimed conclusion at $\mathsf{vote}(t+3)$.
 \end{proof}
 
 \appendix
