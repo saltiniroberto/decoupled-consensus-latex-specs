@@ -719,32 +719,51 @@ Summing gives total increment $\geq (T-1) \cdot n/3$.
 We state the honest rule explicitly, as it underpins the leak fairness proof.
 
 \begin{definition}[Honest voting rule]\label{def:voting-rule}
-Let $X = \textsf{getHead}(\Sigma)$ at the voting opportunity, with $h_c = \sigma[X].h$, $J = \sigma[X].J$, $h_j = \sigma[X].h_j$.
-Write $\mathsf{currentSlot}$ for the node's protocol time (a slot counter shared across chains, with $\mathsf{currentSlot} = \sigma[X].s \geq \sigma[X].s_h$), and let $T$ be any ancestor of~$X$ with $\sigma[T].h = h_c$ (e.g.~$X$ itself).
-
-\emph{Target selection.} Validator~$i$ is \emph{locked at~$h_c$} if it previously cast a vote with $\mathsf{finalize\_height} = h_c$ and $\mathsf{finalize\_target} = L \neq \bot$; by E1, any future height-$h_c$ vote must then have target~$L$.
-The target of~$i$'s vote at height~$h_c$ is
-\[
-  T_c = \begin{cases} L & \text{if~$i$ is locked at $h_c$,} \\ T & \text{otherwise.} \end{cases}
-\]
-
-\emph{Voting rules.} At each voting opportunity at canonical height~$h_c$:
-\begin{enumerate}
-  \item[(R1)] If $i$ has not yet cast any vote at height~$h_c$, cast a $\just$ vote
-  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \just,\; f_h,\; f_t) \]
-  with finalize-fields $(f_h, f_t) = (h_j,\, J)$ if every prior vote of~$i$ at height~$h_j$ had target~$J$, else $(\bot,\bot)$.
-  \item[(R2)] Otherwise, cast a $\notar$ vote
-  \[ v = (i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \notar,\; \bot,\; \bot). \]
-\end{enumerate}
-Both rules read $T, J, h_j$ from the current $\sigma[X]$; if~$i$'s canonical view shifted between firings, $T_c$ may shift accordingly.
-Voting at~$h_c$ stops once canonical advances past~$h_c$.
+Let $V$ be the set of votes $i$ has previously cast, and write $\mathsf{currentSlot}$ for the node's protocol time (a slot counter shared across chains).
+At each voting opportunity, $i$ constructs its vote by $\textsf{constructVote}(V,\, \Sigma)$, defined in Figure~\ref{alg:voting-rule}.
+The first-vote check in the (R1) branch ensures at most one $\just$ vote per height~$h_c$, and the target-selection clause preserves E1-safety under view shifts.
 \end{definition}
 
-Only (R1) produces a $\just$ vote and it fires at most once per~$h_c$, so~$i$ casts at most one $\just$ vote per height, ensuring per-height $\just$-uniqueness.
-Rule~(R2) is the \emph{resubmission} fallback: when the (R1) $\just$ quorum did not form on canonical (heterogeneous targets across views), the $\notar$ vote's prefix counting may still notarize a common ancestor.
-Re-reading canonical at each firing ensures each vote tracks~$i$'s current view; the lock clause preserves E1-safety under view shifts.
+\begin{figure}[H]
+\caption{Honest voting rule}\label{alg:voting-rule}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
 
-Checking \emph{all} prior votes at~$h_j$ (not just the (R1) one) is required because a (R2) at~$h_j$ may have chosen a target differing from the (R1) target if~$i$'s view shifted; committing $f_t = J$ at height~$h_j$ requires (by E1) that every $h_j$-vote of~$i$ have target~$J$, so in case of a split the conditional fires $(\bot, \bot)$: $i$ misses the finalization at~$h_j$ but remains E1-safe.
+\Function{$\textsf{constructVote}$}{$V,\; \Sigma$}
+  \State $X \gets \textsf{getHead}(\Sigma)$
+  \State $h_c \gets \sigma[X].h$; \;\; $h_j \gets \sigma[X].h_j$; \;\; $J \gets \sigma[X].J$
+  \State $T \gets$ any ancestor of $X$ with $\sigma[T].h = h_c$ \Comment{e.g.~$X$ itself}
+  \vspace{3pt}
+  \State \textbf{-- Target selection --}
+  \If{$\exists\, v \in V$ with $v.\height = h_c$ and $v.\mathsf{finalize\_target} \neq \bot$}
+    \State $T_c \gets v.\mathsf{finalize\_target}$ \Comment{$i$ is locked at $h_c$}
+  \Else
+    \State $T_c \gets T$
+  \EndIf
+  \vspace{3pt}
+  \State \textbf{-- Vote kind and finalize fields --}
+  \If{no $v \in V$ has $v.\height = h_c$} \Comment{first vote at $h_c$: cast $\just$ (R1)}
+    \If{every $v \in V$ with $v.\height = h_j$ has $v.\target = J$}
+      \State $(f_h,\, f_t) \gets (h_j,\, J)$
+    \Else
+      \State $(f_h,\, f_t) \gets (\bot,\, \bot)$
+    \EndIf
+    \State \Return $(i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \just,\; f_h,\; f_t)$
+  \Else \Comment{already voted at $h_c$: cast $\notar$ (R2)}
+    \State \Return $(i,\; h_c,\; \mathsf{currentSlot},\; T_c,\; \notar,\; \bot,\; \bot)$
+  \EndIf
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+Only the (R1) branch produces a $\just$ vote and, gated by the first-vote check, fires at most once per~$h_c$, ensuring per-height $\just$-uniqueness.
+The (R2) branch is the \emph{resubmission} fallback: fired at every subsequent voting opportunity while canonical stays at~$h_c$, so when the (R1) $\just$ quorum did not form on canonical (heterogeneous targets across views), the $\notar$ vote's prefix counting may still notarize a common ancestor.
+
+Checking \emph{every} prior vote of~$i$ at~$h_j$ (not just the (R1) one) is required because a (R2) at~$h_j$ may have chosen a target differing from the (R1) target if~$i$'s view shifted; committing $f_t = J$ at height~$h_j$ requires (by E1) that every $h_j$-vote of~$i$ have target~$J$, so in case of a split the conditional fires $(\bot, \bot)$: $i$ misses the finalization at~$h_j$ but remains E1-safe.
 
 \begin{lemma}[Honest E1 safety]\label{lem:honest-e1-safety}
 If validator~$i$ follows Definition~\ref{def:voting-rule}, then $i$ never produces a vote-pair $(v_1, v_2)$ with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
