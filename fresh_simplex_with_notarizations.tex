@@ -840,30 +840,25 @@ The rule is E1-safe: Lemma~\ref{lem:honest-e1-safety} records that an honest val
 Per-height $\just$-uniqueness is immediate: only (R1) produces a $\just$ vote, and (R1) fires at most once per~$h_c$.
 
 \begin{lemma}[Honest E1 safety]\label{lem:honest-e1-safety}
-Under synchrony, $f < n/3$, and all honest validators following Definition~\ref{def:voting-rule}, an honest~$i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
+If validator~$i$ follows Definition~\ref{def:voting-rule}, then $i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
 \end{lemma}
 
 \begin{proof}
-Only (R1) produces a finalize-bearing vote, with $(f_h, f_t) = (h_j, J)$ read from the canonical state at~$v_2$'s firing.
-Write $h_* = v_2.\mathsf{finalize\_height} = h_j$ and $T_* = v_2.\mathsf{finalize\_target} = J$.
-We show every vote~$v_1$ of~$i$ with $v_1.\height = h_*$ has $v_1.\target = T_*$, by cases on the temporal relation between $v_1$ and $v_2$.
+Write $h_\ast \coloneqq v_2.\mathsf{finalize\_height}$ and $T_\ast \coloneqq v_2.\mathsf{finalize\_target} \neq \bot$.
+Only (R1) produces finalize-bearing votes, so $v_2$ is an (R1) vote with $(f_h, f_t) = (h_j, J) = (h_\ast, T_\ast)$ read from the canonical state at~$v_2$'s firing.
 
 \emph{Case~A ($v_1$ cast before~$v_2$).}
-The (R1) finalize-field conditional at~$v_2$ attached $(h_*, T_*)$ only because every prior vote of~$i$ at height~$h_*$ had target~$T_*$; in particular, $v_1.\target = T_*$.
+The (R1) finalize-field conditional at~$v_2$ attached $(h_\ast, T_\ast)$ only because every prior vote of~$i$ at height~$h_\ast$ had target~$T_\ast$; in particular $v_1.\target = T_\ast$.
 
 \emph{Case~B ($v_1$ cast after~$v_2$).}
-If $h_* = 0$ (so $v_2$ attached its finalize commitment before any justification had fired, with $T_* = \genesis$), the lock clause of Definition~\ref{def:voting-rule} pins $T_c = \genesis$ at any later height-$0$ voting opportunity of~$i$, so $v_1.\target = \genesis = T_*$; the case reduces to target-matching.
-Otherwise $h_* \geq 1$, so $v_2$ fired at canonical height $h_c > h_*$.
-Under the hypotheses, every canonical height-advance is witnessed by the $> 2n/3$ honest (R1) quorum agreeing on~$T$ (Corollary~\ref{cor:agreement}), so canonical state-height is monotone over time; canonical cannot return to height~$h_*$ for any later~$v_1$, and the case is vacuous.
+At $v_1$'s firing, the voting height is $h_c = v_1.\height = h_\ast$, and~$i$ has the prior vote~$v_2$ with $\mathsf{finalize\_height} = h_\ast = h_c$ and $\mathsf{finalize\_target} = T_\ast \neq \bot$: $i$ is \emph{locked at $h_c$}, and the target-selection clause of Definition~\ref{def:voting-rule} forces $T_c = T_\ast$ regardless of~$i$'s canonical view at that moment.
+Hence $v_1.\target = T_c = T_\ast$.
 
 \emph{Case~C ($v_1 = v_2$).}
-Vacuous: $v_2.\height = h_c \neq h_* = v_2.\mathsf{finalize\_height}$.
+Vacuous: $v_2.\height = h_c \neq h_\ast = v_2.\mathsf{finalize\_height}$ (every height advance sets $h_j \gets h$ before $h \gets h + 1$, so $h_j < h$ in any post-advance state).
 \end{proof}
 
-\begin{remark}[Scope of Lemma~\ref{lem:honest-e1-safety}]\label{rem:honest-e1-scope}
-All three hypotheses are load-bearing for Case~B.
-A validator that wishes not to rely on them may always set $(f_h, f_t) = (\bot, \bot)$ at (R1), trivially avoiding E1 at the cost of not contributing to finalization.
-\end{remark}
+The proof uses neither synchrony, nor determinism of $\textsf{getHead}$, nor any agreement on the canonical view across validators --- the lock clause carries Case~B on its own.
 
 \subsection{Leak fairness}
 
@@ -1000,47 +995,6 @@ Either way $R_s = X \succeq F$.
 
 \emph{Revised proof of \Cref{thm:orderindep}.}
 Same argument as the original proof for $\sigma$, $C_J$, $C_N$, and $F_s$; the final step becomes: $R_s$ is the argmax over $\{(X,h,s) \in C_N : X \succeq F_s\}$ on the totally ordered key, hence a deterministic function of $(C_N, C_J, F_s)$.
-
-\subsection{Unified target selection in the honest voting rule}\label{rev:sec:voting-rule}
-
-\paragraph{Status: no longer required.}
-An earlier version of this review proposed unifying (R1) and (R2) to share a single target~$T_c$, defined once before the case split:
-\[
-  T_c \;=\;
-  \begin{cases}
-    v'.\mathsf{finalize\_target} & \text{if $i$ has previously cast a vote $v'$ with $v'.\mathsf{finalize\_height} = h_c$;}\\
-    T & \text{otherwise (the canonical target).}
-  \end{cases}
-\]
-This unification was motivated by the counterexample to honest E1 safety under asynchrony: without the lock on~(R1)'s target, a validator whose canonical view fork-switched back to height~$h_c$ could cast a~(R1) $\just$ for a fresh target~$T$ while still holding an earlier $\mathsf{finalize\_target} \neq T$ at~$h_c$, triggering E1.
-
-\Cref{def:voting-rule} in the current main text already incorporates an equivalent fix via its ``locked at~$h_c$'' clause, which applies the lock to \emph{both} (R1) and (R2).
-The proposal in this review is therefore redundant with the main text and is retained here only to record the motivation and the \Cref{rev:sec:async-e1} lemma that it enables.
-
-\subsection{Asynchronous honest E1 safety}\label{rev:sec:async-e1}
-
-The ``locked at $h_c$'' clause in \Cref{def:voting-rule} --- ``$T_c = L$ whenever $i$ has previously cast a vote with $\mathsf{finalize\_height} = h_c$ and $\mathsf{finalize\_target} = L \neq \bot$'' --- makes the asynchronous version of \Cref{lem:honest-e1-safety} provable without the synchrony hypothesis that Case~B of the original proof relied on.
-
-\begin{lemma}[Honest E1 safety, asynchronous]\label{rev:lem:honest-e1-safety-asynchrony}
-Under $f < n/3$ and all honest validators following \Cref{def:voting-rule}, an honest~$i$ never produces a vote-pair $(v_1, v_2)$ (possibly $v_1 = v_2$) with $v_2.\mathsf{finalize\_target} \neq \bot$, $v_1.\height = v_2.\mathsf{finalize\_height}$, and $v_1.\target \neq v_2.\mathsf{finalize\_target}$.
-\end{lemma}
-
-\begin{proof}
-Write $h_\ast \coloneqq v_2.\mathsf{finalize\_height}$ and $T_\ast \coloneqq v_2.\mathsf{finalize\_target} \neq \bot$.
-Only (R1) produces finalize-bearing votes, so $v_2$ is an (R1) vote with $(f_h, f_t) = (h_j, J) = (h_\ast, T_\ast)$ read from the canonical state at $v_2$'s firing.
-
-\emph{Case~A ($v_1$ cast before $v_2$).}
-The (R1) finalize-field conditional at~$v_2$ attached $(h_\ast, T_\ast)$ only because every prior vote of~$i$ at height~$h_\ast$ had target~$T_\ast$; in particular $v_1.\target = T_\ast$.
-
-\emph{Case~B ($v_1$ cast after $v_2$).}
-At $v_1$'s firing, the voting height is $h_c = v_1.\height = h_\ast$, and~$i$ has the prior vote~$v_2$ with $\mathsf{finalize\_height} = h_\ast = h_c$ and $\mathsf{finalize\_target} = T_\ast \neq \bot$: $i$ is \emph{locked at $h_c$}, and the target-selection clause of \Cref{def:voting-rule} forces $T_c = T_\ast$ regardless of~$i$'s canonical view at that moment.
-Hence $v_1.\target = T_c = T_\ast$.
-
-\emph{Case~C ($v_1 = v_2$).}
-Vacuous: $v_2.\height = h_c \neq h_\ast = v_2.\mathsf{finalize\_height}$ (every height advance sets $h_j \gets h$ before $h \gets h + 1$, so $h_j < h$ in any post-advance state).
-\end{proof}
-
-The proof uses neither synchrony, nor determinism of $\textsf{getHead}$, nor any agreement on the canonical view across validators --- the lock clause carries Case~B on its own.
 
 \subsection{Additional store-level lemmas}\label{rev:sec:store-lemmas}
 
