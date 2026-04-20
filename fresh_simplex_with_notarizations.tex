@@ -409,41 +409,57 @@ This is consistent with safety, but means the per-chain invariants never rely on
 
 A node may track multiple chains simultaneously.
 The \emph{store} is the node-local data structure that mediates which chain the node follows.
-It carries two sets of checkpoint records: a primary set $C_N$ of \emph{notarized checkpoint records}, one per height advance (justification or prefix notarization), and a sub-layer $C_J \subseteq C_N$ of \emph{justified checkpoint records} --- those records whose block was justified on some chain.
-The store's root $R_s$ is computed by a greedy walk from the store-finalized block~$F_s$, following the highest-height notarized record that strictly descends from the current walk position, with $C_J$-membership as a tiebreak at equal heights.
-The walk guarantees $R_s \succeq F_s$ even when records for strict ancestors of finalized blocks remain in~$C_N$ (Remark~\ref{rem:notarization-safety}).
+The store maintains a single \emph{root} $R_s$, updated incrementally whenever $\textsf{processHeight}$ fires a height advance (a \emph{cert event}) whose \emph{cert key} strictly exceeds the key currently recorded for~$R_s$.
+The cert key combines height, a justified-bit, slot, and block hash into a lexicographic tuple, so that a justification at the same block strictly dominates a prior notarization-only event at that block, and a higher-height cert always wins over a lower one.
+
+\begin{definition}[Cert event and cert key]\label{def:cert-event}
+When $\textsf{processHeight}$ fires a height advance on a chain (Figure~\ref{alg:state-machine}), we call the triggering event a \emph{cert event}.
+A cert event at the block whose processing fires the advance is characterized by:
+\begin{itemize}
+  \item the block $X = \sigma.N$ at the firing (equal to the justified target~$T$ in the justification branch, and to the prefix-notarization endpoint~$T^*$ in the notarization branch);
+  \item the height~$h$ at which the advance fires, equal to the pre-advance $\sigma.h$ and to the post-advance $\sigma.h_n$;
+  \item a \emph{bit} $b \in \{0, 1\}$ equal to~$1$ if the event is a justification and~$0$ if the event is a prefix notarization only (without accompanying justification).
+\end{itemize}
+The \emph{cert key} associated with the event is the lexicographic tuple
+\[
+  \mathsf{key}(X, h, b) \;\coloneqq\; \bigl(h,\; b,\; X.\slot,\; \mathsf{hash}(X)\bigr),
+\]
+under the usual lex order on tuples.
+\end{definition}
+
+Note that a justification event at a block also contributes to prefix-notarizing that block, but we classify the combined event as a \emph{justification} (bit~$b = 1$): the justification branch of $\textsf{processHeight}$ sets $(J, N) \gets (T, T)$ jointly, and we take its cert key to be $\mathsf{key}(T, h, 1)$.
+A given block~$X$ may therefore fire a cert event with bit~$0$ on one chain (prefix-notarized only) and later fire a cert event with bit~$1$ on another chain (justification); the bit-1 event's key strictly dominates the bit-0 event's key at the same block.
 
 \begin{definition}[Store]\label{def:store}
 A node maintains a \emph{store}
 \[
-  \Sigma \;=\; (\sigma,\; R_s,\; F_s,\; \T,\; C_J,\; C_N),
+  \Sigma \;=\; (\sigma,\; \T,\; F_s,\; R_s),
 \]
 where:
 \begin{itemize}
   \item $\sigma$ is the \emph{state map}, assigning each accepted block its per-chain post-state (Section~1);
-  \item $R_s$ is the \emph{store root}, used as the root of the fork-choice subtree;
-  \item $F_s$ is the \emph{store-finalized block};
   \item $\T$ is the \emph{block tree}, the set of accepted blocks;
-  \item $C_N$ is the set of \emph{notarized checkpoint records} $(X, h, s)$, one per post-state of an accepted block: $X = \sigma[B].N$, $h = \sigma[B].h_n$, $s = X.\slot$;
-  \item $C_J \subseteq C_N$ is the set of \emph{justified checkpoint records}: those records whose block was justified (not merely prefix-notarized) at height~$h$ on some chain.
+  \item $F_s$ is the \emph{store-finalized block};
+  \item $R_s = (R_s.h,\; R_s.\mathsf{bit},\; R_s.\mathsf{block})$ is the \emph{store root}, a triple recording the height, the justification bit, and the block of the highest-key cert event ever observed by the node.
 \end{itemize}
-The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$: $\sigma[B]$ is a single post-state, while $\Sigma$ aggregates the state map together with the fork-choice bookkeeping $(R_s, F_s, \T, C_J, C_N)$.
-Where unambiguous we write $\Sigma.R_s$, $\Sigma.F_s$, $\Sigma.\T$, $\Sigma.C_J$, $\Sigma.C_N$, $\Sigma.\sigma$ for the corresponding fields.
-The genesis store has $R_s = F_s = \genesis$, $\T = \{\genesis\}$, $C_J = C_N = \{(\genesis, 0, 0)\}$.
+The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$: $\sigma[B]$ is a single post-state, while $\Sigma$ aggregates the state map together with the fork-choice bookkeeping $(\T, F_s, R_s)$.
+Where unambiguous we write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F_s$, $\Sigma.R_s$ for the corresponding fields, $\Sigma.R_s.h$, $\Sigma.R_s.\mathsf{bit}$, $\Sigma.R_s.\mathsf{block}$ for the three coordinates of the root triple, and $\mathsf{key}(R_s) \coloneqq \mathsf{key}(R_s.\mathsf{block},\, R_s.h,\, R_s.\mathsf{bit})$ for its full cert key.
+The genesis store has $F_s = \genesis$, $\T = \{\genesis\}$, and $R_s = (0,\, 1,\, \genesis)$ (genesis acts as a bit-$1$ cert event at height~$0$; its full cert key is $(0,\, 1,\, 0,\, \mathsf{hash}(\genesis))$).
+As shorthand for ancestor/descendant relations involving the root, we write $R_s \succeq B$ for $R_s.\mathsf{block} \succeq B$, and similarly for $\preceq$ and $\succ$.
 \end{definition}
 
 \begin{remark}[Store-finalized invariant]\label{rem:fs-invariant}
-At all times, $F_s$ is either~$\genesis$ or a block that was finalized on some chain, and $(F_s, h_{F_s}, F_s.\slot) \in C_J$ where $h_{F_s}$ is the height at which~$F_s$ was finalized.
-Indeed, $F_s$ is only updated by $\textsf{updateFinalized}$ (Figure~\ref{alg:store}) to a value~$F_B = \sigma[B].F$, and $\sigma[B].F$ is set only by the finality branch of $\textsf{processHeight}$.
-The $C_J$-membership holds by initialization for $F_s = \genesis$; for an update $F_s \gets F_B$, some ancestor~$B'$ of~$B$ (possibly~$B$ itself) had post-state $(J_{B'}, h_j^{B'}) = (F_B, h_{F_s})$, and its processing inserted $(F_B, h_{F_s}, F_B.\slot)$ into~$C_J$.
+At all times, $F_s$ is either~$\genesis$ or a block that was finalized on some chain.
+Indeed, $F_s$ is only updated by $\textsf{updateFinalized}$ (Figure~\ref{alg:store}) to a value~$F_B = \sigma[B].F$, where $B$ was processed by the node; $\sigma[B].F$ is set only by the finality branch of $\textsf{processHeight}$, which requires prior justification of $F_B$ at its finalization height~$h_{F_s}$ on $B$'s chain.
+Consequently, some processed ancestor $B' \preceq B$ has post-state $\sigma[B'].J = F_s$ and $\sigma[B'].h_j = h_{F_s}$; by $\textsf{onBlock}(B')$'s post-$\textsf{processBlock}$ step, the cert-event descriptor $(h_{F_s},\, 1,\, F_s)$ was offered to $\textsf{updateForkChoiceRoot}$ of this node (and was either accepted or dropped by the $F_s$-filter or the lex-strict guard against a higher-key state).
 \end{remark}
 
 The store's block-acceptance routine $\textsf{onBlock}$ (Figure~\ref{alg:store}) admits a block~$B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F_s \preceq B$.
-It runs $\textsf{processSlot}$ once for each slot from $\Sigma.\sigma[B.\parent].s + 1$ up to $B.\slot$ (so any height advance enabled by the accumulated tally fires before~$B$'s votes are folded in), then $\textsf{processBlock}(\cdot, B)$; the resulting post-state becomes $\Sigma.\sigma[B]$.
-The tuples $(N_B, h_n^B, N_B.\slot)$ and $(J_B, h_j^B, J_B.\slot)$ (subscripts denoting fields of $\Sigma.\sigma[B]$) are inserted into $C_N$ and $C_J$ respectively; a justification fires $(J, N) \gets (T, T)$ and $(h_j, h_n) \gets (h, h)$ jointly, so the inserted tuples coincide and $C_J \subseteq C_N$ is preserved.
-$\Sigma.R_s$ is then recomputed by the greedy walk $\textsf{computeRoot}$: starting from~$\Sigma.F_s$, each step picks the tuple $(X, h, s) \in \Sigma.C_N$ with $X$ a strict descendant of the current walk position maximizing the lex key $\bigl(h,\; \mathbf{1}[(X, h, s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$ and moves to~$X$; the argmax is unique (block hashes are unique) and the walk terminates in at most $|\Sigma.C_N|$ steps.
-The indicator bit gives a $C_J$-tuple a strict edge over any $C_N \setminus C_J$-tuple at the same height.
-Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets F_B$ whenever $F_B \succ \Sigma.F_s$ and $F_B \preceq \Sigma.R_s$.
+It advances $\textsf{processSlot}$ once for each slot from $\Sigma.\sigma[B.\parent].s + 1$ up to $B.\slot$ (so any height advance enabled by the accumulated tally fires before~$B$'s votes are folded in), then $\textsf{processBlock}(\cdot, B)$; the resulting post-state becomes $\Sigma.\sigma[B]$.
+After $\textsf{processBlock}$, the post-state's justified and notarized checkpoints are offered to $\textsf{updateForkChoiceRoot}$ as cert-event descriptors: $(\sigma[B].h_j,\, 1,\, \sigma[B].J)$ for the justified checkpoint, and $(\sigma[B].h_n,\, b_n,\, \sigma[B].N)$ for the notarized one, where $b_n = 1$ iff $\sigma[B].N = \sigma[B].J$ (i.e.\ the notarized block is also justified at its height).
+$\textsf{updateForkChoiceRoot}$ first filters out any candidate~$X'$ with $X' \not\succeq \Sigma.F_s$, and then updates $\Sigma.R_s$ iff the candidate's cert key strictly exceeds the key currently recorded for $R_s$.
+This makes $R_s$ the running max (in key order) of all cert events ever observed by the node \emph{that descend from the current $F_s$}, with the bit-1 edge over bit-0 at the same block giving a justification event strict dominance over a prior notarization-only event at that block.
+Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets \sigma[B].F$ whenever $\sigma[B].F \succ \Sigma.F_s$ and $\sigma[B].F \preceq \Sigma.R_s$.
 
 \begin{figure}[H]
 \caption{Store and fork-choice root}\label{alg:store}
@@ -451,8 +467,7 @@ Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets F_B$ whenever $F_B \s
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$: \;$\Sigma.R_s \gets \genesis$, \; $\Sigma.F_s \gets \genesis$, \; $\Sigma.\T \gets \{\genesis\}$,
-\State \hspace{8.1em}$\Sigma.C_J \gets \{(\genesis, 0, 0)\}$, \; $\Sigma.C_N \gets \{(\genesis, 0, 0)\}$
+\State \textbf{Genesis store} $\Sigma$: \;$\Sigma.\T \gets \{\genesis\}$, \; $\Sigma.F_s \gets \genesis$, \; $\Sigma.R_s \gets (0,\, 1,\, \genesis)$,
 \State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets (\genesis,\, 0,\, 0,\, 0,\, \bot^n,\, \bot^n,\, \genesis,\, 0,\, \genesis,\, 0,\, \genesis,\, \emptyset)$
 \vspace{3pt}
 
@@ -464,21 +479,23 @@ Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets F_B$ whenever $F_B \s
   \While{$\sigma'.s < B.\slot$} \Comment{Advance through every intervening slot}
     \State $\sigma' \gets \textsf{processSlot}(\sigma')$
   \EndWhile
-  \State $\Sigma.\sigma[B] \gets \textsf{processBlock}(\sigma',\; B)$
-  \State $\Sigma.C_J \gets \Sigma.C_J \cup \{(\Sigma.\sigma[B].J,\; \Sigma.\sigma[B].h_j,\; \Sigma.\sigma[B].J.\slot)\}$
-  \State $\Sigma.C_N \gets \Sigma.C_N \cup \{(\Sigma.\sigma[B].N,\; \Sigma.\sigma[B].h_n,\; \Sigma.\sigma[B].N.\slot)\}$
-  \State $\Sigma.R_s \gets \textsf{computeRoot}(\Sigma)$
-  \State $\Sigma \gets \textsf{updateFinalized}(\Sigma,\; \Sigma.\sigma[B].F)$
+  \State $\sigma' \gets \textsf{processBlock}(\sigma',\; B)$
+  \State $\Sigma.\sigma[B] \gets \sigma'$
+  \State $\Sigma \gets \textsf{updateForkChoiceRoot}(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.J))$ \Comment{Justified checkpoint}
+  \State $\Sigma \gets \textsf{updateForkChoiceRoot}(\Sigma,\; (\sigma'.h_n,\; 0,\; \sigma'.N))$ \Comment{Notarized checkpoint}
+  \State $\Sigma \gets \textsf{updateFinalized}(\Sigma,\; \sigma'.F)$
   \State \Return $\Sigma$
 \EndFunction
 \vspace{3pt}
 
-\Function{$\textsf{computeRoot}$}{$\Sigma$} \Comment{Greedy walk from $\Sigma.F_s$}
-  \State $X^* \gets \Sigma.F_s$
-  \While{$\exists\, (X, h, s) \in \Sigma.C_N$ with $X \succ X^*$}
-    \State $(X^*, \_, \_) \gets \arg\max_{(X,h,s) \in \Sigma.C_N,\; X \succ X^*} \bigl(h,\; \mathbf{1}[(X,h,s) \in \Sigma.C_J],\; s,\; \mathsf{hash}(X)\bigr)$
-  \EndWhile
-  \State \Return $X^*$
+\Function{$\textsf{updateForkChoiceRoot}$}{$\Sigma,\; (h',\, b',\, X')$} \Comment{Filter by $\Sigma.F_s \preceq X'$, then running max}
+  \If{$X' \not\succeq \Sigma.F_s$} \Return $\Sigma$ \EndIf
+  \State $\mathsf{newKey} \gets (h',\; b',\; X'.\slot,\; \mathsf{hash}(X'))$
+  \State $\mathsf{curKey} \gets (\Sigma.R_s.h,\; \Sigma.R_s.\mathsf{bit},\; \Sigma.R_s.\mathsf{block}.\slot,\; \mathsf{hash}(\Sigma.R_s.\mathsf{block}))$
+  \If{$\mathsf{newKey} > \mathsf{curKey}$ (lex)}
+    \State $\Sigma.R_s \gets (h',\; b',\; X')$
+  \EndIf
+  \State \Return $\Sigma$
 \EndFunction
 \vspace{3pt}
 
@@ -499,43 +516,21 @@ Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets F_B$ whenever $F_B \s
 \end{center}
 \end{figure}
 
-Whenever $R_s \neq F_s$, $R_s$ is the last-visited block of the walk, so $R_s$ is the block of some record $(R_s, R_s.h, R_s.\slot) \in C_N$.
-
-\paragraph{Leaf-only variant.}
-Define $C_N^{\mathrm{leaf}} \subseteq \Sigma.C_N$ to be the subset of tuples $(X, h, s)$ contributed by the post-state of a \emph{leaf} block of~$\Sigma.\T$ (a block with no processed descendant), and analogously $C_J^{\mathrm{leaf}} \subseteq \Sigma.C_J$.
-Let $\textsf{computeRootLeaf}(\Sigma)$ be $\textsf{computeRoot}$ run over $(C_N^{\mathrm{leaf}}, C_J^{\mathrm{leaf}})$.
-
-\begin{theorem}[Leaf-only equivalence]\label{thm:leafequiv}
-$\textsf{computeRootLeaf}(\Sigma)$ returns the same block as $\textsf{computeRoot}(\Sigma)$.
-\end{theorem}
-
-\begin{proof}
-Let $\tau_i = (X_i, h_i, X_i.\slot) \in C_N$ be the tuple contributed by a non-leaf processed block~$B_i$.
-Since $\T$ is finite, some processed leaf~$B_\ell$ descends from~$B_i$; let $\tau_\ell = (X_\ell, h_\ell, X_\ell.\slot) \in C_N^{\mathrm{leaf}}$ be its tuple.
-By Lemma~\ref{lem:slotmono} along the chain from~$B_i$ to~$B_\ell$, both $h_n$ and~$N$ are non-decreasing, so $h_\ell \geq h_i$ and $X_\ell \succeq X_i$.
-Moreover, $N$ advances only jointly with $h_n \gets h_n + 1$ (Lemma~\ref{lem:slotmono}), so $h_\ell = h_i$ forces $X_\ell = X_i$, whence $\tau_\ell = \tau_i \in C_N^{\mathrm{leaf}}$.
-Thus every non-leaf tuple is either itself a leaf tuple, or its leaf replacement~$\tau_\ell$ has strictly greater height.
-
-Run both walks in lockstep from $X^* = F_s$.
-At each step, let $\tau^\star$ be the full walk's lex-max candidate over~$C_N$.
-If $\tau^\star$ is a leaf tuple, the leaf walk picks the same candidate.
-Otherwise $\tau^\star = \tau_i$ for some non-leaf~$B_i$, and $\tau_\ell$ is also a strict-descendant candidate: by lex-maximality of $\tau^\star$, $\tau_\ell$'s key is at most $\tau_i$'s, which rules out $h_\ell > h_i$; hence $h_\ell = h_i$, $\tau_\ell = \tau_i \in C_N^{\mathrm{leaf}}$, and $\tau^\star$ is already a leaf tuple.
-The two walks make the same choice at each step, so they terminate at the same block.
-\end{proof}
-
-The leaf-only variant bounds the walk's candidate pool by the number of leaves of~$\T$.
+The two $\textsf{updateForkChoiceRoot}$ calls after $\textsf{processBlock}$ reuse the resulting post-state $\sigma[B]$ to derive cert-event descriptors: the justified checkpoint $(\sigma[B].h_j,\, 1,\, \sigma[B].J)$ always carries bit~$1$, while the notarized checkpoint $(\sigma[B].h_n,\, b_n,\, \sigma[B].N)$ carries bit $b_n = 1$ iff $\sigma[B].N = \sigma[B].J$ (the notarized block is also justified at its height) and bit $b_n = 0$ otherwise.
+Each call is gated by the filter $X' \succeq \Sigma.F_s$, so a candidate on a chain no longer consistent with $F_s$ is dropped; the remaining candidate replaces $\Sigma.R_s$ iff its key strictly exceeds the current root's.
+Thus $\Sigma.R_s$ is maintained incrementally as the lex-max cert event ever observed on a chain extending the current $F_s$, never recomputed from a stored set.
+(If a cert event was observed prior to an $F_s$ advance that leaves it off the $F_s$-chain, subsequent calls with that same event would be filtered out --- but this case does not arise: Theorem~\ref{thm:fleqr} below shows that $F_s$ advances only to blocks $\preceq R_s$, keeping every cert event whose key could beat $R_s$ on the $F_s$-chain.)
 
 \subsection{Store invariants and safety}
 
 \subsubsection*{Unconditional invariants}
 
-\begin{theorem}[$F_s \preceq R_s$ unconditionally]\label{thm:fleqr}
-The store maintains $F_s \preceq R_s$ at all times.
-\end{theorem}
+\begin{lemma}[Root-key monotonicity]\label{lem:Rs-key-monotone}
+The cert key $\mathsf{key}(R_s)$ is non-decreasing over time; in particular, $R_s.h$ is non-decreasing.
+\end{lemma}
 
 \begin{proof}
-Initially $F_s = R_s = \genesis$.
-$\textsf{computeRoot}$ starts at $X^* = F_s$ and only moves to strict descendants, so $R_s \succeq F_s$ holds immediately after; and $\textsf{updateFinalized}$ only sets $F_s$ to values $F_B \preceq R_s$ (explicit guard).
+$R_s$ changes only inside $\textsf{updateForkChoiceRoot}$, whose guard $\mathsf{newKey} > \mathsf{curKey}$ (lex) allows only strict increases; the height coordinate $h$ is the leading component of the key.
 \end{proof}
 
 \begin{theorem}[Local irreversibility of finality]\label{thm:finperm}
@@ -544,6 +539,24 @@ Once a node sets $F_s = F$, $F_s$ descends from~$F$ at all future times.
 
 \begin{proof}
 $F_s$ is updated only by $\textsf{updateFinalized}$, which requires $F_B \succ F_s$.
+\end{proof}
+
+\begin{theorem}[$F_s \preceq R_s$]\label{thm:fleqr}
+The store maintains $F_s \preceq R_s$ at all times.
+\end{theorem}
+
+\begin{proof}
+By induction on the sequence of store operations.
+At genesis, $F_s = \genesis$ and $R_s.\mathsf{block} = \genesis$, so $F_s \preceq R_s$.
+
+Assume $F_s \preceq R_s$ holds before a store operation, and consider the two mutators in Figure~\ref{alg:store}.
+
+\emph{$\textsf{updateForkChoiceRoot}(\Sigma,\, (h',\, b',\, X'))$.}
+If the filter $X' \succeq \Sigma.F_s$ fails, $\Sigma$ is returned unchanged and the invariant is preserved; otherwise the lex-strict guard either rejects the candidate (leaving $R_s$ unchanged) or replaces $R_s.\mathsf{block}$ by $X' \succeq \Sigma.F_s$.
+Either way $F_s$ is untouched and the new $R_s.\mathsf{block}$ descends from $F_s$.
+
+\emph{$\textsf{updateFinalized}(\Sigma,\, F_B)$.}
+The explicit guard $F_B \preceq \Sigma.R_s$ ensures that after setting $F_s \gets F_B$, the new $F_s$ satisfies $F_s = F_B \preceq R_s$.
 \end{proof}
 
 \begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
@@ -556,15 +569,15 @@ By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq F_s \preceq R_s$, 
 
 \subsubsection*{Further properties under $f < n/3$}
 
-The key tool for the remaining store theorems is Lemma~\ref{lem:certchain}: every notarized checkpoint record whose height is at least that of a finalized block~$C$ is compatible with~$C$, and strictly descends from~$C$ when its height strictly exceeds that of~$C$.
+The key tool for the remaining store theorems is Lemma~\ref{lem:certchain}: every cert event ever observed by the node, whose height is at least that of a finalized block~$C$, has a block compatible with~$C$, and strictly descending when its height strictly exceeds that of~$C$.
 
 \begin{lemma}[Checkpoint chain]\label{lem:certchain}
-Unless $\geq n/3$ validators are slashable: if~$C$ is finalized at height~$h_F$ and $(X, h', s) \in C_N$ with $h' \geq h_F$, then $C$ and~$X$ are compatible; moreover, if $h' > h_F$ then $C \prec X$.
+Unless $\geq n/3$ validators are slashable: if~$C$ is finalized at height~$h_F$ and a cert event $(X,\, h',\, b')$ has fired on any chain processed by the node with $h' \geq h_F$, then $C$ and~$X$ are compatible; moreover, if $h' > h_F$ then $C \prec X$.
 \end{lemma}
 
 \begin{proof}
-If $h_F = 0$ then $C = \genesis$ and compatibility is trivial; assume $h_F \geq 1$, so $(X, h', s)$ is not the initial genesis tuple.
-The tuple was therefore inserted from the post-state of some processed block~$B$ with $(\sigma[B].N, \sigma[B].h_n) = (X, h')$, so $X \preceq B$.
+If $h_F = 0$ then $C = \genesis$ and compatibility is trivial; assume $h_F \geq 1$.
+The cert event fired at the post-state of some processed block~$B$ whose $\textsf{processSlot}$ call triggered $\textsf{processHeight}$ with $(\sigma[B].N,\, \sigma[B].h_n) = (X,\, h')$, so $X \preceq B$.
 Every $h_n$-update is paired with $\sigma.h \gets \sigma.h + 1$ (Lemma~\ref{lem:slotmono}), hence $\sigma[B].h \geq h' + 1 > h_F$; Lemma~\ref{lem:mainsafety} gives $C \preceq B$, and with $X \preceq B$ this yields $C \sim X$.
 
 \emph{Strict descent when $h' > h_F$.}
@@ -572,21 +585,31 @@ By Remark~\ref{rem:fresh-equiv}, $\sigma[X].h = h'$ and $\sigma[C].h = h_F$.
 Both $C, X$ lie on the chain ending at~$B$, so they are comparable; state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) with $\sigma[C].h = h_F < h' = \sigma[X].h$ forces $C \prec X$.
 \end{proof}
 
-\begin{lemma}[Upgrade property of the walk]\label{lem:upgrade}
-Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$, $(F, h_F, F.\slot) \in C_J$, and $F_s \prec F$, then $\textsf{computeRoot}$ produces $R_s \succeq F$.
+\begin{lemma}[Per-height justification uniqueness]\label{lem:just-unique-height}
+Unless $\geq n/3$ validators are slashable, and assuming all honest validators follow Definition~\ref{def:voting-rule}: for any two blocks $C_1, C_2$ justified at the same height~$h$ on any chains processed by the node, $C_1 = C_2$.
 \end{lemma}
 
 \begin{proof}
-The walk starts at $X^* = F_s \prec F$.
-Since $(F, h_F, F.\slot) \in C_J \subseteq C_N$ is a strict-descendant candidate, the first step picks a tuple $(X, h, s)$ with key $\geq (h_F, 1, F.\slot, \mathsf{hash}(F))$; in particular $h \geq h_F$.
+Each justification at height~$h$ on a chain yields a $\just$-quorum $Q_k$ ($k \in \{1, 2\}$) of size $\geq 2n/3$ signing a $\just$ vote at height~$h$ for $C_k$; quorum intersection gives $|Q_1 \cap Q_2| \geq n/3$.
+Since fewer than $n/3$ validators are slashable, some $v \in Q_1 \cap Q_2$ is not slashable and (by the hypothesis) honest; by Definition~\ref{def:voting-rule}, only (R1) emits a $\just$ vote and it fires at most once per height, so $v$'s single $\just$ vote at~$h$ has both $C_1$ and $C_2$ as target, forcing $C_1 = C_2$.
+\end{proof}
 
-If $h > h_F$, Lemma~\ref{lem:certchain} gives $F \prec X$.
+\begin{lemma}[Upgrade property]\label{lem:upgrade}
+Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B^\star$ whose post-state has $(F, h_F)$ as its justified checkpoint has been processed by the node, then $R_s \succeq F$ at all future times.
+\end{lemma}
 
-If $h = h_F$, the key's bit coordinate must be~$1$, so $(X, h_F, s) \in C_J$ and the full key equals $(h_F, 1, X.\slot, \mathsf{hash}(X))$; hence $X.\slot \geq F.\slot$.
-Lemma~\ref{lem:certchain} gives $F \sim X$, so $F \preceq X$ or $X \prec F$; the latter would force $X.\slot < F.\slot$ on $F$'s chain (Definition~\ref{def:block}), contradicting $X.\slot \geq F.\slot$.
-Hence $F \preceq X$.
+\begin{proof}
+Fix the moment when $\textsf{onBlock}(B^\star)$ offered the descriptor $(h_F,\, 1,\, F)$ to $\textsf{updateForkChoiceRoot}$, and let $F_s^0$ be the value of $\Sigma.F_s$ at that moment.
+Both $F_s^0$ and $F$ are finalized or genesis (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} gives $F_s^0 \sim F$, i.e.\ $F_s^0 \preceq F$ or $F \preceq F_s^0$.
 
-Either way $F \preceq X$, and subsequent steps move to strict descendants of~$X$, so $R_s \succeq F$.
+\emph{Case $F \preceq F_s^0$.}
+Then $R_s \succeq F_s^0 \succeq F$ already holds at that moment by Theorem~\ref{thm:fleqr}; Theorem~\ref{thm:finperm} gives $F_s \succeq F_s^0$ at all future times and Theorem~\ref{thm:fleqr} preserves $R_s \succeq F_s$, so $R_s \succeq F$ persists.
+
+\emph{Case $F_s^0 \preceq F$.}
+The filter $F \succeq F_s^0$ passes and $\textsf{updateForkChoiceRoot}$ proceeds: either it raises $R_s$ to $(h_F,\, 1,\, F)$, or the current $R_s$ already has strictly greater key.
+By Lemma~\ref{lem:Rs-key-monotone}, $\mathsf{key}(R_s) \geq (h_F,\, 1,\, F.\slot,\, \mathsf{hash}(F))$ from that moment on; in particular $R_s.h \geq h_F$.
+If $R_s.h > h_F$, Lemma~\ref{lem:certchain} applied to the cert event $(R_s.\mathsf{block},\, R_s.h,\, R_s.\mathsf{bit})$ gives $F \prec R_s.\mathsf{block}$.
+If $R_s.h = h_F$, the key lower bound forces $R_s.\mathsf{bit} = 1$ and $R_s.\mathsf{block}.\slot \geq F.\slot$; so $R_s.\mathsf{block}$ was justified at height $h_F$, and Lemma~\ref{lem:just-unique-height} gives $R_s.\mathsf{block} = F$.
 \end{proof}
 
 \begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
@@ -594,13 +617,11 @@ Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by $\tex
 \end{theorem}
 
 \begin{proof}
-If $F_s \succeq F_B$ already, the guard $F_B \succ F_s$ fails and the invariant is maintained.
+If $F_s \succeq F_B$ already, the guard $F_B \succ F_s$ of $\textsf{updateFinalized}$ fails and the invariant is maintained.
 Otherwise, $F_s$ is genesis or a finalized block (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} gives $F_s \sim F_B$, and with $F_s \not\succeq F_B$ this forces $F_s \prec F_B$.
-It remains to show $F_B \preceq R_s$ after $\textsf{computeRoot}$, so that the $\textsf{updateFinalized}$ guard passes.
 
-Let~$h_F$ be the height at which~$F_B$ was finalized.
-Since $F_B$ is finalized in~$B$'s post-state, some ancestor~$B'$ of~$B$ (possibly~$B$ itself) had post-state $(J_{B'}, h_j^{B'}) = (F_B, h_F)$; blocks are processed parent-first, so $B'$ has already been processed and $(F_B, h_F, F_B.\slot) \in C_J$.
-Lemma~\ref{lem:upgrade} then gives $R_s \succeq F_B$.
+Since $F_B$ is finalized in~$B$'s post-state, some ancestor~$B'$ of~$B$ (possibly~$B$ itself) had post-state $(J_{B'},\, h_j^{B'}) = (F_B,\, h_{F_B})$ for the finalization height~$h_{F_B}$.
+Blocks are processed parent-first, so $B'$ has already been processed; Lemma~\ref{lem:upgrade} gives $R_s \succeq F_B$, and the $\textsf{updateFinalized}$ guard passes.
 \end{proof}
 
 \begin{theorem}[Lock-in]\label{thm:lockin}
@@ -608,11 +629,8 @@ Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~
 \end{theorem}
 
 \begin{proof}
-Processing the block inserts $(F, h, F.\slot)$ into~$C_J$, and $C_J$ is monotone, so this tuple persists.
-Fix any future moment.
-If $F \preceq F_s$, Theorem~\ref{thm:fleqr} gives $R_s \succeq F_s \succeq F$.
-Otherwise, Remark~\ref{rem:fs-invariant} and Lemma~\ref{lem:finchain} give $F_s \sim F$, whence $F \npreceq F_s$ forces $F_s \prec F$; Lemma~\ref{lem:upgrade} then gives $R_s \succeq F$.
-Either way $\textsf{getHead}$ (descending from~$R_s$) returns a descendant of~$F$.
+Lemma~\ref{lem:upgrade} gives $R_s \succeq F$ directly.
+$\textsf{getHead}$ (descending from~$R_s$) therefore returns a descendant of~$F$.
 \end{proof}
 
 \begin{theorem}[Order independence]\label{thm:orderindep}
@@ -621,18 +639,19 @@ Unless $\geq n/3$ validators are slashable: the store state after processing a s
 
 \begin{proof}
 Each block's post-state is a deterministic function of itself and its parent's post-state, so $\sigma$ depends only on the processed set.
-$C_N$ and $C_J$ are inserted-only, and tuple insertion is idempotent; both are recomputed deterministically from~$\sigma$, and hence depend only on the processed set.
 
 For $F_s$: by Lemma~\ref{lem:finchain}, the values $\{\sigma[B].F : B \in \T\}$ form a chain with maximum $F_{\max}$, attained at some processed block~$B^\ast$.
 $F_s$ only takes values from this chain (Remark~\ref{rem:fs-invariant}), so $F_s \preceq F_{\max}$ at all times; and once $B^\ast$ has been processed, Theorem~\ref{thm:finlive} gives $F_s \succeq F_{\max}$.
 Hence $F_s$ stabilizes at $F_{\max}$ regardless of order.
 
-Finally, $\textsf{computeRoot}$ is a deterministic function of $(F_s, C_N, C_J)$: distinct hashes make the key total order, the argmax at each step is unique, and the walk terminates in at most $|C_N|$ steps.
-Thus $R_s$ depends only on the processed set.
+For $R_s$: the multiset~$D$ of cert-event descriptors offered to $\textsf{updateForkChoiceRoot}$ after every $\textsf{processBlock}$ call is a deterministic function of the processed set ($\textsf{processSlot}$ and $\textsf{processBlock}$ are deterministic, and each processed block contributes its post-state's two descriptors exactly once).
+Every descriptor $(h',\, b',\, X') \in D$ with $h' \geq h_{F_{\max}}$ satisfies $X' \succeq F_{\max}$ by Lemma~\ref{lem:certchain} (compatibility, then strict descent when $h' > h_{F_{\max}}$; for $h' = h_{F_{\max}}$, the key-order lower bound $\mathsf{key}(R_s) \geq (h_{F_{\max}},\, 1,\, F_{\max}.\slot,\, \mathsf{hash}(F_{\max}))$ from Remark~\ref{rem:fs-invariant} and Lemma~\ref{lem:just-unique-height} force $X' = F_{\max}$).
+Any descriptor with $h' < h_{F_{\max}}$ has key strictly below $(h_{F_{\max}},\, 1,\, F_{\max}.\slot,\, \mathsf{hash}(F_{\max}))$ on the leading coordinate, so it can never be the lex-max and is either filtered out or rejected by the lex-strict guard.
+Hence $R_s$'s final value is determined by the lex-max over $\{(h',\, b',\, X') \in D : h' \geq h_{F_{\max}}\}$, which is invariant under the processing order.
 \end{proof}
 
 \begin{corollary}[Cross-node agreement]\label{cor:agreement}
-Unless $\geq n/3$ validators are slashable: two nodes that have processed the same set of blocks have the same $(R_s, F_s, C_J, C_N)$.
+Unless $\geq n/3$ validators are slashable: two nodes that have processed the same set of blocks have the same $(\sigma,\, \T,\, F_s,\, R_s)$.
 \end{corollary}
 
 \begin{proof}
@@ -875,71 +894,50 @@ Then for every slot processed on~$X'$ from that point onward while canonical sta
 \begin{proof}
 It suffices to show that the target $T_c$ selected by Definition~\ref{def:voting-rule} at~$i$'s voting opportunity satisfies $T_c \preceq X$ with $\sigma[T_c].h = h_c$: freshness (Remark~\ref{rem:fresh-equiv}) then implies~$v$ is canonical-fresh on~$X'$, processing~$v$ populates $\mathsf{ntargets}[i]$ on~$X'$, and Layer~1 does not bump~$i$ at any subsequent slot while state-height stays at~$h_c$.
 
-We identify the top-tier block~$N$ of the walk that produced $\Sigma.R_s$, bound $h_c$ in terms of its height~$h$, and handle the locked branch of $T_c$ (if reached) by matching its target against~$N$.
+The argument reads $\Sigma.R_s$ directly as the running-max cert event, bounds $h_c$ in terms of $R_s.h$, and handles the locked branch of $T_c$ by matching its target against $R_s.\mathsf{block}$.
 
-\emph{Step 1: top-tier block~$N$.}
-Let $h \geq 0$ be the maximum height across all tuples in $\Sigma.C_N$ (well-defined since $(\genesis, 0, 0) \in C_N$), and let~$N$ be the unique block such that $(N, h, s_N) \in \Sigma.C_N$ is lex-maximum over $\{(X', h, s) \in C_N\}$ under the key $(h, \mathbf{1}[\cdot \in C_J], s, \mathsf{hash}(\cdot))$ (uniqueness: block hashes are unique).
-If any height-$h$ tuple lies in~$C_J$, the indicator bit forces~$N$'s tuple into~$C_J$.
+Let $R_s = (h,\, b,\, N)$ with $N \coloneqq R_s.\mathsf{block}$.
 
-\emph{Step 2: $N \preceq R_s$.}
-If $h = 0$, then $N = \genesis \preceq R_s$ by Theorem~\ref{thm:fleqr}.
-Otherwise $h \geq 1$.
-Let $h_{F_s}$ be the height at which~$F_s$ was finalized (or~$0$ if $F_s = \genesis$).
-Remark~\ref{rem:fs-invariant} gives $(F_s, h_{F_s}, F_s.\slot) \in C_J \subseteq C_N$, so maximality of~$h$ yields $h \geq h_{F_s}$; Lemma~\ref{lem:certchain} then gives $F_s \sim N$.
-Split on this compatibility ($F_s = N$ falls into the first branch by reflexivity of~$\preceq$):
-\begin{itemize}
-  \item $N \preceq F_s$: Theorem~\ref{thm:fleqr} gives $N \preceq F_s \preceq R_s$.
-  \item $F_s \prec N$: $N$'s tuple is a strict-descendant candidate at the first step of $\textsf{computeRoot}$ from~$F_s$.
-  Any other strict-descendant candidate $(X', h', s') \in C_N$ has $h' \leq h$ by maximality; if $h' < h$ its key is lex-dominated by~$N$'s, and if $h' = h$ Step~1 picks~$N$'s tuple as lex-max.
-  Either way, the walk's first step picks~$N$'s tuple, so $N \preceq R_s$.
-\end{itemize}
+\emph{Step 1: $N \preceq X$ and $h_c \geq h$.}
+$X$ descends from~$N$ (Figure~\ref{alg:store}), so $N \preceq X$.
+$R_s$ is either the genesis triple (with $N = \genesis$, $h = 0$) or was set by a cert event firing at height $h$ on some processed chain; in the latter case Remark~\ref{rem:fresh-equiv} gives $\sigma[N].h = h$, and in the former trivially $\sigma[N].h = 0 = h$.
+State-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) gives $h_c = \sigma[X].h \geq h$.
 
-\emph{Step 3: $N \preceq X$ and $h_c \geq h$.}
-$X$ descends from~$R_s$ (Figure~\ref{alg:store}), so $R_s \preceq X$ and thus $N \preceq X$.
-Remark~\ref{rem:fresh-equiv} gives $\sigma[N].h = h$, and state-height monotonicity along~$\preceq$ (Lemma~\ref{lem:slotmono}) gives $h_c = \sigma[X].h \geq h$.
-
-\emph{Step 4: $h_c \leq h + 1$.}
-Every state-height advance on~$X$ from some $h'$ to~$h' + 1$ is gated by a height-$h'$ quorum (Lemma~\ref{lem:heightprog}), whose processing inserts a tuple at height~$h'$ into~$C_N$.
-Since~$h$ is the maximum height in~$C_N$, no advance from $h + 1$ to~$h + 2$ has fired on~$X$.
-With Step~3, $h_c \in \{h,\, h+1\}$.
+\emph{Step 2: $h_c \leq h + 1$.}
+Every state-height advance on~$X$ from some $h'$ to~$h' + 1$ fires a cert event at height $h'$ (Lemma~\ref{lem:heightprog}), which is passed through $\textsf{updateForkChoiceRoot}$.
+If some such event had $h' \geq h + 1$, its key's leading coordinate would beat $R_s$'s $h$, so $\textsf{updateForkChoiceRoot}$ would have raised $R_s.h$ to at least $h + 1$, contradicting the current $R_s.h = h$.
+Hence no advance from $h + 1$ to~$h + 2$ has fired on~$X$, and $h_c \in \{h,\, h + 1\}$.
 
 \emph{Characterization of lock at height~$h'$.}
 Before splitting on~$h_c$, we record how locks arise.
-A lock at height~$h'$ requires a prior (R1) firing of~$i$ with finalize-fields $(h', J_\ast)$, where $J_\ast = \sigma[X_\ast].J$ and $h' = \sigma[X_\ast].h_j$ for the canonical chain $X_\ast$ at that firing.
-At that firing, the ancestor of~$X_\ast$ whose processing last advanced~$J$ to~$J_\ast$ inserted $(J_\ast, h', J_\ast.\slot)$ into~$C_J$, and $C_J$ is only inserted into (Figure~\ref{alg:store}).
-So a lock at height~$h'$ entails a height-$h'$ tuple in $\Sigma.C_J$, with block exactly~$J_\ast$.
+A lock at height~$h'$ requires a prior (R1) firing of~$i$ with finalize-fields $(h',\, J_\ast)$, where $J_\ast = \sigma[X_\ast].J$ and $h' = \sigma[X_\ast].h_j$ for the canonical chain $X_\ast$ at that firing.
+At that firing, the ancestor of~$X_\ast$ whose processing last advanced~$J$ to~$J_\ast$ fired a cert event with key $(h',\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$ on the chain of $X_\ast$.
+That event was passed through $\textsf{updateForkChoiceRoot}$ and raised $\mathsf{key}(R_s)$ to at least $(h',\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$; by Lemma~\ref{lem:Rs-key-monotone} this bound persists.
+So a lock at height $h'$ implies the current $\mathsf{key}(R_s) \geq (h',\, 1,\, J_\ast.\slot,\, \mathsf{hash}(J_\ast))$, and in particular $R_s.h \geq h'$, with the bit coordinate of $R_s$ being $1$ whenever $R_s.h = h'$.
 
-\emph{Step 5: case $h_c = h + 1$.}
-By the maximality of~$h$, $\Sigma.C_J \subseteq \Sigma.C_N$ has no height-$(h+1)$ tuple, so by the characterization no lock at~$h_c$ exists.
-Hence $T_c = T \preceq X$ with $\sigma[T].h = h_c$ by Remark~\ref{rem:fresh-equiv}.
+\emph{Step 3: case $h_c = h + 1$.}
+A lock at $h_c = h + 1$ would force $R_s.h \geq h + 1$ by the characterization, contradicting $R_s.h = h$.
+Hence $i$ is not locked at $h_c$, and the non-locked branch of Definition~\ref{def:voting-rule} gives $T_c = T \preceq X$ with $\sigma[T].h = h_c$ by Remark~\ref{rem:fresh-equiv}.
 
-\emph{Step 6: case $h_c = h$, with a height-$h$ $C_J$-tuple in~$\Sigma.C_J$.}
-By Step~1's tiebreak,~$N$'s tuple lies in~$C_J$, so~$N$ was justified at height~$h$ on some chain.
+\emph{Step 4: case $h_c = h$.}
+If $i$ is not locked, the non-locked branch gives $T_c = T \preceq X$ with $\sigma[T].h = h_c$ directly.
 
-\emph{Uniqueness of height-$h$ justified blocks.}
-Every honest validator casts at most one $\just$ vote at any height (Definition~\ref{def:voting-rule}).
-Let $Q_1, Q_2$ be $\just$-quora at height~$h$ for blocks $N_1, N_2$ respectively.
-$|Q_1 \cap Q_2| \geq 2n/3 + 2n/3 - n = n/3 > f$, so the intersection contains an honest validator~$j$, who cast $\just$ votes targeting both $N_1$ (contributing to $Q_1$) and $N_2$ (contributing to $Q_2$); honesty forces these to be the same vote, hence $N_1 = N_2$.
-Every height-$h$ $C_J$-tuple therefore has block~$N$.
+Suppose instead~$i$ is locked at $h_c = h$ with lock-target~$L$.
+The lock characterization gives $\mathsf{key}(R_s) \geq (h, 1, L.\slot, \mathsf{hash}(L))$; with $R_s.h = h$ this forces $R_s.\mathsf{bit} = 1$.
+Hence $N = R_s.\mathsf{block}$ was justified at height~$h$ on some processed chain; the locking (R1) also justified~$L$ at height~$h$, so Lemma~\ref{lem:just-unique-height} gives $L = N$.
+With Step~1, $T_c = L = N \preceq X$ and $\sigma[T_c].h = h = h_c$.
 
-Applying the characterization: if~$i$ is locked at~$h_c = h$, then $T_c = L$ where~$L$ is the $J_\ast$ of the locking (R1), and uniqueness forces $L = N$; with Step~3, $T_c = N \preceq X$ and $\sigma[T_c].h = h = h_c$.
-If~$i$ is not locked, $T_c = T \preceq X$ with $\sigma[T].h = h_c$ directly.
-
-\emph{Step 7: case $h_c = h$, with no height-$h$ $C_J$-tuple in~$\Sigma.C_J$.}
-By the characterization, no lock at~$h_c = h$ can have been created, so~$i$ is not locked.
-Then $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
-
-\emph{Step 8: canonical-freshness and Layer~1.}
+\emph{Step 5: canonical-freshness and Layer~1.}
 Each case gives $T_c \preceq X$ with $\sigma[T_c].h = h_c$.
 Since $X \preceq X'$, also $T_c \preceq X'$.
 The hypothesis $\Sigma'.\sigma[X'].h = h_c = \Sigma.\sigma[X].h$ and Lemma~\ref{lem:slotmono} ($s_h$ advances only with~$h$) give $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$, and Remark~\ref{rem:fresh-equiv} gives $T_c.\slot \geq \Sigma'.\sigma[X'].s_h$.
-The produced vote $v = (i, h_c, \mathsf{currentSlot}, T_c, \cdot, \ldots)$ is therefore canonical-fresh on~$X'$, and processing~$v$ sets $\Sigma'.\sigma[X'].\mathsf{ntargets}[i] \gets \max_{\preceq}(\Sigma'.\sigma[X'].\mathsf{ntargets}[i],\, T_c) \neq \bot$.
+The produced vote $v = (i,\, h_c,\, \mathsf{currentSlot},\, T_c,\, \cdot,\, \ldots)$ is therefore canonical-fresh on~$X'$, and processing~$v$ sets $\Sigma'.\sigma[X'].\mathsf{ntargets}[i] \gets \max_{\preceq}(\Sigma'.\sigma[X'].\mathsf{ntargets}[i],\, T_c) \neq \bot$.
 
 $\mathsf{ntargets}$ is reset only at a height advance (Figure~\ref{alg:state-machine}), and no such advance fires on~$X'$ while canonical state-height stays at~$h_c$, so $\mathsf{ntargets}[i] \neq \bot$ persists on canonical from the inclusion slot onward.
 Layer~1 bumps only validators with $\sigma_{\mathrm{post}}.\mathsf{ntargets}[\cdot] = \bot$, so it does not bump~$i$.
 \end{proof}
 
-The hypothesis is used in Step~6 (uniqueness of height-$h$ justified blocks) and implicitly in Step~2 (Lemma~\ref{lem:certchain}); together these force the locked-branch target~$L$ to coincide with the walk's~$N$, hence to lie on canonical.
+The hypothesis is used in Step~4 (Lemma~\ref{lem:just-unique-height} for same-height justification uniqueness) and implicitly in Step~1 (via the fact that $R_s.\mathsf{block}$ coincides with the latest-observed cert target, which is on canonical because $X \succeq R_s$); together these force the locked-branch target~$L$ to coincide with $R_s.\mathsf{block}$, hence to lie on canonical.
 
 \section{Roberto's review}\label{sec:roberto-review}
 
@@ -969,16 +967,7 @@ The iterative greedy walk in Figure~\ref{alg:store} is replaced by a single argm
 \end{center}
 
 \paragraph{Revised proofs of downstream theorems.}
-The following proofs are revised to use the single-argmax form. Only the proofs change; the statements of \Cref{thm:leafequiv,thm:fleqr,lem:upgrade,thm:orderindep} are unchanged.
-
-\emph{Revised proof of \Cref{thm:leafequiv}.}
-Let $\tau^\star = (X^\star, h^\star, X^\star.\slot)$ be the full argmax over $\{(X, h, s) \in C_N : X \succeq F_s\}$, so $\textsf{computeRoot}$ returns $X^\star$.
-We show $\tau^\star \in C_N^{\mathrm{leaf}}$, which implies $\textsf{computeRootLeaf}$ picks the same tuple.
-Let $B^\star$ be any processed block whose post-state contributed~$\tau^\star$; if $B^\star$ is a leaf, done.
-Otherwise pick any processed leaf $B_\ell \succ B^\star$; its post-state contributes $\tau_\ell = (X_\ell, h_\ell, X_\ell.\slot) \in C_N^{\mathrm{leaf}}$.
-By \Cref{lem:slotmono} along the chain $B^\star$ to $B_\ell$, $h_\ell \geq h^\star$ and $X_\ell \succeq X^\star$, so $\tau_\ell$ is a candidate.
-If $h_\ell > h^\star$, $\tau_\ell$'s key strictly dominates $\tau^\star$'s by the leading coordinate, contradicting maximality.
-Hence $h_\ell = h^\star$, and the invariant that $N$ advances only jointly with $h_n \gets h_n + 1$ forces $X_\ell = X^\star$, so $\tau_\ell = \tau^\star \in C_N^{\mathrm{leaf}}$.
+The following proofs are revised to use the single-argmax form. Only the proofs change; the statements of \Cref{thm:fleqr,lem:upgrade,thm:orderindep} are unchanged.
 
 \emph{Revised proof of \Cref{thm:fleqr}.}
 Initially $F_s = R_s = \genesis$.
@@ -1176,6 +1165,7 @@ Hypothesis~(5) directly rules out any honest vote at $> H.h$ before $\mathsf{vot
 Invoke \Cref{rev:lem:healing-one-slot} at slot~$t+1$, with $h^\star = H.h$: hypotheses (1)--(4) are inherited; (5) is Step~1; (6) is Step~2; (7) is the present hypothesis~(7).
 The conclusion at $\mathsf{vote}((t+1) + 1) = \mathsf{vote}(t+2)$ is exactly what is claimed.
 \end{proof}
+
 
 \appendix
 
