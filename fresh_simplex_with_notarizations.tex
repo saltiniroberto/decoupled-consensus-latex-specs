@@ -1083,7 +1083,7 @@ Unless $\geq n/3$ validators are slashable, every processed block~$B$ satisfies 
 If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a $C_N$ tuple at height $\sigma[B].h - 1$ from the last advance on~$B$'s chain; by \Cref{rev:cor:no-high-cn}, $\sigma[B].h - 1 \leq R_s.h$.
 \end{proof}
 
-\subsection{Leak fairness 2}\label{rev:sec:leak-fairness}
+\subsection{Leak fairness}\label{rev:sec:leak-fairness}
 
 \begin{lemma}[Unique justified block per height]\label{rev:lem:unique-just-per-height}
 If $f < n/3$ and all honest validators follow \Cref{def:voting-rule}, then for any two blocks $C_1, C_2$ justified at the same height~$h$, $C_1 = C_2$.
