@@ -461,7 +461,7 @@ Finally, $\textsf{updateFinalized}$ sets $\Sigma.F_s \gets \sigma[B].F$ whenever
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$: \;$\Sigma.\T \gets \{\genesis\}$, \; $\Sigma.F_s \gets \genesis$, \; $\Sigma.R_s \gets \genesis$, \; $\Sigma.\mathsf{key}_R \gets (0,\, 1,\, \genesis.\slot,\, \mathsf{hash}(\genesis))$,
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F_s \gets \genesis,\ \Sigma.R_s \gets \genesis,\ \Sigma.\mathsf{key}_R \gets (0,\, 1,\, \genesis.\slot,\, \mathsf{hash}(\genesis)),$
 \State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets (\genesis,\, 0,\, 0,\, 0,\, \bot^n,\, \bot^n,\, \genesis,\, 0,\, \genesis,\, 0,\, \genesis,\, \emptyset)$
 \vspace{3pt}
 
