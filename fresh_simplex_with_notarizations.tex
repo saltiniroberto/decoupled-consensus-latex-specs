@@ -592,11 +592,11 @@ Since fewer than $n/3$ validators are slashable, some $v \in Q_1 \cap Q_2$ is no
 \end{proof}
 
 \begin{lemma}[Upgrade property]\label{lem:upgrade}
-Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B^\star$ whose post-state has $(F, h_F)$ as its justified checkpoint has been processed by the node, then $R_s \succeq F$ at all future times.
+Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B$ whose post-state has $(F, h_F)$ as its justified checkpoint has been processed by the node, then $R_s \succeq F$ at all future times.
 \end{lemma}
 
 \begin{proof}
-Fix the moment when $\textsf{onBlock}(B^\star)$ offered the descriptor $(h_F,\, 1,\, F)$ to $\textsf{updateForkChoiceRoot}$, and let $F_s^0$ be the value of $\Sigma.F_s$ at that moment.
+Fix the moment when $\textsf{onBlock}(B)$ offered the descriptor $(h_F,\, 1,\, F)$ to $\textsf{updateForkChoiceRoot}$, and let $F_s^0$ be the value of $\Sigma.F_s$ at that moment.
 Both $F_s^0$ and $F$ are finalized or genesis (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} gives $F_s^0 \sim F$, i.e.\ $F_s^0 \preceq F$ or $F \preceq F_s^0$.
 
 \emph{Case $F \preceq F_s^0$.}
@@ -1152,7 +1152,7 @@ Then at $\mathsf{vote}(t+2)$ every honest validator has the same $R_s$ with $R_s
 
 \begin{proof}
 \emph{Step 1.}
-Under \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t)$ + determinism, $h_c^{(t)} = H.h$ and honest slot-$t$ votes (either kind) all target the common $T \preceq H$; both kinds update $\mathsf{ntargets}[i]$, so on~$X$ the prefix walk at state-height $H.h$ accumulates $\geq 2n/3$ to some $B^\star \succeq T$, firing prefix notarization and inserting $(B^\star, H.h, B^\star.\slot) \in C_N$.
+Under \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t)$ + determinism, $h_c^{(t)} = H.h$ and honest slot-$t$ votes (either kind) all target the common $T \preceq H$; both kinds update $\mathsf{ntargets}[i]$, so on~$X$ the prefix walk at state-height $H.h$ accumulates $\geq 2n/3$ to some $B \succeq T$, firing prefix notarization and inserting $(B, H.h, B.\slot) \in C_N$.
 By \Cref{rev:ass:view-merge} + honest $\mathsf{syncer}(t+1)$ + determinism, every honest at $\mathsf{vote}(t+1)$ shares $\Sigma^\star_{t+1} = \Sigma_{\mathsf{syncer}(t+1)}$ (at $\mathsf{start}(t+1)$) and its canonical is~$X$ (hypothesis~(6)), so $\sigma[H^{(t+1)}].h = H.h + 1$; combined with \Cref{rev:lem:Rs-height-monotone} and \Cref{rev:cor:no-high-cn}, $R_s^{(t+1)}.h = H.h$.
 
 \emph{Step 2.}
