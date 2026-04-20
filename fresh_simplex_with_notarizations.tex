@@ -736,7 +736,7 @@ The first-vote check in the (R1) branch ensures at most one $\just$ vote per hei
   \State $T \gets$ any ancestor of $X$ with $\sigma[T].h = h_c$ \Comment{e.g.~$X$ itself}
   \vspace{3pt}
   \State \textbf{-- Target selection --}
-  \If{$\exists\, v \in V$ with $v.\height = h_c$ and $v.\mathsf{finalize\_target} \neq \bot$}
+  \If{$\exists\, v \in V$ with $v.\mathsf{finalize\_height} = h_c$ and $v.\mathsf{finalize\_target} \neq \bot$}
     \State $T_c \gets v.\mathsf{finalize\_target}$ \Comment{$i$ is locked at $h_c$}
   \Else
     \State $T_c \gets T$
