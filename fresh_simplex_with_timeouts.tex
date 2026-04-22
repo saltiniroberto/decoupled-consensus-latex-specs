@@ -156,9 +156,9 @@ A \emph{vote} is a signed tuple
 \[
   (\validator,\; \height,\; \slot,\; \target,\; \kind,\; \finalizeHeight,\; \finalizeTarget),
 \]
-where $\validator$ is the signer, $\height$ is a height, $\slot$ a slot, $\target$ a block (never~$\bot$), and $\kind \in \{\just,\, \notar\}$.
+where $\validator$ is the signer, $\height$ is a height, $\slot$ a slot, $\kind \in \{\just,\, \notar\}$, and $\target$ is a block, with $\target = \bot$ allowed only when $\kind = \notar$.
 The pair $(\finalizeHeight,\, \finalizeTarget)$ is either both~$\bot$ or a commitment to finalize a block at a height.
-A vote included on a chain must reference a target (and finalize target, when present) that exists on that chain.
+A vote included on a chain must reference a target (and finalize target, when present) that exists on that chain, or be~$\bot$.
 \end{definition}
 
 \paragraph{State.}
@@ -191,13 +191,13 @@ The \emph{state-height} of a block~$B$ is $\sigma[B].h$: the height after proces
 \end{definition}
 
 \paragraph{Height freshness.}
-A \notar vote~$v$ is processed on a chain with head state $\sigma[L]$ only if $v.\height = \sigma[L].h$: the chain is at~$v$'s height; $v.\target$ plays no role in the freshness check.
+A \notar vote~$v$ is processed on a chain with head state $\sigma[L]$ only if $v.\height = \sigma[L].h$ and either $v.\target = \bot$ or $v.\target \preceq L$.
 A \just vote~$v$ with target~$T$ is processed only if additionally
 \[
   T \preceq L \;\wedge\; T.\slot \geq \sigma[L].s_h,
 \]
 so that $T$ lies on this chain and its slot is no earlier than where the chain's current height began.
-Intuitively, a \just vote attests that its signer saw~$T$ as a chain of height~$v.\height$; a \notar vote attests only to the signer's current height.
+Intuitively, a \just vote attests that its signer saw~$T$ as a chain of height~$v.\height$; a \notar vote attests only to the signer's current height, with the target signalling a commitment to~$T$ (if $T \neq \bot$) or no commitment (if $\bot$).
 
 \begin{remark}[Freshness via $T$'s own chain]\label{rem:fresh-equiv}
 For a \just vote, given $T \preceq L$, the constraint $T.\slot \geq \sigma[L].s_h$ is equivalent to $\sigma[T].h = \sigma[L].h$.
@@ -225,7 +225,7 @@ A chain with state $\sigma[L]$ at height~$h$ is \emph{notarized at height~$h$ wi
   \qquad\text{and}\qquad
   s \;=\; \max\bigl\{s' \;:\; |\{i : \voteSlots[i] \geq s'\}| \geq 2n/3\bigr\}.
 \]
-Notarization does not require a common target; a \notar vote is fresh on this chain whenever $v.\height = h$, regardless of $v.\target$. The notarized block is the chain head~$L$.
+Notarization does not require a common target; a \notar vote is fresh on this chain whenever $v.\height = h$ and $v.\target \in \{\bot\} \cup \{B : B \preceq L\}$. The notarized block is the chain head~$L$.
 A justification of~$T$ is automatically a notarization of~$L$ at the same height: the $2n/3$ \just votes for~$T$ are fresh at height~$h$ on~$L$, so they contribute to $\voteSlots$; the slot component of the notarization coincides with that of the justification.
 \end{definition}
 
@@ -252,7 +252,7 @@ Branches (ii) and (iii) both advance height and reset $\jtargets, \voteSlots$, s
 
 $\processBlock(\sigma, B)$ has precondition $\sigma.s = B.\slot$: the caller runs \processSlot up to $B.\slot$ first.
 Then $L \gets B$, and each vote~$v$ in~$B$ is fed through \processVote.
-Any vote with $v.\height = \sigma.h$ updates $\voteSlots[i] \gets \max(\voteSlots[i],\, v.\slot)$ (treating~$\bot$ as $-\infty$); a \just vote additionally passes the target-freshness check and, if it does, sets $\jtargets[i] \gets v.\target$.
+A \notar vote with $v.\height = \sigma.h$ and $v.\target \in \{\bot\} \cup \{B : B \preceq \sigma.L\}$ updates $\voteSlots[i] \gets \max(\voteSlots[i],\, v.\slot)$ (treating~$\bot$ as $-\infty$); a \just vote additionally passes the target-freshness check $v.\target \preceq \sigma.L \wedge v.\target.\slot \geq \sigma.s_h$ and, if it does, updates both $\voteSlots[i]$ and $\jtargets[i] \gets v.\target$.
 The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finalizeTarget = \sigma.J$; this is independent of freshness.
 \processBlock never advances~$h$: height advances happen only in \processSlot, which runs on every slot (including empty ones).
 
@@ -279,9 +279,9 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
 
 \Function{\processVote}{$\sigma,\; v$}
   \State $i \gets v.\validator$
-  \If{$v.\height = \sigma.h$} \Comment{height freshness --- enough for \notar}
+  \If{$v.\height = \sigma.h$ \textbf{and} $(v.\target = \bot$ \textbf{or} $v.\target \preceq \sigma.L)$} \Comment{enough for \notar}
     \State $\sigma.\voteSlots[i] \gets \max(\sigma.\voteSlots[i],\, v.\slot)$
-    \If{$v.\kind = \just$ \textbf{and} $v.\target \preceq \sigma.L$ \textbf{and} $v.\target.\slot \geq \sigma.s_h$}
+    \If{$v.\kind = \just$ \textbf{and} $v.\target \neq \bot$ \textbf{and} $v.\target.\slot \geq \sigma.s_h$}
       \State $\sigma.\jtargets[i] \gets v.\target$ \Comment{\just additionally requires target freshness}
     \EndIf
   \EndIf
