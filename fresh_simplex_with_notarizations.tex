@@ -54,6 +54,7 @@
 \newcommand{\finalizeTarget}{\mathsf{finalize\_target}}
 \newcommand{\jtargets}{\mathsf{jtargets}}
 \newcommand{\ntargets}{\mathsf{ntargets}}
+\newcommand{\nslots}{\mathsf{nslots}}
 \newcommand{\penalties}{\mathsf{penalties}}
 \newcommand{\fresh}{\mathsf{fresh}}
 \newcommand{\cnt}{\mathsf{count}}
@@ -155,7 +156,7 @@ A vote included on a chain must reference a target (and finalize target, when pr
 \paragraph{State.}
 The \emph{state after block~$B$}, written $\sigma[B]$, is the tuple
 \[
-  (L,\; s,\; h,\; s_h,\; \jtargets,\; \ntargets,\; J,\; h_j,\; N,\; h_n,\; F,\; P),
+  (L,\; s,\; h,\; s_h,\; \jtargets,\; \ntargets,\; \nslots,\; J,\; h_j,\; N,\; h_n,\; s_n,\; F,\; P),
 \]
 with components:
 \begin{itemize}
@@ -164,15 +165,17 @@ with components:
   \item $h$: the \emph{current height}.
   \item $s_h$: the slot of the block whose processing last advanced~$h$ on this chain ($0$ if no advance has occurred).
   \item $\jtargets[1..n]$: for each validator~$i$, the target of~$i$'s \just vote at the current height ($\bot$ if none processed).
-  \item $\ntargets[1..n]$: for each~$i$, the $\preceq$-max target among~$i$'s fresh votes at the current height, across both kinds ($\bot$ if none processed). A \just vote for~$T$ thus also contributes to prefix-notarizing~$T$ and its ancestors.
+  \item $\ntargets[1..n]$: for each~$i$, the target of the latest-slot fresh vote of~$i$ at the current height, across both kinds ($\bot$ if none processed). Both \just and \notar votes can set $\ntargets[i]$; a later-slot vote overwrites any earlier entry.
+  \item $\nslots[1..n]$: for each~$i$, the $\slot$ of the vote that set $\ntargets[i]$ ($0$ if none).
   \item $J$, $h_j$: the most recently justified block and its height.
   \item $N$, $h_n$: the most recently notarized (or justified) block and its height; $J$ is itself a notarization (Definition~\ref{def:notarization}).
+  \item $s_n$: the \emph{notarization slot} of the most recent prefix-notarization-only advance --- the largest~$s$ such that $\geq 2n/3$ of the contributors whose $\ntargets$ covers~$N$ also satisfy $\nslots \geq s$. Justifications do not set $s_n$; the field is reset to $0$ on a justification advance, and initializes to $0$.
   \item $F$: the most recently finalized block.
   \item $P \subseteq \{1, \ldots, n\}$: validators who have cast a vote with $\finalizeHeight = h_j$ and $\finalizeTarget = J$.
 \end{itemize}
 The genesis state is
 \[
-  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 0,\; 0,\; \bot^n,\; \bot^n,\; \genesis,\; 0,\; \genesis,\; 0,\; \genesis,\; \emptyset),
+  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 0,\; 0,\; \bot^n,\; \bot^n,\; 0^n,\; \genesis,\; 0,\; \genesis,\; 0,\; 0,\; \genesis,\; \emptyset),
 \]
 with $\sigma[\genesis] \coloneqq \sigma_{\mathrm{gen}}$.
 When unambiguous we drop the chain prefix and write $L$, $s$, $h$, etc.\ for the components of $\sigma[L]$.
@@ -211,8 +214,8 @@ A block~$T$ is \emph{notarized at height~$h$} iff~$T$ is the first block at whic
   \bigl|\{i : T \preceq \ntargets[i] \preceq L\}\bigr| \;\geq\; 2n/3.
 \]
 If no such block exists, nothing is notarized.
-Notarization uses \emph{prefix counting}: \just or \notar votes targeting descendants of~$T$ contribute.
-A justification of~$T$ is automatically a notarization: $2n/3$ \just votes for~$T$ satisfy the prefix count at~$T$.
+Notarization uses \emph{prefix counting}: \just or \notar votes targeting descendants of~$T$ contribute via $\ntargets$, but only the latest-slot entry per validator counts.
+A justification of~$T$ is paired with a notarization cert event at~$T$: the justification branch of \processHeight sets $(J, N) \gets (T, T)$ jointly (Figure~\ref{alg:state-machine}).
 \end{definition}
 
 \begin{definition}[Finality]\label{def:finality}
@@ -266,11 +269,12 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
 \Function{\processVote}{$\sigma,\; v$}
   \State $i \gets v.\validator$
   \State $\fresh \gets (v.\height = \sigma.h) \land (v.\target \preceq \sigma.L) \land (v.\target.\slot \geq \sigma.s_h)$
-  \If{$\fresh$}
-    \State $\sigma.\ntargets[i] \gets \max_{\preceq}(\sigma.\ntargets[i],\, v.\target)$ \Comment{both kinds bump $\ntargets$}
-    \If{$v.\kind = \just$}
-      \State $\sigma.\jtargets[i] \gets v.\target$
-    \EndIf
+  \If{$\fresh$ \textbf{and} $v.\slot > \sigma.\nslots[i]$}
+    \State $\sigma.\ntargets[i] \gets v.\target$ \Comment{both kinds bump $\ntargets$, slot-gated}
+    \State $\sigma.\nslots[i]  \gets v.\slot$
+  \EndIf
+  \If{$\fresh$ \textbf{and} $v.\kind = \just$}
+    \State $\sigma.\jtargets[i] \gets v.\target$
   \EndIf
   \If{$v.\finalizeHeight = \sigma.h_j$ \textbf{and} $v.\finalizeTarget = \sigma.J$}
     \State $\sigma.P \gets \sigma.P \cup \{i\}$
@@ -286,18 +290,20 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
   \State $T \gets \arg\max_{T' \in \{\sigma.\jtargets[i] \,:\, \sigma.\jtargets[i] \neq \bot\}} |\{i : \sigma.\jtargets[i] = T'\}|$ \Comment{$T \gets \bot$ if the set is empty;}
   \If{$T \neq \bot$ \textbf{and} $|\{i : \sigma.\jtargets[i] = T\}| \geq 2n/3$} \Comment{Justification (also a notarization)}
     \State $\sigma.J \gets T$, \; $\sigma.h_j \gets \sigma.h$, \; $\sigma.P \gets \emptyset$
-    \State $\sigma.N \gets T$, \; $\sigma.h_n \gets \sigma.h$
+    \State $\sigma.N \gets T$, \; $\sigma.h_n \gets \sigma.h$, \; $\sigma.s_n \gets 0$
     \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
-    \State reset $\jtargets, \ntargets$
+    \State reset $\jtargets, \ntargets, \nslots$
     \State \Return $\sigma$
   \EndIf
   \State $\cnt \gets 0$ \Comment{Prefix notarization walk}
   \For{$B$ from $\sigma.L$ down to $\genesis$}
     \State $\cnt \gets \cnt + |\{i : \sigma.\ntargets[i] = B\}|$
     \If{$\cnt \geq 2n/3$} \Comment{Notarization fires at $B$}
-      \State $\sigma.N \gets B$, \; $\sigma.h_n \gets \sigma.h$
+      \State $Q \gets \{i : B \preceq \sigma.\ntargets[i] \preceq \sigma.L\}$
+      \State $s^* \gets \max\{s : |\{i \in Q : \sigma.\nslots[i] \geq s\}| \geq 2n/3\}$
+      \State $\sigma.N \gets B$, \; $\sigma.h_n \gets \sigma.h$, \; $\sigma.s_n \gets s^*$
       \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
-      \State reset $\jtargets, \ntargets$
+      \State reset $\jtargets, \ntargets, \nslots$
       \State \Return $\sigma$
     \EndIf
   \EndFor
@@ -398,22 +404,23 @@ No per-chain invariant requires $N \succeq C$; the store (Section~\ref{sec:store
 A node may track multiple chains simultaneously; the \emph{store} is the node-local data structure that mediates which chain the node follows.
 It maintains a single \emph{root block} $R_s$ together with a cached \emph{cert key} $\key_R$ for the event that last set $R_s$.
 Each firing of \processHeight (a \emph{cert event}) is compared against $\key_R$ in lex order; whenever its key strictly dominates, $(R_s, \key_R)$ is updated to the new event.
-The key packages height, a justified-bit, slot, and block hash, so that a justification strictly dominates a prior notarization-only event at the same block and a higher-height cert always wins over a lower one.
+The key packages height, a justified-bit, the notarization slot, the block slot, and the block hash, so that a justification strictly dominates a prior notarization-only event at the same block, a higher notarization slot outranks a lower one at the same (height, bit), and a higher-height cert always wins over a lower one.
 
 \begin{definition}[Cert event and cert key]\label{def:cert-event}
 When \processHeight fires a height advance on a chain (Figure~\ref{alg:state-machine}), we call the triggering event a \emph{cert event}, characterized by:
 \begin{itemize}
   \item the block $X = \sigma.N$ at firing (equal to the justified target~$T$ in the justification branch, and to the prefix-notarization endpoint~$T^*$ in the notarization branch);
   \item the height~$h$ at which the advance fires, equal to the pre-advance $\sigma.h$ and to the post-advance $\sigma.h_n$;
-  \item a \emph{bit} $b \in \{0, 1\}$: $b = 1$ for a justification, $b = 0$ for a prefix notarization without accompanying justification.
+  \item a \emph{bit} $b \in \{0, 1\}$: $b = 1$ for a justification, $b = 0$ for a prefix notarization without accompanying justification;
+  \item the \emph{notarization slot} $s_n = \sigma.s_n$: for a bit-$0$ event, the largest~$s$ such that $\geq 2n/3$ contributors to the prefix-notarization of~$X$ on~$\sigma.L$ satisfy $\sigma.\nslots \geq s$; for a bit-$1$ event (justification), $s_n = 0$.
 \end{itemize}
 The associated \emph{cert key} is the lexicographic tuple
 \[
-  \key(X, h, b) \;\coloneqq\; \bigl(h,\; b,\; X.\slot,\; \hash(X)\bigr).
+  \key(X, h, b, s_n) \;\coloneqq\; \bigl(h,\; b,\; s_n,\; X.\slot,\; \hash(X)\bigr).
 \]
 \end{definition}
 
-A justification also prefix-notarizes its block (the justification branch sets $(J, N) \gets (T, T)$ jointly), but we classify the combined event as a justification with key $\key(T, h, 1)$.
+A justification also prefix-notarizes its block (the justification branch sets $(J, N) \gets (T, T)$ jointly), but we classify the combined event as a justification with key $\key(T, h, 1, s_n)$.
 A given block may therefore fire a bit-$0$ cert event on one chain and a bit-$1$ cert event on another, with the bit-$1$ key strictly dominating at the same block.
 
 \begin{definition}[Store]\label{def:store}
@@ -429,7 +436,7 @@ where:
   \item $R_s$ is the \emph{store root}: the block of the highest-key cert event ever observed;
   \item $\key_R$ is the cached cert key of the event that set $R_s$.
 \end{itemize}
-The genesis store has $\T = \{\genesis\}$, $F_s = R_s = \genesis$, and $\key_R = (0,\, 1,\, \genesis.\slot,\, \hash(\genesis))$, treating genesis as a bit-$1$ cert event at height~$0$.
+The genesis store has $\T = \{\genesis\}$, $F_s = R_s = \genesis$, and $\key_R = (0,\, 1,\, 0,\, \genesis.\slot,\, \hash(\genesis))$, treating genesis as a bit-$1$ cert event at height~$0$ with notarization slot~$0$.
 \end{definition}
 
 The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$.
@@ -437,7 +444,7 @@ We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F_s$, $\Sigma.R_s$, $\Sigma.\key_
 
 The acceptance routine \onBlock (Figure~\ref{alg:store}) admits $B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F_s \preceq B$.
 It runs \processSlot once per slot from $\Sigma.\sigma[B.\parent].s + 1$ up to $B.\slot$ (so any height advance enabled by the accumulated tally fires before~$B$'s votes are folded in), then $\processBlock(\cdot, B)$; the resulting post-state becomes $\Sigma.\sigma[B]$.
-The post-state then offers two cert-event descriptors to \updateForkChoiceRoot: the justified checkpoint $(\sigma[B].h_j,\, 1,\, \sigma[B].J)$ and the notarized checkpoint $(\sigma[B].h_n,\, 0,\, \sigma[B].N)$; the bit-$1$ / bit-$0$ split reflects the distinct events (the justification may have fired at a strictly smaller height than the notarization).
+The post-state then offers two cert-event descriptors to \updateForkChoiceRoot: the justified checkpoint $(\sigma[B].h_j,\, 1,\, \sigma[B].J,\, \sigma[B].s_n)$ and the notarized checkpoint $(\sigma[B].h_n,\, 0,\, \sigma[B].N,\, \sigma[B].s_n)$; the bit-$1$ / bit-$0$ split reflects the distinct events (the justification may have fired at a strictly smaller height than the notarization).
 Each call to \updateForkChoiceRoot first filters out any candidate~$C$ with $C \not\succeq \Sigma.F_s$ and then updates $(\Sigma.R_s,\, \Sigma.\key_R)$ iff the candidate's cert key strictly exceeds the current $\key_R$; this maintains $R_s$ incrementally as the lex-max cert event ever observed on a chain extending the current $F_s$, never recomputed.
 Finally, \updateFinalized sets $\Sigma.F_s \gets \sigma[B].F$ iff $\sigma[B].F \succ \Sigma.F_s$ and $\sigma[B].F \preceq \Sigma.R_s$.
 
@@ -447,7 +454,7 @@ Finally, \updateFinalized sets $\Sigma.F_s \gets \sigma[B].F$ iff $\sigma[B].F \
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F_s \gets \genesis,\ \Sigma.R_s \gets \genesis,\ \Sigma.\key_R \gets (0,\, 1,\, \genesis.\slot,\, \hash(\genesis)),$
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F_s \gets \genesis,\ \Sigma.R_s \gets \genesis,\ \Sigma.\key_R \gets (0,\, 1,\, 0,\, \genesis.\slot,\, \hash(\genesis)),$
 \State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
 \vspace{3pt}
 
@@ -461,15 +468,15 @@ Finally, \updateFinalized sets $\Sigma.F_s \gets \sigma[B].F$ iff $\sigma[B].F \
   \EndWhile
   \State $\sigma' \gets \processBlock(\sigma',\; B)$
   \State $\Sigma.\sigma[B] \gets \sigma'$
-  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.J))$ \Comment{Justified checkpoint}
-  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_n,\; 0,\; \sigma'.N))$ \Comment{Notarized checkpoint}
+  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.J,\; \sigma'.s_n))$ \Comment{Justified checkpoint}
+  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_n,\; 0,\; \sigma'.N,\; \sigma'.s_n))$ \Comment{Notarized checkpoint}
   \State $\Sigma \gets \updateFinalized(\Sigma,\; \sigma'.F)$
   \State \Return $\Sigma$
 \EndFunction
 \vspace{3pt}
 
-\Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, b,\, C)$} \Comment{Filter by $\Sigma.F_s \preceq C$, then running max}
-  \State $\newKey \gets (h,\; b,\; C.\slot,\; \hash(C))$
+\Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, b,\, C,\, s_n)$} \Comment{Filter by $\Sigma.F_s \preceq C$, then running max}
+  \State $\newKey \gets (h,\; b,\; s_n,\; C.\slot,\; \hash(C))$
   \If{$\newKey > \Sigma.\key_R$ and $\Sigma.F_s \preceq C$}
     \State $\Sigma.R_s \gets C$; \;\; $\Sigma.\key_R \gets \newKey$
   \EndIf
@@ -533,7 +540,7 @@ $R_s$ is untouched, and the guard $F_B \preceq \Sigma.R_s$ ensures $F_s \gets F_
 \end{proof}
 
 \begin{remark}[Store-finalized invariant]\label{rem:fs-invariant}
-At all times $\Sigma.F_s$ is either~$\genesis$ or a block that was finalized on some chain; moreover, whenever a justification $(J, h)$ has fired on some chain, the cert event $(h,\, 1,\, J)$ was offered to \updateForkChoiceRoot, so $\Sigma.\key_R \geq (h,\, 1,\, J.\slot,\, \hash(J))$ for every such~$(J, h)$ with $J \succeq \Sigma.F_s$.
+At all times $\Sigma.F_s$ is either~$\genesis$ or a block that was finalized on some chain; moreover, whenever a justification $(J, h)$ has fired on some chain, the cert event $(h,\, 1,\, J,\, 0)$ was offered to \updateForkChoiceRoot, so $\Sigma.\key_R \geq (h,\, 1,\, 0,\, J.\slot,\, \hash(J))$ for every such~$(J, h)$ with $J \succeq \Sigma.F_s$.
 $\Sigma.F_s$ only advances via \updateFinalized to $F_B = \sigma[B].F$, and $\sigma[B].F \neq \genesis$ requires the finality branch of \processHeight to have fired on~$B$'s chain, so $F_B$ is a block finalized on that chain.
 \end{remark}
 
@@ -563,17 +570,17 @@ Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ 
 \end{lemma}
 
 \begin{proof}
-Fix the moment when $\onBlock(B)$ offered the descriptor $(h_F,\, 1,\, F)$ to \updateForkChoiceRoot, and let $F_s^0 = \Sigma.F_s$ at that moment.
+Fix the moment when $\onBlock(B)$ offered the descriptor $(h_F,\, 1,\, F,\, 0)$ to \updateForkChoiceRoot, and let $F_s^0 = \Sigma.F_s$ at that moment.
 Both $F_s^0$ and $F$ are finalized or genesis (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} gives $F_s^0 \preceq F$ or $F \preceq F_s^0$.
 
 \emph{Case $F \preceq F_s^0$.}
 $R_s \succeq F_s^0 \succeq F$ already holds by Theorem~\ref{thm:fleqr}; Theorem~\ref{thm:finperm} preserves $F_s \succeq F_s^0$ and Theorem~\ref{thm:fleqr} preserves $R_s \succeq F_s$ at all future times, so $R_s \succeq F$ persists.
 
 \emph{Case $F_s^0 \preceq F$.}
-The filter passes, so after the call $\Sigma.\key_R \geq (h_F,\, 1,\, F.\slot,\, \hash(F))$; Lemma~\ref{lem:Rs-key-monotone} preserves this bound thereafter.
+The filter passes, so after the call $\Sigma.\key_R \geq (h_F,\, 1,\, 0,\, F.\slot,\, \hash(F))$; Lemma~\ref{lem:Rs-key-monotone} preserves this bound thereafter.
 Write $h_R \coloneqq \Sigma.\key_R.h$ and $\bit_R \coloneqq \Sigma.\key_R.b$; the bound gives $h_R \geq h_F$.
 If $h_R > h_F$, Lemma~\ref{lem:certchain} applied to the cert event $(R_s,\, h_R,\, \bit_R)$ gives $F \prec R_s$.
-If $h_R = h_F$, the bound forces $\bit_R = 1$, so $R_s$ was justified at height~$h_F$ on some processed chain, giving a \just-quorum~$Q'$ of size $\geq 2n/3$ with target~$R_s$ at height~$h_F$.
+If $h_R = h_F$, the bound forces $\bit_R = 1$ (strictly greater would require $\bit_R > 1$, impossible), so $R_s$ was justified at height~$h_F$ on some processed chain, giving a \just-quorum~$Q'$ of size $\geq 2n/3$ with target~$R_s$ at height~$h_F$.
 Finality of~$F$ at~$h_F$ gives a quorum~$Q_F$ with $\finalizeHeight = h_F$ and $\finalizeTarget = F$.
 By quorum intersection, $|Q' \cap Q_F| \geq n/3$; pick $v \in Q' \cap Q_F$ not slashable.
 E1 (Definition~\ref{def:slashing}) applied to $v$'s votes in~$Q', Q_F$ forces $R_s = F$.
@@ -609,10 +616,10 @@ Each block's post-state is a deterministic function of itself and its parent's p
 Remark~\ref{rem:fs-invariant} forces $F_s$ into this chain, so $F_s \preceq F_{\max}$; once $B^\ast$ has been processed, Theorem~\ref{thm:finlive} gives $F_s \succeq F_{\max}$.
 
 \emph{$R_s$.} The multiset~$D$ of descriptors offered to \updateForkChoiceRoot is a deterministic function of the processed set: each block contributes its post-state's two descriptors exactly once.
-Write $K_{\max} \coloneqq (h_{F_{\max}},\, 1,\, F_{\max}.\slot,\, \hash(F_{\max}))$.
-For any $(h, b, C) \in D$ with $h \geq h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succeq F_{\max}$ (strict when $h > h_{F_{\max}}$); at $h = h_{F_{\max}}$, Remark~\ref{rem:fs-invariant} with $F_{\max}$ justified gives $\Sigma.\key_R \geq K_{\max}$, forcing any competitive descriptor to have bit~$1$, hence a \just-quorum~$Q_C$ of size $\geq 2n/3$ targeting~$C$ at height~$h_{F_{\max}}$, while finality of~$F_{\max}$ gives a quorum~$Q_F$ with $\finalizeHeight = h_{F_{\max}}$ and $\finalizeTarget = F_{\max}$; quorum intersection and E1 (as in Lemma~\ref{lem:upgrade}) force $C = F_{\max}$.
+Write $K_{\max} \coloneqq (h_{F_{\max}},\, 1,\, 0,\, F_{\max}.\slot,\, \hash(F_{\max}))$.
+For any $(h, b, C, s_n) \in D$ with $h \geq h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succeq F_{\max}$ (strict when $h > h_{F_{\max}}$); at $h = h_{F_{\max}}$, Remark~\ref{rem:fs-invariant} with $F_{\max}$ justified gives $\Sigma.\key_R \geq K_{\max}$, forcing any competitive descriptor to have bit~$1$, hence a \just-quorum~$Q_C$ of size $\geq 2n/3$ targeting~$C$ at height~$h_{F_{\max}}$, while finality of~$F_{\max}$ gives a quorum~$Q_F$ with $\finalizeHeight = h_{F_{\max}}$ and $\finalizeTarget = F_{\max}$; quorum intersection and E1 (as in Lemma~\ref{lem:upgrade}) force $C = F_{\max}$.
 Descriptors with $h < h_{F_{\max}}$ have key strictly below $K_{\max}$ on the leading coordinate, so once $\key_R \geq K_{\max}$ holds they are dominated.
-Hence $R_s$'s final value is the lex-max over $\{(h, b, C) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
+Hence $R_s$'s final value is the lex-max over $\{(h, b, C, s_n) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
 \end{proof}
 
 \begin{corollary}[Cross-node agreement]\label{cor:agreement}
@@ -833,13 +840,13 @@ Unless $\geq n/3$ validators are slashable: if $\Sigma.\key_R.b = 0$, then no ju
 
 \begin{proof}
 Write $h_R \coloneqq \Sigma.\key_R.h$ and suppose some justification at~$h_R$ fired on a processed chain, producing $J_\ast$ justified at~$h_R$.
-\onBlock offered the descriptor $(h_R,\, 1,\, J_\ast)$ to \updateForkChoiceRoot at that time, with key $(h_R,\, 1,\, J_\ast.\slot,\, \hash(J_\ast))$.
+\onBlock offered the descriptor $(h_R,\, 1,\, J_\ast,\, 0)$ to \updateForkChoiceRoot at that time, with key $(h_R,\, 1,\, 0,\, J_\ast.\slot,\, \hash(J_\ast))$.
 Let $F_s^0 \coloneqq \Sigma.F_s$ at that moment; $F_s^0$ is finalized or genesis (Remark~\ref{rem:fs-invariant}) at some height $h_{F_s^0}$.
-When $F_s^0$ was set, the cert event $(F_s^0,\, h_{F_s^0},\, 1)$ had already raised the cache height to $\geq h_{F_s^0}$ (the \updateFinalized guard $F_B \preceq R_s$ ensures the cache covered it), and Lemma~\ref{lem:Rs-key-monotone} preserves $h_{F_s^0} \leq h_R$.
+When $F_s^0$ was set, the cert event $(F_s^0,\, h_{F_s^0},\, 1,\, 0)$ had already raised the cache height to $\geq h_{F_s^0}$ (the \updateFinalized guard $F_B \preceq R_s$ ensures the cache covered it), and Lemma~\ref{lem:Rs-key-monotone} preserves $h_{F_s^0} \leq h_R$.
 We show $F_s^0 \preceq J_\ast$, so the filter in \updateForkChoiceRoot passes.
 If $h_R > h_{F_s^0}$, Lemma~\ref{lem:certchain} applied to $F_s^0$ and the cert event at $J_\ast$ gives $F_s^0 \prec J_\ast$.
 If $h_R = h_{F_s^0}$, finality of $F_s^0$ at~$h_R$ gives a finalize-quorum $Q_F$ with $\finalizeHeight = h_R$ and $\finalizeTarget = F_s^0$, and $J_\ast$ being justified at~$h_R$ gives a \just-quorum~$Q'$ targeting~$J_\ast$ at~$h_R$; quorum intersection and E1 (as in Lemma~\ref{lem:upgrade}) force $F_s^0 = J_\ast$.
-Either way $F_s^0 \preceq J_\ast$, so \updateForkChoiceRoot raises the cache to $\Sigma.\key_R \geq (h_R,\, 1,\, J_\ast.\slot,\, \hash(J_\ast))$ at that moment; Lemma~\ref{lem:Rs-key-monotone} preserves this bound.
+Either way $F_s^0 \preceq J_\ast$, so \updateForkChoiceRoot raises the cache to $\Sigma.\key_R \geq (h_R,\, 1,\, 0,\, J_\ast.\slot,\, \hash(J_\ast))$ at that moment; Lemma~\ref{lem:Rs-key-monotone} preserves this bound.
 At the present moment $\Sigma.\key_R.h = h_R$, so lex-comparison with the first coordinate fixed forces $\Sigma.\key_R.b \geq 1$, contradicting $\key_R.b = 0$.
 \end{proof}
 
