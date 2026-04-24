@@ -177,7 +177,7 @@ with components:
   \item $\nslots[1..n]$: for each~$i$, the $\slot$ of the vote that set $\ntargets[i]$ ($0$ if none).
   \item $J$, $h_j$: the most recently justified block and its height.
   \item $N$, $h_n$: the most recently notarized (or justified) block and its height; $J$ is itself a notarization (Definition~\ref{def:notarization}).
-  \item $s_n$: the \emph{notarization slot} of the most recent prefix-notarization-only advance --- the largest~$s$ such that $\geq 2n/3$ of the contributors whose $\ntargets$ covers~$N$ also satisfy $\nslots \geq s$. Justifications do not set $s_n$; the field is reset to $0$ on a justification advance, and initializes to $0$.
+  \item $s_n$: the \emph{notarization slot} of the most recent prefix-notarization-only advance --- the common slot~$s$ shared by the $\geq 2n/3$ contributors of the firing quorum, i.e., a slot such that $\geq 2n/3$ of the contributors whose $\ntargets$ covers~$N$ satisfy $\nslots = s$. Justifications do not set $s_n$; the field is reset to $0$ on a justification advance, and initializes to $0$.
   \item $F$: the most recently finalized block.
   \item $P \subseteq \{1, \ldots, n\}$: validators who have cast a vote with $\finalizeHeight = h_j$ and $\finalizeTarget = J$.
 \end{itemize}
@@ -216,13 +216,12 @@ Only votes with target exactly~$T$ contribute.
 \end{definition}
 
 \begin{definition}[Prefix notarization]\label{def:notarization}
-On a chain with head state $\sigma[L]$ at height~$h$, walk from~$L$ toward genesis summing $|\{i : \ntargets[i] = B\}|$ at each~$B$.
-A block~$T$ is \emph{notarized at height~$h$} iff~$T$ is the first block at which the cumulative count reaches $2n/3$; equivalently,~$T$ is the $\preceq$-maximum block with
+On a chain with head state $\sigma[L]$ at height~$h$, a block~$T$ is \emph{notarized at height~$h$ with slot~$s$} iff~$T$ is the $\preceq$-maximum block for which some slot~$s$ satisfies
 \[
-  \bigl|\{i : T \preceq \ntargets[i] \preceq L\}\bigr| \;\geq\; 2n/3.
+  \bigl|\{i : T \preceq \ntargets[i] \preceq L \;\wedge\; \nslots[i] = s\}\bigr| \;\geq\; 2n/3.
 \]
-If no such block exists, nothing is notarized.
-Notarization uses \emph{prefix counting}: \just or \notar votes targeting descendants of~$T$ contribute via $\ntargets$, but only the latest-slot entry per validator counts.
+If no such pair exists, nothing is notarized; when~$T$ exists the witnessing~$s$ is unique, since the sets indexed by distinct~$s$ are disjoint and cannot both exceed~$n/3$.
+Notarization uses \emph{prefix counting}: \just or \notar votes targeting descendants of~$T$ contribute via $\ntargets$, but only the latest-slot entry per validator counts, and the firing quorum must share a single $\nslots$ value~$s$.
 A justification of~$T$ is paired with a notarization cert event at~$T$: the justification branch of \processHeight sets $(J, N) \gets (T, T)$ jointly (Figure~\ref{alg:state-machine}).
 \end{definition}
 
@@ -303,18 +302,13 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
     \State reset $\jtargets, \ntargets, \nslots$
     \State \Return $\sigma$
   \EndIf
-  \State $\cnt \gets 0$ \Comment{Prefix notarization walk}
-  \For{$B$ from $\sigma.L$ down to $\genesis$}
-    \State $\cnt \gets \cnt + |\{i : \sigma.\ntargets[i] = B\}|$
-    \If{$\cnt \geq 2n/3$} \Comment{Notarization fires at $B$}
-      \State $Q \gets \{i : B \preceq \sigma.\ntargets[i] \preceq \sigma.L\}$
-      \State $s^* \gets \max\{s : |\{i \in Q : \sigma.\nslots[i] \geq s\}| \geq 2n/3\}$
-      \State $\sigma.N \gets B$, \; $\sigma.h_n \gets \sigma.h$, \; $\sigma.s_n \gets s^*$
-      \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
-      \State reset $\jtargets, \ntargets, \nslots$
-      \State \Return $\sigma$
-    \EndIf
-  \EndFor
+  \State $(B^*, s^*) \gets \arg\max_{\preceq}\,\bigl\{(B, s) : B \preceq \sigma.L \;\wedge\; |\{i : B \preceq \sigma.\ntargets[i] \preceq \sigma.L \wedge \sigma.\nslots[i] = s\}| \geq 2n/3\bigr\}$
+  \Statex \hspace{6.1em} \Comment{$\arg\max$ by $\preceq$ on~$B$; $s$ given $B$ is unique; $(B^*, s^*) \gets \bot$ if the set is empty}
+  \If{$(B^*, s^*) \neq \bot$} \Comment{Prefix notarization fires}
+    \State $\sigma.N \gets B^*$, \; $\sigma.h_n \gets \sigma.h$, \; $\sigma.s_n \gets s^*$
+    \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
+    \State reset $\jtargets, \ntargets, \nslots$
+  \EndIf
   \State \Return $\sigma$
 \EndFunction
 \vspace{3pt}
@@ -420,7 +414,7 @@ When \processHeight fires a height advance on a chain (Figure~\ref{alg:state-mac
   \item the block $X = \sigma.N$ at firing (equal to the justified target~$T$ in the justification branch, and to the prefix-notarization endpoint~$T^*$ in the notarization branch);
   \item the height~$h$ at which the advance fires, equal to the pre-advance $\sigma.h$ and to the post-advance $\sigma.h_n$;
   \item a \emph{bit} $b \in \{0, 1\}$: $b = 1$ for a justification, $b = 0$ for a prefix notarization without accompanying justification;
-  \item the \emph{notarization slot} $s_n = \sigma.s_n$: for a bit-$0$ event, the largest~$s$ such that $\geq 2n/3$ contributors to the prefix-notarization of~$X$ on~$\sigma.L$ satisfy $\sigma.\nslots \geq s$; for a bit-$1$ event (justification), $s_n = 0$.
+  \item the \emph{notarization slot} $s_n = \sigma.s_n$: for a bit-$0$ event, the common slot~$s$ shared by the $\geq 2n/3$ firing contributors, i.e., a slot such that $\geq 2n/3$ of the contributors with $\sigma.\ntargets$ covering~$X$ on~$\sigma.L$ satisfy $\sigma.\nslots = s$; for a bit-$1$ event (justification), $s_n = 0$.
 \end{itemize}
 The associated \emph{cert key} is the lexicographic tuple
 \[
