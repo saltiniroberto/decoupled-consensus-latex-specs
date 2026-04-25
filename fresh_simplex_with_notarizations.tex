@@ -1659,31 +1659,53 @@ View-merge + honest $\syncer(k+1)$ gives common $\comm{\Sigma}^{\vote(k+1)}$. By
 In every case, $R_v^{\vote(k+5)}.h = h + 2 = \comm{h} + 2$, $R_v^{\vote(k+5)} \sim R_{v'}^{\vote(k+5)}$ for every honest pair (the invoked sub-lemma supplies pairwise compatibility, and the propagation argument from $\vote(k+3)$ or $\vote(k+4)$ to $\vote(k+5)$ preserves it via \Cref{lem:Rs-key-monotone}), and no honest has cast a \just vote at height $> R.h$ strictly before $\vote(k+3)$ (each sub-lemma's conclusion~(3) at the appropriate scope covers this).
 \end{proof}
 
-\begin{lemma}
+\begin{lemma}[Three-slot healing under slot-$k$ dual-height voting]\label{rev:lem:healing-three-slot-dual-vote}
 Assume:
 \begin{enumerate}
   \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
   \item $\start(k) - \Delta \geq \GST$;
-  \item $\syncer(k)$, $\syncer(k+1)$, $\syncer(k+2)$, $\syncer(k+3)$ and $\syncer(k+4)$ are honest;
-  \item no honest validator has cast any vote at height $> \comm{h}+1$ at any time strictly before $\vote(k)$.
+  \item $\syncer(k), \syncer(k+1), \syncer(k+2)$ are honest;
+  \item (\emph{slot-$k$ dual-height voting}) at $\vote(k)$, every honest validator casts \emph{two} votes: one at height $R^{\vote(k)}.h$ and one at height $R^{\vote(k)}.h + 1$ (the latter conditional on a block at state-height $R^{\vote(k)}.h + 1$ existing in its store). Each is of whatever type \Cref{def:voting-rule} would normally produce at the height in question (\just on the first vote at the height, \notar otherwise; with the appropriate $(\finalizeHeight, \finalizeTarget)$ for the (R1) clause). At every voting time other than $\vote(k)$, validators follow \Cref{def:voting-rule} unchanged.
 \end{enumerate}
-Then at $\vote(k+5)$, every honest validator has:
+Write $\comm{h} \coloneqq \comm{R}^{\vote(k)}.h$. Then at $\vote(k+3)$, every honest validator has:
 \begin{enumerate}
-  \item $R_v^{\vote(k+5)}.h = \comm{h} + 2$ for every honest validator~$v$;
-  \item $R_v^{\vote(k+5)} \sim R_{v'}^{\vote(k+5)}$ for every pair of honest validators~$v, v'$;
+  \item $R_v^{\vote(k+3)}.h \geq \comm{h} + 2$;
+  \item $R_v^{\vote(k+3)} \sim R_{v'}^{\vote(k+3)}$ for every pair of honest validators~$v, v'$;
   \item no honest validator has cast a \just vote at height $> R.h$ at any time strictly before $\vote(k+3)$.
 \end{enumerate}
 \end{lemma}
 
 \begin{proof}
-  This proof is TBD
-  Let $\comm{h} = \comm{R}^{\vote(k)}.h$.
-  
-  $\vote(k)$. We know that honest validators $\getTarget$'s height is either $\comm{h}$ or $\comm{h}+1$.
-  If $\getTarget$ of all honest validators have the same height, we can apply one of the lemmas above.
+Write $h \coloneqq \comm{h}$.
 
+\emph{Step 1: structural facts.}
+By \Cref{rev:ass:view-merge} and honest $\syncer(k)$, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ and $\Sigma_v^{\vote(k)} = \comm{\Sigma}^{\vote(k)}$ for every honest~$v$. By \Cref{rev:cor:processed-height-bound}, $\sigma[\getTarget_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$. By \Cref{lem:Rs-key-monotone} and \Cref{rev:cor:processed-height-bound} applied at every earlier time, no honest validator has cast at height $>h+1$ before $\vote(k)$. By \Cref{rev:prop:getTarget-compat} (premise discharged by view-merge), honest \getTarget{}s at $\vote(k)$ are pairwise $\preceq$-compatible; hence both the height-$h$ and height-$(h+1)$ honest targets at $\vote(k)$ lie on a single chain~$C$ through $\comm{R}^{\vote(k)}$.
 
+\emph{Step 2: a same-slot cert at height $h+1$ fires by $\vote(k+1)$ in every honest's view.}
+Under the slot-$k$ dual-height extension every honest casts a slot-$k$ vote at height~$h$ \emph{and} a slot-$k$ vote at height $h+1$, both targeting blocks on~$C$. The slot-$k$ contributions at height $h+1$ thus include $\geq n - f > 2n/3$ honest~$\ntargets$ entries with $\nslots = k$ and target on~$C$. In each honest~$v$'s virtual-block aggregation by $\vote(k+1)$, the same-slot $\arg\max$ (\Cref{alg:state-machine}) admits a candidate $(B^\star, k)$ at height $h+1$ on~$C$, firing a cert event with key $(h+1,\, b,\, k,\, \ldots)$. This key strictly dominates the cached $\Sigma_v.\key_R = (h, *, *, \ldots)$ on the leading coordinate, so $R_v$ advances to $B^\star$. By view-merge + honest $\syncer(k+1)$, $\comm{R}^{\vote(k+1)}$ is the resulting cert event at height $h+1$, common across honest.
+
+\emph{Step 3: reduce to a two-slot lemma at slot $k+1$.}
+The setup at $\vote(k+1)$ matches the hypotheses of \Cref{rev:lem:healing-from-justified} (if $\comm{R}^{\vote(k+1)}$ is a bit-$1$ justification at $h+1$) or of \Cref{rev:lem:healing-from-notarized} (if $\comm{R}^{\vote(k+1)}$ is a bit-$0$ notarization at $h+1$ with notarization slot~$k$):
+\begin{itemize}
+  \item synchrony at slot $k+1$: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$;
+  \item $\syncer(k+1), \syncer(k+2)$ honest from outer~(3);
+  \item $\sigma[\getTarget_v^{\vote(k+1)}].h = h+1$ common across honest, by view-merge + \Cref{rev:cor:processed-height-bound} bounding state-height by $\comm{R}^{\vote(k+1)}.h + 1 = h+2$ and the $\geq h+1$ direction following from $\getTarget$ descending from $\comm{R}^{\vote(k+1)}$;
+  \item no honest at height $>h+1$ before $\vote(k+1)$, by Step~1 plus the slot-$k$ honest contributions lying at heights in $\{h, h+1\}$.
+\end{itemize}
+Invoking the appropriate sub-lemma at slot~$k+1$ yields $R_v^{\vote(k+3)}.h = (h+1) + 1 = h + 2$ and the pairwise compatibility / no-high-\just clauses.
+
+In all cases the three stated conclusions hold at $\vote(k+3)$.
 \end{proof}
+
+\begin{remark}[Why the dual-height extension is needed]\label{rev:rem:dual-vote-needed}
+Without the slot-$k$ dual-height extension, the \Cref{rev:cor:processed-height-bound} bound only constrains canonical state-heights to $\{h, h+1\}$, but does not force them to agree across honest. The adversary can split honest \getTarget{}s between the two heights via the per-validator $\Omega$ component of $\getHead(\Sigma, \Omega)$, so the slot-$k$ honest contributions split between two heights:
+\[
+  h^*_h + h^*_{h+1} \;=\; n - f, \qquad h^*_h, h^*_{h+1} \;\geq\; 0.
+\]
+A same-slot cert at height $h^* \in \{h, h+1\}$ requires $\geq 2n/3$ contributors at $h^*$. Together with at most $f$ adversarial contributions, the threshold becomes $h^*_{h^*} \geq 2n/3 - f$. Both thresholds met simultaneously requires $h^*_h + h^*_{h+1} \geq 4n/3 - 2f$, i.e., $f \geq n/3$, contradicting $f < n/3$; so at most one height can carry a cert. The adversary can in fact split so that \emph{neither} reaches the threshold (e.g., $h^*_h = h^*_{h+1} = (n-f)/2$, giving honest mass $(n-f)/2 + f = (n+f)/2 < 2n/3$), blocking progress entirely. The split survives view-merge unchanged --- view-merge fixes $\Sigma$ but not the $\Omega$ argument of $\getHead$ --- so neither extra honest syncers nor extra slots resolve it.
+
+The dual-height extension forces every honest to contribute at \emph{both} heights, raising each height's honest count to $n - f > 2n/3$ and guaranteeing a cert at height $h+1$. The extension is restricted to slot~$k$ because exactly one ``alignment slot'' is enough: post-slot-$k$, the cert at $h+1$ has fired, $R$ has advanced, and standard view-merge dynamics realign honest \getTarget{}s for slots $k+1, k+2, \ldots$ without further dual-voting.
+\end{remark}
 
 
 
