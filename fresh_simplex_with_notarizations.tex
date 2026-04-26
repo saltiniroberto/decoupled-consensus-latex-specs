@@ -1531,6 +1531,48 @@ Then the cached cert at $\vote(k+1)$ is bit-$0$. By the same no-cert-above-$h$ a
 The setup at $\vote(k+1)$ satisfies the hypotheses of \Cref{rev:lem:healing-from-notarized} applied at slot~$k+1$: synchrony; $\syncer(k+2)$ honest (outer~(3)), discharging~(3); by view-merge + honest $\syncer(k+1)$ (outer~(3)), every honest's store at $\vote(k+1)$ coincides with $\comm{\Sigma}^{\vote(k+1)}$, so honest \getTarget{}s at $\vote(k+1)$ are equal (hence pairwise compatible) and at state-height~$h$ (same virtual-only argument as Case~1), discharging~(4); by view-merge, $R_v^{\vote(k+1)} = \comm{R}^{\vote(k+1)}$ is bit-$0$ notarized at height~$h$ with slot $k = (k+1)-1$ in every honest's view, discharging~(5); and outer~(5) with Step~1 rules out honest votes at height $>h$ before $\vote(k+1)$, discharging~(6). Invoking \Cref{rev:lem:healing-from-notarized} yields the three stated conclusions at $\vote(k+3)$.
 \end{proof}
 
+\begin{lemma}[Three-slot healing, no justification completing]\label{rev:lem:healing-three-slot-no-just}
+Assume:
+\begin{enumerate}
+  \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item $\getTarget_v^{\vote(k)} \sim \getTarget_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getTarget_v^{\vote(k)}].h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
+  \item no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$;
+  \item no bit-$1$ cert at height $\comm{h}$ has fired in any honest's view at any time in $[\vote(k),\, \vote(k+2)]$.
+\end{enumerate}
+Then at $\vote(k+3)$, every honest validator has:
+\begin{enumerate}
+  \item $R_v^{\vote(k+3)}.h = \comm{h} + 1$ for every honest validator~$v$;
+  \item $R_v^{\vote(k+3)} \sim R_{v'}^{\vote(k+3)}$ for every pair of honest validators~$v, v'$;
+  \item no honest validator has cast a \just vote at height $> R.h$ at any time strictly before $\vote(k+3)$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Write $h \coloneqq \comm{h}$.
+
+\emph{Step 1: slot-$k$ honest votes form a same-slot bit-$0$ cert at height~$h$ on a common chain.}
+By hypothesis~(3), the honest $\getTarget_v^{\vote(k)}$ are pairwise compatible and at state-height~$h$; let~$D$ be the chain extending them. Each $\getTarget_v^{\vote(k)} \in D$ at state-height~$h$. Hypothesis~(4) rules out earlier honest votes at height $>h$, so at $\vote(k)$ every honest casts an (R1) \just vote at height~$h$ with target $T_v = \getTarget_v^{\vote(k)} \in D$. Let $T^\dagger \coloneqq \max_\preceq \{T_v : v \text{ honest}\}$ on~$D$.
+
+By synchrony, every slot-$k$ honest \just vote (which also constitutes a slot-$k$ \notar contribution) is delivered to every honest by $\vote(k+1)$. In each honest~$v$'s aggregation, the prefix-notar $\arg\max$-by-$\preceq$ in \processHeight{} produces a candidate $(B^\star_v, k)$ at state-height~$h$ on~$D$ with $B^\star_v \preceq T^\dagger$, firing a bit-$0$ cert event with key $(h,\, 0,\, k,\, B^\star_v.\slot,\, \hash(B^\star_v))$. By the dishonest-only-bound argument (hypothesis~(4) excludes honest at $>h$ before $\vote(k)$; slot-$k$ honest votes are at height~$h$ exactly; dishonest alone has $\leq f < 2n/3$), no cert event at height $>h$ fires in any honest's view in $[\vote(k),\, \vote(k+1)]$.
+
+\emph{Step 2: per-honest $R_v^{\vote(k+1)}$ is bit-$0$ notarized on~$D$ at $h$ slot~$k$.}
+By hypothesis~(5), no bit-$1$ cert at height~$h$ has fired in any honest's view in $[\vote(k),\, \vote(k+1)]$. By \Cref{rev:cor:no-high-cn} applied per-honest, no $C_N$ entry at height $>h$ exists in any honest's view at $\vote(k)$, and \Cref{lem:Rs-key-monotone} gives $\Sigma_v.\key_R.h \leq h$ at $\vote(k)$.
+Hypothesis~(3) places $R_v^{\vote(k)}$ on~$D$ as an ancestor of $\getTarget_v^{\vote(k)} \in D$, so $R_v^{\vote(k)} \in D$ at chain-height~$\leq h$.
+The slot-$k$ bit-$0$ cert at $(h, 0, k, \ldots)$ from Step~1 fires in $v$'s view by $\vote(k+1)$. Cached $\Sigma_v.\key_R$ is either at height $<h$ (dominated by the slot-$k$ key on the leading coordinate) or $(h, 0, s', \ldots)$ with $s' < k$ (slot-$\geq k$ contributions did not exist before $\vote(k)$, and bit-$1$ at~$h$ is excluded by~(5)) — in both cases the slot-$k$ key strictly dominates, so $R_v$ updates to $B^\star_v \in D$ at state-height~$h$. After update, $\Sigma_v.\key_R = (h, 0, k, B^\star_v.\slot, \hash(B^\star_v))$ and $R_v^{\vote(k+1)} = B^\star_v$.
+
+\emph{Step 3: invoke \Cref{rev:lem:healing-from-notarized-no-just} at slot~$k+1$.}
+The hypotheses, applied with $k$ replaced by $k+1$, are met:
+\begin{itemize}
+  \item (1), (2) inherited.
+  \item (3) at $\vote(k+1)$: by Step~2, $R_v^{\vote(k+1)} = B^\star_v \in D$ at state-height~$h$, so the honest $R_v^{\vote(k+1)}$ are pairwise compatible (R-compat at $\vote(k+1)$); $\getTarget_v^{\vote(k+1)}$ descends from $R_v^{\vote(k+1)}$ at state-height~$h$ (no advancing cert past $B^\star_v$ has fired by $\vote(k+1)$ — hypothesis~(5) excludes bit-$1$ at~$h$, slot-$\geq k+1$ contributions have not yet materialized at $\vote(k+1)$, and dishonest alone cannot form a $\geq 2n/3$ same-slot quorum). \Cref{rev:prop:getTarget-compat} (its preamble's R-compat at $\vote(k)$ premise discharged via outer~(3): $R_v^{\vote(k)} \in D$ pairwise) applied with premise $T^\dagger \succeq R_v^t$ for honest~$v, t \in [\vote(k),\, \vote(k+1)]$ (Steps~1--2 give $R_v^t \in D$ at chain-height~$\leq h$, so $T^\dagger \succeq R_v^t$) gives $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$ pairwise.
+  \item (4) at $\vote(k+1)$: each honest~$v$ has $R_v^{\vote(k+1)} = B^\star_v$ bit-$0$ notarized at cert-key height~$h$ with notarization slot~$k = (k+1)-1$ (Step~2).
+  \item (5) at $\vote(k+1)$: hypothesis~(4) rules out honest at $>h$ before $\vote(k)$; slot-$k$ honest votes are at height~$h$ exactly (Step~1); no voting event lies in $(\vote(k),\, \vote(k+1))$; hence no honest cast at height $>h$ before $\vote(k+1)$.
+  \item (6) at $\vote(k+1)$: hypothesis~(5) covers $[\vote(k),\, \vote(k+2)] \supseteq [\vote(k+1),\, \vote(k+2)]$.
+\end{itemize}
+Invoking \Cref{rev:lem:healing-from-notarized-no-just} at slot~$k+1$ yields the three stated conclusions at $\vote(k+3)$.
+\end{proof}
+
 \begin{lemma}[Four-slot healing]\label{rev:lem:healing-four-slot}
 Assume:
 \begin{enumerate}
