@@ -1352,10 +1352,10 @@ If
 Then, at $\vote(k')$ with $k' = k+1$ or $k' = k+2$:
 \begin{enumerate}
   \item for any honest validator $v$, $R_v^{\vote(k')}.h$ is the same common value, denoted $\comm{h}'$, and $R_v^{\vote(k')}$ is either justified or notarized for  slot $k'-1$;
-  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k')} \sim \getTarget_{v'}^{\vote(k')}$;
   \item no honest validator has cast a \just vote at height $> \comm{h}'$ at any time strictly before $\vote(k')$;
   \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}'$ with $C \neq R_v^{\vote(k')}$ can ever be justified;
-  \item for any honest validators $v, v'$, $\getTarget_v^{\vote(k')} \succeq \getTarget_{v'}^{\vote(k)}$.
+  \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\, \vote(k')]$, $\getTarget_v^{t} \sim \getTarget_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k')]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
 \end{enumerate}
 \end{lemma}
 
@@ -1370,26 +1370,86 @@ All honest cast at~$h$ at slot~$k$. Two subcases:
   \item \emph{Some honest~$v_*$ has $R_{v_*}^{\vote(k)}$ justified.} By hypothesis~(6) for any honest~$v$, the only block at height~$h$ that can ever be justified is $R_v^{\vote(k)}$; the witness $R_{v_*}^{\vote(k)}$ forces $R_v^{\vote(k)} = R_{v_*}^{\vote(k)}$ for every honest~$v$. Let $\comm{R}^{\vote(k)}$ denote this common justified block. The cached $\Sigma_v.\key_R \geq (h, 1, 0, \ldots)$ dominates the slot-$k$ same-slot cert key at~$h$ (whether bit-$0$ or bit-$1$), so $R_v$ does not advance: $R_v^{\vote(k+1)} = \comm{R}^{\vote(k)}$.
   \item \emph{No honest's $R^{\vote(k)}$ is justified.} Every $R_v^{\vote(k)}$ is bit-$0$ notarized at~$h$ slot~$k-1$; cross-applying hypothesis~(6) yields that no block at height~$h$ is ever justified. The slot-$k$ bit-$1$ branch therefore cannot fire (it would justify some block at~$h$), and the prefix-notar $\arg\max$ in \processHeight{} produces a bit-$0$ cert at some $B^\star_v$ on the common chain~$D$ extending honest $R$'s, with key $(h, 0, k, \ldots)$ strictly dominating the cached $(h, 0, k-1, \ldots)$. Hence $R_v^{\vote(k+1)} = B^\star_v$, bit-$0$ notarized at~$h$ slot~$k$, and the $B^\star_v$'s are pairwise compatible by \Cref{rev:lem:notar-unique-per-slot}.
 \end{itemize}
-In both subcases, conclusions (1)--(4) hold at $\vote(k+1)$ with $\comm{h}' = h$ (slot $k = (k+1) - 1$ for the notarized branch); conclusion~(4) is hypothesis~(6) in the justified subcase and vacuous in the notarized subcase.
+In both subcases, conclusions (1)--(3) hold at $\vote(k+1)$ with $\comm{h}' = h$ (slot $k = (k+1) - 1$ for the notarized branch); conclusion~(3) is hypothesis~(6) in the justified subcase and vacuous in the notarized subcase.
 
 \emph{Case 2: every honest's $\getTarget_v^{\vote(k)}$ is at state-height~$h+1$.}
-All honest cast at~$h+1$ at slot~$k$. By the same prefix-notar mechanism applied at height~$h+1$, the slot-$k$ same-slot cert at~$h+1$ fires: bit-$1$ for a single target $T^\star$ if all honest $\jtargets$ coincide, bit-$0$ for the $\arg\max$ block $B^\star$ otherwise. The cert key $(h+1, \ast, k, \ldots)$ strictly dominates the cached $\Sigma_v.\key_R$ (first coordinate $h$), so $R_v^{\vote(k+1)}$ advances to either $T^\star$ (justified) or $B^\star$ (bit-$0$ notarized at~$h+1$ slot~$k$); pairwise compatibility follows from uniqueness of the bit-$1$ target (quorum intersection at~$h+1$) or \Cref{rev:lem:notar-unique-per-slot} for the bit-$0$ case. Conclusion~(4) at height~$h+1$: by R1, each honest casts \just at $h+1$ at most once; the slot-$k$ \just contributions at $h+1$ already account for every honest's at-most-one quota, so any future bit-$1$ at~$h+1$ for a target $C$ has at most $h^*_C$ honest contributors (the slot-$k$ count for $C$). If a slot-$k$ bit-$1$ fired (for $T^\star$), only $T^\star$ has $h^*_C \geq 2n/3 - f$, so no other can ever be justified; if not, no $C$ has $h^*_C \geq 2n/3 - f$, so no block at~$h+1$ is ever justified, conclusion~(4) holds vacuously. The conclusions at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
+All honest cast at~$h+1$ at slot~$k$. By the same prefix-notar mechanism applied at height~$h+1$, the slot-$k$ same-slot cert at~$h+1$ fires: bit-$1$ for a single target $T^\star$ if all honest $\jtargets$ coincide, bit-$0$ for the $\arg\max$ block $B^\star$ otherwise. The cert key $(h+1, \ast, k, \ldots)$ strictly dominates the cached $\Sigma_v.\key_R$ (first coordinate $h$), so $R_v^{\vote(k+1)}$ advances to either $T^\star$ (justified) or $B^\star$ (bit-$0$ notarized at~$h+1$ slot~$k$); pairwise compatibility follows from uniqueness of the bit-$1$ target (quorum intersection at~$h+1$) or \Cref{rev:lem:notar-unique-per-slot} for the bit-$0$ case. Conclusion~(3) at height~$h+1$: by R1, each honest casts \just at $h+1$ at most once; the slot-$k$ \just contributions at $h+1$ already account for every honest's at-most-one quota, so any future bit-$1$ at~$h+1$ for a target $C$ has at most $h^*_C$ honest contributors (the slot-$k$ count for $C$). If a slot-$k$ bit-$1$ fired (for $T^\star$), only $T^\star$ has $h^*_C \geq 2n/3 - f$, so no other can ever be justified; if not, no $C$ has $h^*_C \geq 2n/3 - f$, so no block at~$h+1$ is ever justified, conclusion~(3) holds vacuously. The conclusions at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
 
 \emph{Case 3: state-heights at $\vote(k)$ are mixed (some honest at~$h$, others at~$h+1$).}
 Pick honest $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)}$ at state-height~$h+1$. By the same dishonest-only-bound and \Cref{lem:Rs-key-monotone} reasoning as in Case~1 (no cert event at height $>h+1$ fires in $[\vote(k),\, \vote(k+1)]$, no off-chain pre-existing cert at $h+1$ can move any honest's $R$ off the common chain extending $R$'s), the premise of \Cref{rev:prop:target-dominance} is met with this $v_\ell$, yielding $\getTarget_v^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)}$ for every honest~$v$, hence $\sigma[\getTarget_v^{\vote(k+1)}].h \geq h + 1$ uniformly. \Cref{rev:cor:processed-height-bound} bounds it by $\Sigma.\key_R.h + 1 \leq h + 1$ (since no cert at $>h+1$ has fired), so equality.
 
 \emph{Sub-case 3.a: a cert at height~$h+1$ has fired in some honest's view by $\vote(k+1)$.}
-By synchrony, the cert is in every honest's view by $\vote(k+1)$ (or just after — see Sub-case 3.b for the residual). $R_v^{\vote(k+1)}$ updates to a block at~$h+1$ (justified or notarized for slot $\leq k$). As in Case~2, conclusions (1)--(4) at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
+By synchrony, the cert is in every honest's view by $\vote(k+1)$ (or just after — see Sub-case 3.b for the residual). $R_v^{\vote(k+1)}$ updates to a block at~$h+1$ (justified or notarized for slot $\leq k$). As in Case~2, conclusions (1)--(3) at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
 
 \emph{Sub-case 3.b: no cert at height~$h+1$ has fired by $\vote(k+1)$.}
 At $\vote(k+1)$ every honest casts at~$h+1$ (state-height of $\getTarget$, by the previous paragraph). The hypotheses of the present lemma now hold at $\vote(k+1)$ with the analog of Case~2: state-heights uniformly~$h+1$, $R_v^{\vote(k+1)}.h = h$ still (cached unchanged), justified or notarized for slot $k-1$ via $R_v^{\vote(k)} = R_v^{\vote(k+1)}$ (no advancing cert in the interval). Applying Case~2 at slot~$k+1$ with $\comm{h} = h$ yields the conclusions at $\vote(k+2)$ with $\comm{h}' = h+1$ and slot $k+1 = (k+2) - 1$.
 
-\emph{Conclusions~(2) and~(5) (\getTarget{} pairwise compatibility and dominance at $\vote(k')$).}
-\Cref{rev:lem:intra-slot-target-compat-monotone} applied at slot~$k$ (whose hypotheses are exactly hypotheses~(1)--(6) of the present lemma) yields $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$ for every honest pair, proving conclusion~(2) for $k' = k+1$ (Cases 1, 2, 3.a).
+\emph{Conclusions~(4) and~(5) (intra-interval \getTarget{} compatibility and monotonicity).}
 
-For conclusion~(5) at $k' = k+1$, we apply \Cref{rev:prop:target-dominance}, which shares its preamble and premise with \Cref{rev:prop:getTarget-compat} (used inside the proof of \Cref{rev:lem:intra-slot-target-compat-monotone}); both are discharged by the same argument given there — the preamble (R-compat at $\vote(k)$) follows from hypothesis~(4), and the premise is discharged by picking $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = \max_\preceq \{\getTarget_i^{\vote(k)} : i \text{ honest}\}$, since every $R_v^t$ for $t \in [\vote(k), \vote(k+1)]$ lies on the common chain at chain-height $\leq \getTarget_{v_\ell}^{\vote(k)}.h$ (verified case-by-case in Cases~1--3 above). \Cref{rev:prop:target-dominance}'s conclusion gives $\getTarget_v^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)} \succeq \getTarget_{v'}^{\vote(k)}$ for every honest~$v, v'$ (the second $\succeq$ from $v_\ell$ being $\preceq$-max), proving conclusion~(5) for $k' = k+1$.
+\textbf{Case $k' = k+1$.}
+\Cref{rev:lem:intra-slot-target-compat-monotone} applied at slot~$k$ (whose hypotheses are exactly hypotheses~(1)--(6) of the present lemma) yields directly conclusion~(4) and conclusion~(5) over $[\vote(k),\, \vote(k+1)]$.
 
-For $k' = k+2$ (Sub-case 3.b), the recursive application at slot~$k+1$ supplies conclusion~(2) at $\vote(k+2)$ directly. Conclusion~(5) at $k' = k+2$ chains the two single-step applications: $\getTarget_v^{\vote(k+2)} \succeq \getTarget_{v_\ell'}^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)} \succeq \getTarget_{v'}^{\vote(k)}$, where $v_\ell'$ is the analogous $\preceq$-max chosen for the slot-$(k+1)$ application.
+\textbf{Case $k' = k+2$ (Sub-case~3.b).}
+By the same intra-slot-lemma application at slot~$k$, conclusions~(4) and~(5) hold over $[\vote(k),\, \vote(k+1)]$. We separately establish them over $[\vote(k+1),\, \vote(k+2)]$ and combine via \Cref{rev:lem:two-slot-target-compat-monotone}.
+
+To establish compat and monotonicity over $[\vote(k+1),\, \vote(k+2)]$, we invoke \Cref{rev:prop:getTarget-compat} and \Cref{rev:prop:target-monotonicity} at slot~$k+1$ (we cannot directly invoke \Cref{rev:lem:intra-slot-target-compat-monotone} at slot~$k+1$ because its hypothesis~(3) requires $R_v^{\vote(k+1)}$ to be just/notar for slot~$k$, whereas in Sub-case~3.b $R_v^{\vote(k+1)} = R_v^{\vote(k)}$ is just/notar for slot~$k-1$; the shared preamble and premise of these two properties, however, can still be discharged):
+\begin{itemize}
+  \item \emph{Preamble} (R-compat at $\vote(k+1)$): $R_v^{\vote(k+1)} = R_v^{\vote(k)}$ for every honest~$v$ (Sub-case~3.b's analysis: cached unchanged), so the $R_v^{\vote(k+1)}$'s inherit pairwise compatibility from hypothesis~(4).
+  \item \emph{Premise} (some honest $v_\ell'$ with $\getTarget_{v_\ell'}^{\vote(k+1)} \succeq R_v^t$ for $t \in [\vote(k+1),\, \vote(k+2)]$): by the Case~3 analysis preceding Sub-case~3.b, $\sigma[\getTarget_v^{\vote(k+1)}].h = h+1$ uniformly on the common chain~$D$ extending honest $R$'s; pick $v_\ell'$ with $\getTarget_{v_\ell'}^{\vote(k+1)} = \max_\preceq \{\getTarget_i^{\vote(k+1)} : i \text{ honest}\}$. In $[\vote(k+1), \vote(k+2)]$, every $R_v^t$ lies on~$D$ at chain-height $\leq h+1 \leq \getTarget_{v_\ell'}^{\vote(k+1)}.h$ (slot-$(k+1)$ honest contributions at $h+1$ produce a same-slot cert on~$D$ that is the only key dominating the cached $(h, 0, k-1, \ldots)$ during the interval — the dishonest-only-bound rules out cert events at height $>h+1$, and a bit-$1$ at $h+1$ uses up no further honest-\just quota beyond what already sits at slot~$k$).
+\end{itemize}
+\Cref{rev:prop:getTarget-compat} gives $\getTarget_v^t \sim \getTarget_{v'}^{t'}$ for every honest~$v, v'$ and $t, t' \in [\vote(k+1),\, \vote(k+2)]$; \Cref{rev:prop:target-monotonicity} gives $\getTarget_v^{t'} \succeq \getTarget_v^t$ for every honest~$v$ and $t \leq t'$ in $[\vote(k+1),\, \vote(k+2)]$.
+
+Finally, \Cref{rev:lem:two-slot-target-compat-monotone}, applied with the per-slot properties just established for slot~$k$ and slot~$k+1$, yields conclusions~(4) and~(5) over $[\vote(k),\, \vote(k+2)]$.
+\end{proof}
+
+\begin{lemma}
+If
+\begin{enumerate}
+  \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item for any honest validator $v$, $R_v^{\vote(k)}.h$ is the same common value, denoted $\comm{h}$, and $R_v^{\vote(k)}$ is either justified or notarized for slot $k-1$;
+  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k)} \sim \getTarget_{v'}^{\vote(k)}$;
+  \item no honest validator has cast a \just vote at height $> \comm{h}$ at any time strictly before $\vote(k)$;
+  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}$ with $C \neq R_v^{\vote(k)}$ can ever be justified.
+\end{enumerate}
+then,
+\begin{enumerate}
+  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k)$, $\getTarget_v^{t} \sim \getTarget_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k)$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+We construct a sequence of slot indices $k = K_0 < K_1 < K_2 < \cdots$ with $K_{n+1} \in \{K_n + 1,\, K_n + 2\}$ such that, for every $n \geq 0$, the hypotheses of \Cref{rev:lem:healing-persistence} hold at slot~$K_n$. Each iteration applies \Cref{rev:lem:healing-persistence} at slot~$K_n$, choosing $K_{n+1}$ as the slot where its conclusions hold.
+
+\emph{Hypothesis propagation.}
+For $n = 0$, the hypotheses hold by assumption with $K_0 = k$. Suppose they hold at slot~$K_n$ with the analog of $\comm{h}$ being some $\comm{h}_n$. \Cref{rev:lem:healing-persistence} at slot~$K_n$ yields some $K_{n+1} \in \{K_n + 1, K_n + 2\}$ at which:
+\begin{itemize}
+  \item conclusion~(1) gives uniform $R_v^{\vote(K_{n+1})}.h = \comm{h}_{n+1}$ (with $\comm{h}_{n+1} \in \{\comm{h}_n, \comm{h}_n + 1\}$), justified or notarized for slot $K_{n+1} - 1$ — this is hypothesis~(3) at slot $K_{n+1}$;
+  \item conclusion~(2) gives no honest \just at $> \comm{h}_{n+1}$ before $\vote(K_{n+1})$ — hypothesis~(5);
+  \item conclusion~(3) gives uniqueness of justification at $\comm{h}_{n+1}$ — hypothesis~(6);
+  \item conclusion~(4), restricted to $t = t' = \vote(K_{n+1})$, gives $\getTarget$ pairwise compatibility at $\vote(K_{n+1})$ — hypothesis~(4).
+\end{itemize}
+Hypotheses~(1) and~(2) (synchrony) inherit. So the hypotheses of \Cref{rev:lem:healing-persistence} hold at slot~$K_{n+1}$, completing the induction. The sequence $\{K_n\}$ is strictly increasing and unbounded.
+
+\emph{Conclusions over each interval.}
+For each $n \geq 0$, the conclusions~(4) and~(5) of \Cref{rev:lem:healing-persistence} applied at slot $K_n$ yield, for $t, t' \in [\vote(K_n),\, \vote(K_{n+1})]$, $\getTarget_v^t \sim \getTarget_{v'}^{t'}$ and (when $t \leq t'$) $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+
+\emph{Stitching across intervals.}
+We show by induction on $n$ that the lemma's two conclusions hold for all $t, t' \in [\vote(k),\, \vote(K_n)]$.
+
+\textbf{Base ($n = 1$).}
+Direct from the previous paragraph applied at slot $K_0 = k$.
+
+\textbf{Inductive step ($n \to n+1$).}
+Assume the conclusions hold over $[\vote(k),\, \vote(K_n)]$. The previous paragraph gives them over $[\vote(K_n),\, \vote(K_{n+1})]$. To extend to $[\vote(k),\, \vote(K_{n+1})]$, consider $t \in [\vote(k),\, \vote(K_n)]$ and $t' \in [\vote(K_n),\, \vote(K_{n+1})]$ (the only non-trivial mixed case, with $t \leq t'$):
+\begin{itemize}
+  \item \emph{Monotonicity}: by the inductive hypothesis, $\getTarget_v^{\vote(K_n)} \succeq \getTarget_v^t$; by the previous paragraph, $\getTarget_v^{t'} \succeq \getTarget_v^{\vote(K_n)}$. Composing, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+  \item \emph{Compatibility}: by the previous paragraph, $\getTarget_v^{t'} \sim \getTarget_{v'}^{t'}$; by mono just established, $\getTarget_v^t \preceq \getTarget_v^{t'}$. Hence $\getTarget_v^t$ and $\getTarget_{v'}^{t'}$ are both $\sim$-comparable to $\getTarget_v^{t'}$ — one as an ancestor, the other as ancestor or descendant — so they are $\sim$-comparable to each other.
+\end{itemize}
+
+\emph{Conclusion.}
+Since the $K_n$'s are unbounded, every $t, t' \geq \vote(k)$ lie in $[\vote(k),\, \vote(K_n)]$ for some sufficiently large $n$. The lemma's conclusions follow.
 \end{proof}
 
 
