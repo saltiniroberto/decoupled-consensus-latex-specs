@@ -1203,8 +1203,35 @@ For an honest validator~$v$ and a time~$t$, write $\Sigma_v^t$ for $v$'s local s
 
 \begin{property}[Target compatibility]\label{rev:prop:getTarget-compat}
 Assume $\start(k) - \Delta \geq \GST$ and $R_v^{\vote(k)} \sim R_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$.
-If there exists an honest validator $v_\ell$ such that $\getTarget_{v_\ell}^{\vote(k)} \succeq R_{v}^t$ for every honest validator~$v$ and every time $t \in [\vote(k),\, \vote(k+1)]$, then for every honest validators~$v,v'$, $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$.
+If there exists an honest validator $v_\ell$ such that $\getTarget_{v_\ell}^{\vote(k)} \succeq R_{v}^t$ for every honest validator~$v$ and every time $t \in [\vote(k),\, \vote(k+1)]$, then for every honest validators~$v,v'$ and times $t',t \in [\vote(k),\, \vote(k+1)], \getTarget_v^{t} \sim \getTarget_{v'}^{t'}$.
 \end{property}
+
+\begin{property}[Target monotonicity under stable root]\label{rev:prop:target-monotonicity}
+Assume $\start(k) - \Delta \geq \GST$ and $R_v^{\vote(k)} \sim R_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$.
+If there exists an honest validator $v_\ell$ such that $\getTarget_{v_\ell}^{\vote(k)} \succeq R_{v}^t$ for every honest validator~$v$ and every time $t \in [\vote(k),\, \vote(k+1)]$, then for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+\end{property}
+
+\begin{lemma}[Two-slot target compatibility and monotonicity]\label{rev:lem:two-slot-target-compat-monotone}
+  If, for $k' \in [k,k+1]$,
+  \begin{enumerate}
+    \item for every honest validators~$v,v'$ and times $t',t \in [\vote(k'),\, \vote(k'+1)], \getTarget_v^{t} \sim \getTarget_{v'}^{t'}$
+    \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k'),\, \vote(k'+1)]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$
+  \end{enumerate}
+  then,
+  \begin{enumerate}
+    \item for every honest validators~$v,v'$ and times $t',t \in [\vote(k),\, \vote(k+2)], \getTarget_v^{t} \sim \getTarget_{v'}^{t'}$
+    \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+2)]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$
+  \end{enumerate}  
+\end{lemma}
+\begin{proof}
+Without loss of generality, assume $t \leq t'$ (since~$\sim$ is symmetric, it suffices to consider $t \leq t'$ for both conclusions). If $t, t' \in [\vote(k'),\, \vote(k'+1)]$ for some $k' \in \{k, k+1\}$, both conclusions follow directly from hypotheses~(1) and~(2) at that~$k'$. The remaining case is $t \in [\vote(k),\, \vote(k+1)]$ and $t' \in [\vote(k+1),\, \vote(k+2)]$, which we treat below.
+
+\emph{Conclusion~2.}
+Hypothesis~(2) at $k' = k$ applied to $t \leq \vote(k+1)$ gives $\getTarget_v^{\vote(k+1)} \succeq \getTarget_v^t$. Hypothesis~(2) at $k' = k+1$ applied to $\vote(k+1) \leq t'$ gives $\getTarget_v^{t'} \succeq \getTarget_v^{\vote(k+1)}$. Composing, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+
+\emph{Conclusion~1.}
+Hypothesis~(1) at $k' = k+1$ applied to the pair of times $t', t' \in [\vote(k+1),\, \vote(k+2)]$ and the validators $v, v'$ gives $\getTarget_v^{t'} \sim \getTarget_{v'}^{t'}$. Conclusion~2 above gives $\getTarget_v^t \preceq \getTarget_v^{t'}$. Both $\getTarget_v^t$ and $\getTarget_{v'}^{t'}$ are $\sim$-comparable to $\getTarget_v^{t'}$, hence $\sim$-comparable to each other (any two blocks both $\sim$-comparable to a common block are $\sim$-comparable, since one is an ancestor of the common block and the other is either an ancestor or a descendant of it).
+\end{proof}
 
 \begin{property}[Honest-vote inclusion under stable root]\label{rev:prop:honest-vote-inclusion}
 Assume $\start(k) - \Delta \geq \GST$ and $R_v^{\vote(k)} \sim R_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$.
@@ -1275,6 +1302,97 @@ Combined with $|Q_X|, |Q_Y| \geq 2n/3$,
 Comparing the two bounds on $h_X + h_Y$ gives $4n/3 - 2f \leq n - f$, i.e.\ $f \geq n/3$, contradicting $f < n/3$.
 \end{proof}
 
+\begin{lemma}[Intra-slot target compatibility and monotonicity]\label{rev:lem:intra-slot-target-compat-monotone}
+If
+\begin{enumerate}
+  \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item for any honest validator $v$, $R_v^{\vote(k)}.h$ is the same common value, denoted $\comm{h}$, and $R_v^{\vote(k)}$ is either justified or notarized for slot $k-1$;
+  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k)} \sim \getTarget_{v'}^{\vote(k)}$;
+  \item no honest validator has cast a \just vote at height $> \comm{h}$ at any time strictly before $\vote(k)$;
+  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}$ with $C \neq R_v^{\vote(k)}$ can ever be justified.
+\end{enumerate}
+then
+  \begin{enumerate}
+    \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getTarget_v^{t} \sim \getTarget_{v'}^{t'}$;
+    \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+  \end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Both \Cref{rev:prop:getTarget-compat} and \Cref{rev:prop:target-monotonicity} share the same preamble (R-compat at $\vote(k)$) and the same premise (existence of an honest $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$). We discharge both, then derive the lemma's conclusions.
+
+\emph{Preamble.}
+By hypothesis~(4), the honest $\getTarget_v^{\vote(k)}$ are pairwise compatible; let~$D$ denote the chain extending them. By \Cref{rev:def:getTarget}, each $R_v^{\vote(k)}$ is an ancestor of $\getTarget_v^{\vote(k)}$, hence lies on~$D$. The honest $R_v^{\vote(k)}$ are therefore pairwise compatible.
+
+\emph{Premise.}
+Pick $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = \max_\preceq \{\getTarget_i^{\vote(k)} : i \text{ honest}\}$ on~$D$ (well-defined since the $\getTarget$'s are linearly ordered along~$D$). We verify $\getTarget_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
+
+By hypothesis~(3), $R_v^{\vote(k)}.h = \comm{h}$, and by \Cref{lem:Rs-key-monotone} also $\Sigma_v.\key_R.h \leq \comm{h}$ at every earlier time. By hypothesis~(5) and \Cref{rev:cor:processed-height-bound} applied per-honest at every time, no honest validator has cast at height $> \comm{h}+1$ before $\vote(k)$ (a vote at height $> \comm{h}+1$ would require $\sigma[\getTarget].h > \comm{h}+1 \geq R.h + 1$, contradicting the bound), so with the dishonest-only-quorum bound ($f < 2n/3$), no cert event at height $> \comm{h}+1$ exists in any honest's view at $\vote(k)$ or earlier. In $[\vote(k),\, \vote(k+1)]$, slot-$k$ honest contributions lie at heights $\leq \comm{h}+1$ (by \Cref{rev:cor:processed-height-bound}), and no voting event lies in $(\vote(k),\, \vote(k+1))$, so the same dishonest-only-quorum bound rules out cert events at height $> \comm{h}+1$ in the interval. Hence by \Cref{lem:Rs-key-monotone}, $R_v^t.h \leq \comm{h}+1$ throughout~$[\vote(k),\, \vote(k+1)]$.
+
+Any cert event that updates $R_v^t$ during the interval has its target on~$D$: it is either the slot-$k$ same-slot cert at height in $\{\comm{h}, \comm{h}+1\}$ produced by the prefix-notar $\arg\max$-by-$\preceq$ in \processHeight{} (whose target is the deepest common ancestor of the honest $\ntargets$ values, hence on~$D$), or a pre-existing cert at height~$\leq \comm{h}+1$ on~$D$ (any pre-existing bit-$0$ off-$D$ cert at height~$\leq \comm{h}$ would, if processed before $\vote(k)$, place $R_v^{\vote(k)}$ off $D$, contradicting the preamble; pre-existing certs at height~$\comm{h}+1$ off~$D$ are similarly ruled out by hypothesis~(5)'s no-honest-\just-at-$>\!\comm{h}$ clause and the dishonest-only-quorum bound). Hence $R_v^t \in D$ at chain-height $\leq \comm{h}+1 \leq \getTarget_{v_\ell}^{\vote(k)}.h$ throughout (the last inequality holds since $\getTarget_{v_\ell}^{\vote(k)}$ has state-height in $\{\comm{h}, \comm{h}+1\}$ and chain-height at least its state-height, while $\getTarget_{v_\ell}$ is the $\preceq$-maximum on~$D$ at state-height $\geq \comm{h}$). Therefore $\getTarget_{v_\ell}^{\vote(k)} \succeq R_v^t$.
+
+\emph{Conclusion 1.}
+\Cref{rev:prop:getTarget-compat} applied with the discharged preamble and premise directly yields, for every honest validators~$v, v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getTarget_v^t \sim \getTarget_{v'}^{t'}$.
+
+\emph{Conclusion 2.}
+\Cref{rev:prop:target-monotonicity} applied with the same discharge directly yields, for every honest validator~$v$ and any $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getTarget_v^{t'} \succeq \getTarget_v^t$.
+\end{proof}
+
+\begin{lemma}[Healing: persistence over one or two slots]\label{rev:lem:healing-persistence}
+If
+\begin{enumerate}
+  \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item for any honest validator $v$, $R_v^{\vote(k)}.h$ is the same common value, denoted $\comm{h}$, and $R_v^{\vote(k)}$ is either justified or notarized for slot $k-1$;
+  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k)} \sim \getTarget_{v'}^{\vote(k)}$;
+  \item no honest validator has cast a \just vote at height $> \comm{h}$ at any time strictly before $\vote(k)$;
+  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}$ with $C \neq R_v^{\vote(k)}$ can ever be justified.
+\end{enumerate}
+Then, at $\vote(k')$ with $k' = k+1$ or $k' = k+2$:
+\begin{enumerate}
+  \item for any honest validator $v$, $R_v^{\vote(k')}.h$ is the same common value, denoted $\comm{h}'$, and $R_v^{\vote(k')}$ is either justified or notarized for  slot $k'-1$;
+  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k')} \sim \getTarget_{v'}^{\vote(k')}$;
+  \item no honest validator has cast a \just vote at height $> \comm{h}'$ at any time strictly before $\vote(k')$;
+  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}'$ with $C \neq R_v^{\vote(k')}$ can ever be justified;
+  \item for any honest validators $v, v'$, $\getTarget_v^{\vote(k')} \succeq \getTarget_{v'}^{\vote(k)}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Write $h \coloneqq \comm{h}$.
+
+By \Cref{rev:cor:processed-height-bound} applied per-honest, $\sigma_v[\getTarget_v^{\vote(k)}].h \leq R_v^{\vote(k)}.h + 1 = h + 1$. Combined with the lower bound $\sigma_v[\getTarget_v^{\vote(k)}].h \geq R_v^{\vote(k)}.h = h$ (since $\getTarget_v$ descends from $R_v$ and state-height is monotone non-decreasing along chain ancestry), $\sigma_v[\getTarget_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$. By the voting rule, each honest casts at $\vote(k)$ at height equal to the state-height of its $\getTarget$. We split on the heights:
+
+\emph{Case 1: every honest's $\getTarget_v^{\vote(k)}$ is at state-height~$h$.}
+All honest cast at~$h$ at slot~$k$. Two subcases:
+\begin{itemize}
+  \item \emph{Some honest~$v_*$ has $R_{v_*}^{\vote(k)}$ justified.} By hypothesis~(6) for any honest~$v$, the only block at height~$h$ that can ever be justified is $R_v^{\vote(k)}$; the witness $R_{v_*}^{\vote(k)}$ forces $R_v^{\vote(k)} = R_{v_*}^{\vote(k)}$ for every honest~$v$. Let $\comm{R}^{\vote(k)}$ denote this common justified block. The cached $\Sigma_v.\key_R \geq (h, 1, 0, \ldots)$ dominates the slot-$k$ same-slot cert key at~$h$ (whether bit-$0$ or bit-$1$), so $R_v$ does not advance: $R_v^{\vote(k+1)} = \comm{R}^{\vote(k)}$.
+  \item \emph{No honest's $R^{\vote(k)}$ is justified.} Every $R_v^{\vote(k)}$ is bit-$0$ notarized at~$h$ slot~$k-1$; cross-applying hypothesis~(6) yields that no block at height~$h$ is ever justified. The slot-$k$ bit-$1$ branch therefore cannot fire (it would justify some block at~$h$), and the prefix-notar $\arg\max$ in \processHeight{} produces a bit-$0$ cert at some $B^\star_v$ on the common chain~$D$ extending honest $R$'s, with key $(h, 0, k, \ldots)$ strictly dominating the cached $(h, 0, k-1, \ldots)$. Hence $R_v^{\vote(k+1)} = B^\star_v$, bit-$0$ notarized at~$h$ slot~$k$, and the $B^\star_v$'s are pairwise compatible by \Cref{rev:lem:notar-unique-per-slot}.
+\end{itemize}
+In both subcases, conclusions (1)--(4) hold at $\vote(k+1)$ with $\comm{h}' = h$ (slot $k = (k+1) - 1$ for the notarized branch); conclusion~(4) is hypothesis~(6) in the justified subcase and vacuous in the notarized subcase.
+
+\emph{Case 2: every honest's $\getTarget_v^{\vote(k)}$ is at state-height~$h+1$.}
+All honest cast at~$h+1$ at slot~$k$. By the same prefix-notar mechanism applied at height~$h+1$, the slot-$k$ same-slot cert at~$h+1$ fires: bit-$1$ for a single target $T^\star$ if all honest $\jtargets$ coincide, bit-$0$ for the $\arg\max$ block $B^\star$ otherwise. The cert key $(h+1, \ast, k, \ldots)$ strictly dominates the cached $\Sigma_v.\key_R$ (first coordinate $h$), so $R_v^{\vote(k+1)}$ advances to either $T^\star$ (justified) or $B^\star$ (bit-$0$ notarized at~$h+1$ slot~$k$); pairwise compatibility follows from uniqueness of the bit-$1$ target (quorum intersection at~$h+1$) or \Cref{rev:lem:notar-unique-per-slot} for the bit-$0$ case. Conclusion~(4) at height~$h+1$: by R1, each honest casts \just at $h+1$ at most once; the slot-$k$ \just contributions at $h+1$ already account for every honest's at-most-one quota, so any future bit-$1$ at~$h+1$ for a target $C$ has at most $h^*_C$ honest contributors (the slot-$k$ count for $C$). If a slot-$k$ bit-$1$ fired (for $T^\star$), only $T^\star$ has $h^*_C \geq 2n/3 - f$, so no other can ever be justified; if not, no $C$ has $h^*_C \geq 2n/3 - f$, so no block at~$h+1$ is ever justified, conclusion~(4) holds vacuously. The conclusions at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
+
+\emph{Case 3: state-heights at $\vote(k)$ are mixed (some honest at~$h$, others at~$h+1$).}
+Pick honest $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)}$ at state-height~$h+1$. By the same dishonest-only-bound and \Cref{lem:Rs-key-monotone} reasoning as in Case~1 (no cert event at height $>h+1$ fires in $[\vote(k),\, \vote(k+1)]$, no off-chain pre-existing cert at $h+1$ can move any honest's $R$ off the common chain extending $R$'s), the premise of \Cref{rev:prop:target-dominance} is met with this $v_\ell$, yielding $\getTarget_v^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)}$ for every honest~$v$, hence $\sigma[\getTarget_v^{\vote(k+1)}].h \geq h + 1$ uniformly. \Cref{rev:cor:processed-height-bound} bounds it by $\Sigma.\key_R.h + 1 \leq h + 1$ (since no cert at $>h+1$ has fired), so equality.
+
+\emph{Sub-case 3.a: a cert at height~$h+1$ has fired in some honest's view by $\vote(k+1)$.}
+By synchrony, the cert is in every honest's view by $\vote(k+1)$ (or just after — see Sub-case 3.b for the residual). $R_v^{\vote(k+1)}$ updates to a block at~$h+1$ (justified or notarized for slot $\leq k$). As in Case~2, conclusions (1)--(4) at $\vote(k+1)$ follow with $\comm{h}' = h+1$.
+
+\emph{Sub-case 3.b: no cert at height~$h+1$ has fired by $\vote(k+1)$.}
+At $\vote(k+1)$ every honest casts at~$h+1$ (state-height of $\getTarget$, by the previous paragraph). The hypotheses of the present lemma now hold at $\vote(k+1)$ with the analog of Case~2: state-heights uniformly~$h+1$, $R_v^{\vote(k+1)}.h = h$ still (cached unchanged), justified or notarized for slot $k-1$ via $R_v^{\vote(k)} = R_v^{\vote(k+1)}$ (no advancing cert in the interval). Applying Case~2 at slot~$k+1$ with $\comm{h} = h$ yields the conclusions at $\vote(k+2)$ with $\comm{h}' = h+1$ and slot $k+1 = (k+2) - 1$.
+
+\emph{Conclusions~(2) and~(5) (\getTarget{} pairwise compatibility and dominance at $\vote(k')$).}
+\Cref{rev:lem:intra-slot-target-compat-monotone} applied at slot~$k$ (whose hypotheses are exactly hypotheses~(1)--(6) of the present lemma) yields $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$ for every honest pair, proving conclusion~(2) for $k' = k+1$ (Cases 1, 2, 3.a).
+
+For conclusion~(5) at $k' = k+1$, we apply \Cref{rev:prop:target-dominance}, which shares its preamble and premise with \Cref{rev:prop:getTarget-compat} (used inside the proof of \Cref{rev:lem:intra-slot-target-compat-monotone}); both are discharged by the same argument given there — the preamble (R-compat at $\vote(k)$) follows from hypothesis~(4), and the premise is discharged by picking $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = \max_\preceq \{\getTarget_i^{\vote(k)} : i \text{ honest}\}$, since every $R_v^t$ for $t \in [\vote(k), \vote(k+1)]$ lies on the common chain at chain-height $\leq \getTarget_{v_\ell}^{\vote(k)}.h$ (verified case-by-case in Cases~1--3 above). \Cref{rev:prop:target-dominance}'s conclusion gives $\getTarget_v^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)} \succeq \getTarget_{v'}^{\vote(k)}$ for every honest~$v, v'$ (the second $\succeq$ from $v_\ell$ being $\preceq$-max), proving conclusion~(5) for $k' = k+1$.
+
+For $k' = k+2$ (Sub-case 3.b), the recursive application at slot~$k+1$ supplies conclusion~(2) at $\vote(k+2)$ directly. Conclusion~(5) at $k' = k+2$ chains the two single-step applications: $\getTarget_v^{\vote(k+2)} \succeq \getTarget_{v_\ell'}^{\vote(k+1)} \succeq \getTarget_{v_\ell}^{\vote(k)} \succeq \getTarget_{v'}^{\vote(k)}$, where $v_\ell'$ is the analogous $\preceq$-max chosen for the slot-$(k+1)$ application.
+\end{proof}
+
+
 \begin{lemma}[Healing: one-slot advance]\label{rev:lem:healing-one-slot}
 Assume:
 \begin{enumerate}
@@ -1287,10 +1405,11 @@ Assume:
 Then at $\vote(k+1)$,
 \begin{enumerate}
   \item for any honest validator $v$, $R_v^{\vote(k+1)}.h = \comm{h}$ and $R_v^{\vote(k+1)}$ is either justified or notarized for slot $k$;
-  \item for any two honest validators $v, v'$, $R_v^{\vote(k+1)} \sim R_{v'}^{\vote(k+1)}$;
-  \item no honest validator has cast a \just vote at height $> R.h$ at any time strictly before $\vote(k+1)$.
-  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}$ with $C \neq R_v^{\vote(k+1)}$ can ever be justified.
+  \item no honest validator has cast a \just vote at height $> R.h$ at any time strictly before $\vote(k+1)$;
+  \item for any honest validator $v$, no checkpoint $C$ for height $\comm{h}$ with $C \neq R_v^{\vote(k+1)}$ can ever be justified;
+  \item for any two honest validators $v, v'$, $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$.
 \end{enumerate}
+(Pairwise compatibility of $R_v^{\vote(k+1)}$ across honest follows from~(4) since $R_v^{\vote(k+1)}$ is an ancestor of $\getTarget_v^{\vote(k+1)}$ by \Cref{rev:def:getTarget}.)
 \end{lemma}
 
 \begin{proof}
@@ -1330,13 +1449,12 @@ By Step~4, every such cert event is either the slot-$k$ bit-$0$ notarization at 
   \item Otherwise $R_v^{\vote(k+1)} = T^\star_v$, which is bit-$0$ notarized at height $\comm{h}$ with notarization slot~$k$.
 \end{itemize}
 No cert event at height $> \comm{h}$ fires in the interval, so $R_v^{\vote(k+1)}.h = \comm{h}$ and $R_v^{\vote(k+1)}$ is either justified or notarized for slot~$k$, proving conclusion~(1).
-Every cert event at height $\comm{h}$ in $v$'s view targets a block on~$C$ (Step~4); since $C$ is linearly ordered under~$\preceq$, any two $R_v^{\vote(k+1)}, R_{v'}^{\vote(k+1)}$ are $\preceq$-comparable, proving conclusion~(2).
 
 \emph{Step 6: no honest \just vote at height $> R.h$ before $\vote(k+1)$.}
 Hypothesis~(5) rules out honest votes at height $\geq \comm{h}$ before $\vote(k)$; at $\vote(k)$ every honest casts at height $\comm{h} = R_v^{\vote(k+1)}.h$ exactly; no voting event occurs in $(\vote(k),\, \vote(k+1))$.
-Hence no honest has cast a \just vote at height $> R.h$ strictly before $\vote(k+1)$, proving conclusion~(3).
+Hence no honest has cast a \just vote at height $> R.h$ strictly before $\vote(k+1)$, proving conclusion~(2).
 
-\emph{Step 7: no other checkpoint at height $\comm{h}$ can ever be justified; conclusion~(4).}
+\emph{Step 7: no other checkpoint at height $\comm{h}$ can ever be justified; conclusion~(3).}
 Any justification at height $\comm{h}$ requires a $\geq 2n/3$ \just-quorum at height $\comm{h}$ with a common target. Honest \just votes at height $\comm{h}$ exist only as the slot-$k$ votes of Step~1 (\Cref{def:voting-rule} fires (R1) at most once per height, hypothesis~(5) excludes pre-$\vote(k)$ honest \just at $\comm{h}$, and there is no honest voting event in $(\vote(k),\, \vote(k+1))$ or beyond at this height). Honest contributions are therefore the fixed multiset $\{T_i : i \text{ honest}\} \subseteq C$, and any future justification quorum at a target~$C'$ requires $\geq 2n/3 - f$ honest with $T_i = C'$.
 
 Suppose for contradiction $C' \neq R_v^{\vote(k+1)}$ at height $\comm{h}$ becomes justified at some time. Then $h^*_{C'} \coloneqq |\{i \text{ honest} : T_i = C'\}| \geq 2n/3 - f$.
@@ -1344,7 +1462,12 @@ Suppose for contradiction $C' \neq R_v^{\vote(k+1)}$ at height $\comm{h}$ become
   \item If $R_v^{\vote(k+1)}$ is itself justified (at some target~$T \in C$ by Step~5): $h^*_T \geq 2n/3 - f$ as well, so $h^*_T + h^*_{C'} \geq 4n/3 - 2f$. Each honest casts a single \just at height $\comm{h}$, so $h^*_T + h^*_{C'} \leq n - f$, giving $4n/3 - 2f \leq n - f$, i.e.\ $f \geq n/3$, contradicting $f < n/3$.
   \item If $R_v^{\vote(k+1)}$ is bit-$0$ notarized (no justification fired at $\comm{h}$ in $v$'s view): then $h^*_X < 2n/3 - f$ for every $X$ at height $\comm{h}$ (else the justification branch would have fired at slot~$k$ in $v$'s view). In particular $h^*_{C'} < 2n/3 - f$, contradicting the assumed quorum.
 \end{itemize}
-Either way, no $C' \neq R_v^{\vote(k+1)}$ at height $\comm{h}$ can ever be justified, proving conclusion~(4).
+Either way, no $C' \neq R_v^{\vote(k+1)}$ at height $\comm{h}$ can ever be justified, proving conclusion~(3).
+
+\emph{Step 8: pairwise compatibility of \getTarget{}s at $\vote(k+1)$; conclusion~(4).}
+\Cref{rev:prop:getTarget-compat}'s preamble requires $R_v^{\vote(k)} \sim R_{v'}^{\vote(k)}$ pairwise: hypothesis~(3) places all honest $\getTarget_v^{\vote(k)}$ on the common chain~$C$ at state-height~$\comm{h}$ (Step~2), and each $R_v^{\vote(k)}$ is an ancestor of $\getTarget_v^{\vote(k)}$ on~$C$ (by \Cref{rev:def:getTarget}), so all honest $R_v^{\vote(k)}$ lie on~$C$ and are pairwise compatible.
+The property's premise — existence of an honest $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$ — is discharged by picking $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = \max_\preceq \{\getTarget_i^{\vote(k)} : i \text{ honest}\}$ on~$C$ at state-height~$\comm{h}$: for every honest~$v$, $R_v^{\vote(k)} \in C$ at chain-height $< \comm{h}$ (Step~5) and any cert event updating $R_v$ in the interval has target on~$C$ at state-height~$\comm{h}$ (Step~4), so $R_v^t \in C$ at chain-height $\leq \comm{h}$ throughout, yielding $\getTarget_{v_\ell}^{\vote(k)} \succeq R_v^t$.
+The property's conclusion gives $\getTarget_v^{\vote(k+1)} \sim \getTarget_{v'}^{\vote(k+1)}$ for every honest pair, proving conclusion~(4).
 \end{proof}
 
 
