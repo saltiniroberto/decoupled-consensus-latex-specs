@@ -635,6 +635,45 @@ Unless $\geq n/3$ validators are slashable: two nodes that have processed the sa
 Immediate from Theorem~\ref{thm:orderindep}.
 \end{proof}
 
+\begin{lemma}[Cached key dominates every cert event]\label{rev:lem:Rs-key-dominates}
+Unless $\geq n/3$ validators are slashable, every cert event $(X, h, b, s_n)$ that has fired on any chain processed by the node satisfies $\key(X, h, b, s_n) \leq \Sigma.\key_R$.
+\end{lemma}
+
+\begin{proof}
+Fix the moment when the cert event fired and \onBlock offered its descriptor to \updateForkChoiceRoot. Let $F^0 = \Sigma.F$ at that moment, with finality height $h_{F^0}$ ($F^0$ is genesis or finalized by \Cref{rem:fs-invariant}).
+
+\emph{Case $h > h_{F^0}$.} \Cref{lem:certchain} gives $F^0 \prec X$, so the filter $\Sigma.F \preceq X$ passes; \updateForkChoiceRoot raises $\Sigma.\key_R$ to $\geq \key(X, h, b, s_n)$.
+
+\emph{Case $h = h_{F^0} \geq 1$.}
+By \Cref{rem:fs-invariant}, $F^0$ being finalized at $h_{F^0}$ implies $\Sigma.\key_R \geq (h_{F^0},\, 1,\, 0,\, F^0.\slot,\, \hash(F^0))$ at the time of offering. We split on the bit~$b$ of the present cert event.
+
+\emph{Sub-case $b = 0$.} The present cert key is $(h_{F^0},\, 0,\, s_n,\, X.\slot,\, \hash(X))$, whose bit coordinate is $0$, strictly less than the cached~$1$; hence $\Sigma.\key_R > \key(X, h, b, s_n)$ already, with no update needed.
+
+\emph{Sub-case $b = 1$.} The cert event justifies $X$ at height~$h_{F^0}$, providing a \just-quorum~$Q'$ of size $\geq 2n/3$ with target~$X$ at height~$h_{F^0}$. Finality of $F^0$ at $h_{F^0}$ provides a quorum~$Q_F$ of size $\geq 2n/3$ with $\finalizeHeight = h_{F^0}$ and $\finalizeTarget = F^0$. Quorum intersection gives $|Q' \cap Q_F| \geq n/3$; pick $v \in Q' \cap Q_F$ not slashable. E1 (\Cref{def:slashing}) applied to $v$'s votes in $Q'$ and $Q_F$ forces $X = F^0$. The present cert key is then $(h_{F^0},\, 1,\, 0,\, F^0.\slot,\, \hash(F^0)) \leq \Sigma.\key_R$.
+
+\emph{Case $h \leq h_{F^0} = 0$.} Then $F^0 = \genesis$ and $h = 0$. The genesis store sets $\Sigma.\key_R = (0,\, 1,\, 0,\, \genesis.\slot,\, \hash(\genesis))$ (\Cref{def:store}); any cert event at $h = 0$ has $b \leq 1$ and is dominated.
+
+\emph{Case $h < h_{F^0}$ with $h_{F^0} \geq 1$.} By \Cref{rem:fs-invariant}, $F^0$ being finalized at $h_{F^0}$ implies $\Sigma.\key_R$ already satisfies $\Sigma.\key_R.h \geq h_{F^0} > h$ at the time of offering, so the present cert key is already strictly dominated.
+
+In every case, $\Sigma.\key_R \geq \key(X, h, b, s_n)$ after the call; \Cref{lem:Rs-key-monotone} preserves the bound at all later times.
+\end{proof}
+
+\begin{corollary}[No cert event above the root]\label{rev:cor:no-high-cn}
+Unless $\geq n/3$ validators are slashable, every cert event $(X, h, b, s_n)$ that has fired on any chain processed by the node satisfies $h \leq R.h$.
+\end{corollary}
+
+\begin{proof}
+\Cref{rev:lem:Rs-key-dominates} gives $\key(X, h, b, s_n) \leq \Sigma.\key_R$. The leading coordinate of the cert key is the height, so $h \leq \Sigma.\key_R.h = R.h$.
+\end{proof}
+
+\begin{corollary}[Processed-block height bound]\label{rev:cor:processed-height-bound}
+Unless $\geq n/3$ validators are slashable, every processed block~$B$ satisfies $\sigma[B].h \leq R.h + 1$.
+\end{corollary}
+
+\begin{proof}
+If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a cert event at height $\sigma[B].h - 1$ on $B$'s chain (the most recent height advance leading to $\sigma[B].h$); by \Cref{rev:cor:no-high-cn}, $\sigma[B].h - 1 \leq R.h$.
+\end{proof}
+
 \section{Inactivity leak}
 
 This section extends the per-chain state machine of Figure~\ref{alg:state-machine} with a penalty counter and a new transition function \processInactivityPenalties, invoked each slot by an extended \processSlot (Figure~\ref{alg:leak-processslot}); \processBlock, \processHeight, and \processVote are unchanged.
@@ -906,163 +945,13 @@ So~$v$ is canonical-fresh on~$X'$, and processing~$v$ sets $\ntargets[i] \neq \b
 $\ntargets$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\ntargets[i] \neq \bot$ persists and Layer~1 does not bump~$i$.
 \end{proof}
 
-The $f < n/3$ hypothesis is used only in Lemma~\ref{lem:canonical-fresh-honest-vote} via Lemma~\ref{lem:just-unique-height}, to collapse the lock target~$L$ onto $R$ in the $h_c = h_R$, $\bit_R = 1$ case.
-
-\section{Roberto's review based on commmit \texttt{0x7be03ee3}}\label{sec:roberto-review}
-
-This section collects the revisions and additions proposed during review.
-The main text above is preserved as written; each entry below either supersedes a corresponding item in the main text (indicated via back-references) or introduces new material.
-Labels here are prefixed \texttt{rev:} to avoid clashing with the main-text labels.
-
-\subsection{Store root via a single argmax}\label{rev:sec:store-root}
-
-\paragraph{Motivation.}
-The revision to \computeRoot is motivated by the development in \Cref{rev:sec:leak-fairness} and \Cref{sec:healing}, specifically \Cref{rev:lem:root-height-cj-exclusive} (``root-height exclusivity''), which states that if $R \in C_N \setminus C_J$ then no $(B, h, s) \in C_J$ has $h = R.h$.
-This lemma fails under the iterative walk: if $(A, h, \cdot) \in C_J$ and $(B, h, \cdot) \in C_N \setminus C_J$ with $A \prec B$ at the same state-height, the walk picks~$A$ at its first step (bit tiebreak), then advances to~$B$ as a strict descendant, producing $R = B \in C_N \setminus C_J$ while $A \in C_J$ sits at the same height --- witnessing the negation.
-Replacing the walk by a single argmax resolves this: the argmax stops at~$A$ (the $C_J$-bit breaks the tie in $A$'s favour), so $R = A \in C_J$ and the ``$R \in C_N \setminus C_J$'' hypothesis of \Cref{rev:lem:root-height-cj-exclusive} is vacuous against a same-height $C_J$ competitor.
-\Cref{rev:lem:root-height-cj-exclusive} underpins \Cref{rev:lem:canonical-fresh-honest-vote} and hence the healing lemmas; the closely related \Cref{rev:lem:Rs-start-anywhere} and \Cref{rev:cor:no-high-cn} likewise rely on $R$ being the argmax itself rather than a descendant.
-
-\paragraph{Revised \texttt{computeRoot}.}
-The iterative greedy walk in Figure~\ref{alg:store} is replaced by a single argmax:
-\begin{center}
-\begin{minipage}{0.9\textwidth}
-\begin{algorithmic}[1]
-\Function{\computeRoot}{$\Sigma$} \Comment{Single argmax from $\Sigma.F$}
-  \State $(X^*, \_, \_) \gets \arg\max_{(X,h,s) \in \Sigma.C_N,\; X \succeq \Sigma.F} \bigl(h,\; \mathbf{1}[(X,h,s) \in \Sigma.C_J],\; s,\; \hash(X)\bigr)$
-  \State \Return $X^*$
-\EndFunction
-\end{algorithmic}
-\end{minipage}
-\end{center}
-
-\paragraph{Revised proofs of downstream theorems.}
-The following proofs are revised to use the single-argmax form. Only the proofs change; the statements of \Cref{thm:fleqr,lem:upgrade,thm:orderindep} are unchanged.
-
-\emph{Revised proof of \Cref{thm:fleqr}.}
-Initially $F = R = \genesis$.
-\computeRoot returns the block of a tuple with $X \succeq F$, so $R \succeq F$ holds just after \computeRoot.
-\updateFinalized sets $F$ only to values $F_B \preceq R$, preserving the invariant.
-
-\emph{Revised proof of \Cref{lem:upgrade}.}
-Since $(F, h_F, F.\slot) \in C_J \subseteq C_N$ and $F \succ \Sigma.F$, it is a candidate for \computeRoot's argmax, so the returned tuple has key $\geq (h_F, 1, F.\slot, \hash(F))$ and $h \geq h_F$.
-If $h > h_F$, \Cref{lem:certchain} gives $F \prec X$.
-If $h = h_F$, the key lower bound forces the $C_J$-bit to be~$1$, i.e.\ $(X, h, s) \in C_J$; the slot/hash argument of the original proof gives $F \preceq X$.
-Either way $R = X \succeq F$.
-
-\emph{Revised proof of \Cref{thm:orderindep}.}
-Same argument as the original proof for $\sigma$, $C_J$, $C_N$, and $F$; the final step becomes: $R$ is the argmax over $\{(X,h,s) \in C_N : X \succeq F\}$ on the totally ordered key, hence a deterministic function of $(C_N, C_J, F)$.
-
-\subsection{Additional store-level lemmas}\label{rev:sec:store-lemmas}
-
-\begin{lemma}[Monotonicity of the root height]\label{rev:lem:Rs-height-monotone}
-$R.h$ is non-decreasing over time.
-\end{lemma}
-
-\begin{proof}
-$R$ changes only inside \onBlock, which (i) inserts into $C_N, C_J$, (ii) recomputes $R$, (iii) possibly advances $F$ under the guard $F \preceq R$.
-Between two calls, $F^{\text{new}} \preceq R^{\text{old}}$ (either unchanged or just-updated under guard), so the old $R$-tuple remains a valid argmax candidate at the next \computeRoot, giving $R^{\text{new}}.h \geq R^{\text{old}}.h$.
-\end{proof}
-
-\begin{lemma}[Root independent of the argmax starting point]\label{rev:lem:Rs-start-anywhere}
-Unless $\geq n/3$ validators are slashable, the block~$R$ returned by \computeRoot coincides with the block of the argmax over $\{(X,h,s) \in C_N : X \succeq \genesis\}$.
-\end{lemma}
-
-\begin{proof}
-Let $R^{\genesis}$ be that block; $\{X \succeq F\} \subseteq \{X \succeq \genesis\}$ gives $R^{\genesis}.h \geq R.h \geq h_{F}$.
-If $R^{\genesis}.h > h_{F}$, \Cref{lem:certchain} gives $F \prec R^{\genesis}$, so $R^{\genesis} \succeq F$ and $R^{\genesis} = R$ by uniqueness.
-If $R^{\genesis}.h = h_{F}$, the $(F, h_{F}, \cdot) \in C_J$ candidate forces the $C_J$-bit of $R^{\genesis}$ to be~$1$; \Cref{lem:finchain}-style quorum intersection with $F$ finalized gives $R^{\genesis} = F$, hence again $R^{\genesis} = R$.
-\end{proof}
-
-\begin{corollary}[No $C_N$ record above the root]\label{rev:cor:no-high-cn}
-Unless $\geq n/3$ validators are slashable, every $(X, h, s) \in C_N$ satisfies $h \leq R.h$; in particular the same holds for every $(X, h, s) \in C_J \subseteq C_N$.
-\end{corollary}
-
-\begin{proof}
-By \Cref{rev:lem:Rs-start-anywhere}, $R$'s tuple is the argmax over all of $C_N$; a $C_N$ tuple at height $> R.h$ would strictly dominate on the leading coordinate, contradicting maximality.
-\end{proof}
-
-\begin{corollary}[Processed-block height bound]\label{rev:cor:processed-height-bound}
-Unless $\geq n/3$ validators are slashable, every processed block~$B$ satisfies $\sigma[B].h \leq R.h + 1$.
-\end{corollary}
-
-\begin{proof}
-If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a $C_N$ tuple at height $\sigma[B].h - 1$ from the last advance on~$B$'s chain; by \Cref{rev:cor:no-high-cn}, $\sigma[B].h - 1 \leq R.h$.
-\end{proof}
-
-\subsection{Leak fairness}\label{rev:sec:leak-fairness}
-
-\begin{lemma}[Unique justified block per height]\label{rev:lem:unique-just-per-height}
-If $f < n/3$ and all honest validators follow \Cref{def:voting-rule}, then for any two blocks $C_1, C_2$ justified at the same height~$h$, $C_1 = C_2$.
-\end{lemma}
-
-\begin{proof}
-Each justification yields a \just-quorum $Q_k$ ($k \in \{1,2\}$) of size $\geq 2n/3$ signing a \just vote at height~$h$ for $C_k$; quorum intersection gives $|Q_1 \cap Q_2| \geq n/3$.
-Since $f < n/3$, some $v \in Q_1 \cap Q_2$ is honest; by \Cref{def:voting-rule}, only (R1) emits a \just vote and it fires at most once per height, so~$v$'s single \just vote at~$h$ has both $C_1$ and $C_2$ as target, forcing $C_1 = C_2$.
-\end{proof}
-
-\begin{lemma}[Root-height exclusivity]\label{rev:lem:root-height-cj-exclusive}
-Unless $\geq n/3$ slashable: if $(R, R.h, \cdot) \in C_N \setminus C_J$ and $(B, h, s) \in C_J$, then $h \neq R.h$.
-\end{lemma}
-
-\begin{proof}
-Write $h_R \coloneqq R.h$. Since $(F, h_{F}, F.\slot) \in C_J$ is always an argmax candidate, $R \neq F$, so $R \succ F$ and $h_R \geq h_{F}$.
-Suppose $(B, h_R, s) \in C_J$ exists.
-If $h_R > h_{F}$: \Cref{lem:certchain} gives $F \prec B$, so $B$ is a candidate whose key $(h_R, 1, \ldots)$ beats $R$'s $(h_R, 0, \ldots)$ on the $C_J$-bit, contradicting maximality.
-If $h_R = h_{F}$: $B$ is justified at $h_{F}$ and $F$ is finalized at $h_{F}$, so $B = F$ by \Cref{lem:finchain}; then $(F, h_{F}, F.\slot)$ is itself an argmax candidate and wins on the $C_J$-bit, again contradicting maximality.
-\end{proof}
-
-\begin{lemma}[No finalize vote without a $C_J$ record]\label{rev:lem:no-finalize-without-cj}
-Let~$i$ be a validator with local store~$\Sigma$ and $h$ a height with $(X, h, s) \notin \Sigma.C_J$ for all $X, s$. Then~$i$ has not cast a vote~$v$ with $v.\finalizeHeight = h$.
-\end{lemma}
-
-\begin{proof}
-Only (R1) produces $\finalizeHeight \neq \bot$, so such a~$v$ came from (R1) at an earlier moment with store $\Sigma_0$, yielding $\sigma[X_0].h_j = h$ on~$i$'s then-canonical $X_0 = \getHead(\Sigma_0)$.
-A state has $h_j = h$ only after justification at~$h$ fired on its chain, so the block~$B \preceq X_0$ where it fired has $\sigma[B].J$ at height~$h$ and $\onBlock(B)$ inserts $(\sigma[B].J, h, \cdot) \in \Sigma_0.C_J$; monotonicity of $C_J$ forces this tuple into $\Sigma.C_J$, contradicting the hypothesis.
-\end{proof}
-
-\begin{lemma}[Head state-height range]\label{rev:lem:head-height-range}
-Let $(R, R.h, \cdot) \in C_N$. Then $\sigma[\getHead(\Sigma)].h \in \{R.h,\, R.h + 1\}$.
-\end{lemma}
-
-\begin{proof}
-Write $h_R \coloneqq R.h$ and let $Y = \getHead(\Sigma)$, so $Y \succeq R$.
-State-height is non-decreasing along $\preceq$ and $\sigma[R].h = h_R$, so $\sigma[Y].h \geq h_R$.
-If $\sigma[Y].h \geq h_R + 2$, \Cref{lem:heightprog} produces a second height advance on the chain from $R$ to~$Y$, inserting a $C_N$ tuple at height $h_R + 1$ descending from $R$; its key beats $R$'s on the leading coordinate, contradicting $R$'s maximality.
-\end{proof}
-
-\begin{lemma}[Canonical-fresh honest vote]\label{rev:lem:canonical-fresh-honest-vote}
-Assume $f < n/3$ and all honest validators follow \Cref{def:voting-rule}.
-Let~$i$ be an honest validator, $\Sigma$ its local store, $H = \getHead(\Sigma)$, and $h_c = \sigma[H].h$.
-Let~$v$ be the vote~$i$ produces at the current slot.
-Then~$v$ is canonical-fresh on every extension~$H'$ of~$H$ satisfying $\sigma[H'].h = h_c$.
-\end{lemma}
-
-\begin{proof}
-By \Cref{def:voting-rule}, $v.\height = h_c$ and $v.\target = T_c$, where $T_c$ is either the canonical target $T \preceq H$ or $L \neq \bot$ from a prior locked vote at~$h_c$.
-It suffices to show $T_c \preceq H$; split on $h_c$ versus $R.h$.
-
-\emph{Case $h_c > R.h$.}
-Any $(Z, h_c, s) \in C_N$ would, via \Cref{lem:certchain}, satisfy $Z \succeq F$, making it an argmax candidate with key $(h_c, \ldots)$ beating $R$'s $(R.h, \ldots)$ --- contradiction.
-Hence no $C_N$ tuple at $h_c$ exists, a fortiori none in $C_J$; by \Cref{rev:lem:no-finalize-without-cj} no prior~$i$-vote has $\finalizeHeight = h_c$, so the lock clause does not fire and $T_c = T \preceq H$.
-
-\emph{Case $h_c = R.h$ and $(R, h_c, \cdot) \notin C_J$.}
-\Cref{rev:lem:root-height-cj-exclusive} rules out any $C_J$ tuple at~$h_c$; \Cref{rev:lem:no-finalize-without-cj} then gives $T_c = T \preceq H$.
-
-\emph{Case $h_c = R.h$ and $(R, h_c, \cdot) \in C_J$.}
-If the lock clause does not fire, $T_c = T \preceq H$.
-Otherwise~$i$ is locked at~$h_c$ with lock target $L$, and some prior vote of~$i$ had $\finalizeTarget = L$ justified at~$h_c$; \Cref{rev:lem:unique-just-per-height} and the case hypothesis give $L = R$, and $R \preceq H$ (\Cref{thm:fleqr}), so $T_c = L = R \preceq H$.
-\end{proof}
-
-\begin{remark}[Weakening $f < n/3$ under a double-justify slashing rule]\label{rev:rem:canonical-fresh-slashable}
-The $f < n/3$ hypothesis in \Cref{rev:lem:canonical-fresh-honest-vote} is needed only by the invocation of \Cref{rev:lem:unique-just-per-height}, whose proof uses \Cref{def:voting-rule}'s behavioural constraint (at most one \just vote per height) to close quorum intersection.
+\begin{remark}[Weakening $f < n/3$ under a double-justify slashing rule]\label{rem:canonical-fresh-slashable}
+The $f < n/3$ hypothesis in \Cref{lem:canonical-fresh-honest-vote} is needed only by the invocation of \Cref{lem:just-unique-height} to collapse the lock target~$L$ onto $R$ in the $h_c = h_R$, $\bit_R = 1$ case; \Cref{lem:just-unique-height}'s proof uses \Cref{def:voting-rule}'s behavioural constraint (at most one \just vote per height) to close quorum intersection.
 If \Cref{def:slashing} is extended with an additional slashing rule declaring any pair of \just votes at the same height with different targets slashable, then the intersection of two \just-quorums at height~$h$ with different targets forces every shared signer to be slashable; assuming fewer than $n/3$ validators are slashable yields one non-slashable signer, whose single \just vote fixes $C_1 = C_2$.
-Under this strengthened slashing definition, $f < n/3$ in the hypotheses of \Cref{rev:lem:unique-just-per-height,rev:lem:canonical-fresh-honest-vote} (and downstream lemmas that inherit it) may be replaced by the weaker ``unless $\geq n/3$ validators are slashable.''
+Under this strengthened slashing definition, $f < n/3$ in the hypotheses of \Cref{lem:just-unique-height,lem:canonical-fresh-honest-vote} (and downstream lemmas that inherit it) may be replaced by the weaker ``unless $\geq n/3$ validators are slashable.''
 \end{remark}
 
 \section{Healing from asynchrony}\label{sec:healing}
-
-This section builds on the revisions in \Cref{sec:roberto-review}.
-Throughout, \Cref{def:voting-rule} and \Cref{alg:store} refer respectively to the original definition and to the algorithm figure with the revised \computeRoot of \Cref{rev:sec:store-root}, and the auxiliary lemmas of \Cref{rev:sec:store-lemmas,rev:sec:leak-fairness} are used without further comment.
 
 \paragraph{Modified \getHead.}
 For this section we use a variant of \getHead (\Cref{alg:store}) that takes an additional argument~$\Omega$, an auxiliary state of unspecified nature; the returned descendant of $\Sigma.R$ depends on $\Omega$.
@@ -1803,7 +1692,7 @@ Let $T^\dagger$ denote the $\preceq$-maximum honest \getTarget{} at $\vote(k)$; 
 A cert at height $h+1$ has fired in $\comm{\Sigma}^{\vote(k+1)}$. The hypotheses of \Cref{rev:lem:healing-three-slot} apply at slot~$k+1$ with $\comm{h}' = h+1$: canonical state-height at $\vote(k+1)$ is exactly $h+1$ (\Cref{rev:cor:processed-height-bound} bounds it by $\Sigma.\key_R.h + 1 = h+2$, and the $\geq h+1$ direction follows from $\getTarget$ descending from~$R$ at height $h+1$); the no-honest-above bound is inherited from Step~1 plus the slot-$k$ honest votes lying at heights $\leq h+1$. \Cref{rev:lem:healing-three-slot} places the system in a healed state at slot~$(k+1)+3 = k+4$ with height~$(h+1)+1 = h+2$.
 
 \emph{Sub-case C.B: $\comm{R}^{\vote(k+1)}.h = h$.}
-By justification-uniqueness (\Cref{rev:lem:unique-just-per-height}) the only justified block at height~$h$ is $\comm{R}^{\vote(k)}$, so $\comm{R}^{\vote(k+1)} = \comm{R}^{\vote(k)}$, giving $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$. Picking $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = T^\dagger$ discharges the premise of \Cref{rev:prop:target-dominance}; its conclusion gives $\getTarget_v^{\vote(k+1)} \succeq T^\dagger$ for every honest~$v$, so $\sigma[\getTarget_v^{\vote(k+1)}].h \geq h + 1$. \Cref{rev:cor:processed-height-bound} applied to $\comm{\Sigma}^{\vote(k+1)}$ bounds it by $\Sigma.\key_R.h + 1 = h + 1$, so canonical state-height at $\vote(k+1)$ is exactly $h+1$ and common across honest. Apply \Cref{rev:lem:healing-three-slot} at slot~$k+1$ with $\comm{h}' = h+1$ exactly as in Sub-case~C.A, placing the system in a healed state at slot~$k+4$ with height~$h+2$.
+By justification-uniqueness (\Cref{lem:just-unique-height}) the only justified block at height~$h$ is $\comm{R}^{\vote(k)}$, so $\comm{R}^{\vote(k+1)} = \comm{R}^{\vote(k)}$, giving $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$. Picking $v_\ell$ with $\getTarget_{v_\ell}^{\vote(k)} = T^\dagger$ discharges the premise of \Cref{rev:prop:target-dominance}; its conclusion gives $\getTarget_v^{\vote(k+1)} \succeq T^\dagger$ for every honest~$v$, so $\sigma[\getTarget_v^{\vote(k+1)}].h \geq h + 1$. \Cref{rev:cor:processed-height-bound} applied to $\comm{\Sigma}^{\vote(k+1)}$ bounds it by $\Sigma.\key_R.h + 1 = h + 1$, so canonical state-height at $\vote(k+1)$ is exactly $h+1$ and common across honest. Apply \Cref{rev:lem:healing-three-slot} at slot~$k+1$ with $\comm{h}' = h+1$ exactly as in Sub-case~C.A, placing the system in a healed state at slot~$k+4$ with height~$h+2$.
 
 In every case, the system is in a healed state at slot~$k' \in \{k+3, k+4\}$ with height~$\comm{h}+2$.
 \end{proof}
