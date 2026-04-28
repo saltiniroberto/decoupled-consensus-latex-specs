@@ -73,6 +73,20 @@
 % Horizontal separator rule
 \newcommand{\sep}{\par\noindent\rule{\linewidth}{0.4pt}\par\medskip}
 
+% Define a colored-footnote macro: \newcolorfn{\name}{color}
+% produces a one-arg macro that renders a footnote whose mark and text
+% are both typeset in the given color.
+\newcommand{\newcolorfn}[2]{%
+  \newcommand{#1}[1]{%
+    \begingroup
+    \renewcommand{\thefootnote}{\textcolor{#2}{\arabic{footnote}}}%
+    \footnote{\textcolor{#2}{##1}}%
+    \endgroup
+  }%
+}
+
+\newcolorfn{\RSfn}{red}
+
 % Procedure names
 \newcommand{\processSlot}{\textsf{processSlot}\xspace}
 \newcommand{\processBlock}{\textsf{processBlock}\xspace}
@@ -1796,6 +1810,7 @@ Outer hypotheses~(1)--(5) match the hypotheses of \Cref{rev:lem:healing-five-slo
 Since $k' \leq k+5$, every $t \geq \vote(k+5)$ also satisfies $t \geq \vote(k')$, so the two stated conclusions hold.
 \end{proof}
 
+\RSfn{I haven't checked the proof of the following Lemma at all}
 \begin{lemma}[Three-slot healing under slot-$k$ dual-height voting]\label{rev:lem:healing-three-slot-dual-vote}
 Assume:
 \begin{enumerate}
@@ -1837,7 +1852,11 @@ A same-slot cert at height $h^* \in \{h, h+1\}$ requires $\geq 2n/3$ contributor
 The dual-height extension forces every honest to contribute at \emph{both} heights, raising each height's honest count to $n - f > 2n/3$ and guaranteeing a cert at height $h+1$. The extension is restricted to slot~$k$ because exactly one ``alignment slot'' is enough: post-slot-$k$, the cert at $h+1$ has fired, $R$ has advanced, and standard view-merge dynamics realign honest \getTarget{}s for slots $k+1, k+2, \ldots$ without further dual-voting.
 \end{remark}
 
+\begin{remark}[A natural-looking fix that does not work]\label{rev:rem:conditional-dual-vote-fails}
+A tempting refinement of \Cref{def:voting-rule} is the following ``conditional dual-vote'' rule: an honest validator with $\getTarget = T$ at state-height $h$ casts a vote at height~$h$ on $T$ as usual, and \emph{additionally} casts a vote at height~$h+1$ whenever its store contains some $T' \succeq T$ with $\sigma[T'].h = h+1$. Universally adopted, this would seem to overcome the split: validators whose $\getTarget$ already sits at $h+1$ vote at $h+1$ via \Cref{def:voting-rule}, and validators whose $\getTarget$ sits at $h$ but who can see an extension also vote at $h+1$, raising the height-$(h+1)$ honest count.
 
+The rule fails at its premise: if $\getTarget_i = T$ has state-height $h$, no chain in $\Sigma_i.\T$ extends $T$ to a block at state-height $h+1$. By construction, $\getTarget$ is the deepest target on the canonical chain $\sigma_i.L \succeq T$, and $\sigma[\getTarget].h$ is the canonical state-height; if some $T' \succeq T$ on a chain in $\Sigma_i.\T$ had $\sigma[T'].h = h+1$, then $\getTarget$ would itself sit at state-height $\geq h+1$, contradicting $\sigma[\getTarget].h = h$. So the ``additionally vote at $h+1$'' branch never fires for the validators it was meant to recruit, and the rule reduces to \Cref{def:voting-rule} on those validators --- leaving the split untouched.
+\end{remark}
 
 \appendix
 
