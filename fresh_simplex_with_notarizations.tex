@@ -693,7 +693,7 @@ If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a cert event at height $
 \section{Inactivity leak}
 
 This section extends the per-chain state machine of Figure~\ref{alg:state-machine} with a penalty counter and a new transition function \processInactivityPenalties, invoked each slot by an extended \processSlot (Figure~\ref{alg:leak-processslot}); \processBlock, \processHeight, and \processVote are unchanged.
-Write $X = \getConfirmed(\Sigma, \Omega)$ for the \emph{canonical chain}, with $\Omega$ the validator's auxiliary state.
+Write $T = \getConfirmed(\Sigma, \Omega)$ for the \emph{canonical chain}, with $\Omega$ the validator's auxiliary state.
 
 Two results follow.
 \emph{Tightness} (Theorem~\ref{thm:tightness}) is purely state-logic: on any fixed chain, the total penalty increment over a non-finality period is at least $(T-1) \cdot n/3$, with no hypothesis on synchrony, honesty, or the slashable set.
@@ -766,11 +766,11 @@ Since no $2n/3$-quorum on a single target formed, the plurality count is $< 2n/3
 The finality branch of \processHeight, when it fires, sets $\sigma_{\mathrm{post}}.F = \sigma_{\mathrm{pre}}.J \succ \sigma_{\mathrm{pre}}.F$, so this guard is skipped automatically.
 
 \paragraph{Canonical-freshness.}
-A vote~$v$ processed at the current slot on canonical chain~$X$ at state-height $h_c = \sigma_{\mathrm{post}}.h$ bumps $\sigma.\ntargets[v.\validator]$ iff $v$ is \emph{canonical-fresh}:
+A vote~$v$ processed at the current slot on canonical chain~$T$ at state-height $h_c = \sigma_{\mathrm{post}}.h$ bumps $\sigma.\ntargets[v.\validator]$ iff $v$ is \emph{canonical-fresh}:
 \[
-  v.\height = h_c \;\wedge\; v.\target \preceq X \;\wedge\; v.\target.\slot \geq \sigma_{\mathrm{post}}.s_h,
+  v.\height = h_c \;\wedge\; v.\target \preceq T \;\wedge\; v.\target.\slot \geq \sigma_{\mathrm{post}}.s_h,
 \]
-equivalently $v.\target \preceq X$ with $\sigma[v.\target].h = h_c$ (Remark~\ref{rem:fresh-equiv}).
+equivalently $v.\target \preceq T$ with $\sigma[v.\target].h = h_c$ (Remark~\ref{rem:fresh-equiv}).
 
 \subsection{Leak tightness}
 
@@ -825,14 +825,14 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 \begin{algorithmic}[1]
 
 \Function{\constructVote}{$V,\; \Sigma,\; \Omega$}
-  \State $X \gets \getConfirmed(\Sigma,\; \Omega)$
-  \State $h_c \gets \sigma[X].h$; \;\; $h_j \gets \sigma[X].h_j$; \;\; $J \gets \sigma[X].J$
+  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$
+  \State $h_c \gets \sigma[T].h$; \;\; $h_j \gets \sigma[T].h_j$; \;\; $J \gets \sigma[T].J$
   \vspace{3pt}
   \State \textbf{-- Target selection --}
   \If{$\exists\, v \in V$ with $v.\finalizeHeight = h_c$ and $v.\finalizeTarget \neq \bot$}
     \State $T_c \gets v.\finalizeTarget$ \Comment{$i$ is locked at $h_c$}
   \Else
-    \State $T_c \gets$ any ancestor of $X$ with $\sigma[T].h = h_c$ \label{line:unlocked-target} \Comment{e.g.~$X$ itself}
+    \State $T_c \gets T$ \label{line:unlocked-target}
   \EndIf
   \vspace{3pt}
   \State \textbf{-- Vote kind and finalize fields --}
@@ -879,8 +879,8 @@ Vacuous: $v_2.\height = h_c \neq h_\ast = v_2.\finalizeHeight$ (every height adv
 
 \subsection{Leak fairness}
 
-Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~$\Sigma$, its auxiliary state~$\Omega$, and the canonical chain $X = \getConfirmed(\Sigma, \Omega)$.
-The claim is that the vote~$v$ produced by Definition~\ref{def:voting-rule}, once included on any extension of~$X$ still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
+Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~$\Sigma$, its auxiliary state~$\Omega$, and the canonical chain $T = \getConfirmed(\Sigma, \Omega)$.
+The claim is that the vote~$v$ produced by Definition~\ref{def:voting-rule}, once included on any extension of~$T$ still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
 Height advances reset $\jtargets$ and $\ntargets$ (Figure~\ref{alg:state-machine}), so Layer-2 state at the next height is independent of~$i$'s prior votes and no ``lock'' issue propagates.
 
 The proof proceeds via four supporting lemmas: per-height justification uniqueness (Lemma~\ref{lem:just-unique-height}), root-height exclusivity of the notarize-only bit (Lemma~\ref{lem:root-h-notarize-only}), the absence of finalize votes without a matching justification cert event (Lemma~\ref{lem:no-finalize-without-just}), and a canonical-freshness statement for~$i$'s vote (Lemma~\ref{lem:canonical-fresh-honest-vote}).
@@ -915,49 +915,49 @@ If~$i$ has cast a vote~$v$ with $v.\finalizeHeight = h'$ and $v.\finalizeTarget 
 \end{lemma}
 
 \begin{proof}
-Only (R1) produces $\finalizeHeight \neq \bot$, so~$v$ came from (R1) at an earlier moment with~$i$'s local store~$\Sigma_0$ and auxiliary state~$\Omega_0$; by the (R1) finalize-field conditional, $(f_h, f_t) = (h_j, J) = (h', T_f)$ read from~$i$'s then-canonical $X_0 = \getConfirmed(\Sigma_0, \Omega_0)$, so $\sigma[X_0].h_j = h'$ and $\sigma[X_0].J = T_f$.
-A state has $(h_j, J) = (h', T_f)$ only after the justification branch of \processHeight fired on that chain with target~$T_f$ at pre-state height~$h'$, i.e.\ some ancestor $B' \preceq X_0$ triggered justification of~$T_f$ at height~$h'$.
+Only (R1) produces $\finalizeHeight \neq \bot$, so~$v$ came from (R1) at an earlier moment with~$i$'s local store~$\Sigma_0$ and auxiliary state~$\Omega_0$; by the (R1) finalize-field conditional, $(f_h, f_t) = (h_j, J) = (h', T_f)$ read from~$i$'s then-canonical $T_0 = \getConfirmed(\Sigma_0, \Omega_0)$, so $\sigma[T_0].h_j = h'$ and $\sigma[T_0].J = T_f$.
+A state has $(h_j, J) = (h', T_f)$ only after the justification branch of \processHeight fired on that chain with target~$T_f$ at pre-state height~$h'$, i.e.\ some ancestor $B' \preceq T_0$ triggered justification of~$T_f$ at height~$h'$.
 \end{proof}
 
 \begin{lemma}[Canonical-fresh honest vote]\label{lem:canonical-fresh-honest-vote}
-Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be honest with local store~$\Sigma$ and auxiliary state~$\Omega$, $X = \getConfirmed(\Sigma, \Omega)$, and $h_c = \sigma[X].h$.
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be honest with local store~$\Sigma$ and auxiliary state~$\Omega$, $T = \getConfirmed(\Sigma, \Omega)$, and $h_c = \sigma[T].h$.
 Let~$v$ be the vote~$i$ produces at the current slot.
-Then $v.\target \preceq X$ with $\sigma[v.\target].h = h_c$.
-In particular, $v$ is canonical-fresh on every extension $X' \succeq X$ with $\sigma[X'].h = h_c$.
+Then $v.\target \preceq T$ with $\sigma[v.\target].h = h_c$.
+In particular, $v$ is canonical-fresh on every extension $T' \succeq T$ with $\sigma[T'].h = h_c$.
 \end{lemma}
 
 \begin{proof}
 Write $h_R \coloneqq \Sigma.\key_R.h$ and $\bit_R \coloneqq \Sigma.\key_R.b$.
-$X$ descends from~$R$ (Figure~\ref{alg:store}), so $R \preceq X$; the cached cert event fired at height~$h_R$ on a processed chain with $\sigma[R].h = h_R$ (Remark~\ref{rem:fresh-equiv}, genesis trivial).
+$T$ descends from~$R$ (Figure~\ref{alg:store}), so $R \preceq T$; the cached cert event fired at height~$h_R$ on a processed chain with $\sigma[R].h = h_R$ (Remark~\ref{rem:fresh-equiv}, genesis trivial).
 State-height monotonicity (Lemma~\ref{lem:slotmono}) gives $h_c \geq h_R$.
-Every state-height advance on~$X$ fires a cert event whose descriptor is offered to \updateForkChoiceRoot, raising $\key_R.h$ if it exceeds the cached value; hence no advance from $h_R + 1$ to $h_R + 2$ has fired on~$X$, so $h_c \in \{h_R,\, h_R + 1\}$.
-By Definition~\ref{def:voting-rule}, $v.\height = h_c$ and $v.\target = T_c$, where $T_c = T \preceq X$ with $\sigma[T].h = h_c$ in the unlocked case, and $T_c = L$ where~$L$ is a lock target from a prior (R1) vote of~$i$ with $\finalizeHeight = h_c$ in the locked case.
+Every state-height advance on~$T$ fires a cert event whose descriptor is offered to \updateForkChoiceRoot, raising $\key_R.h$ if it exceeds the cached value; hence no advance from $h_R + 1$ to $h_R + 2$ has fired on~$T$, so $h_c \in \{h_R,\, h_R + 1\}$.
+By Definition~\ref{def:voting-rule}, $v.\height = h_c$ and $v.\target = T_c$, where $T_c = T$ in the unlocked case (line~\ref{line:unlocked-target} of \constructVote{}), and $T_c = L$ in the locked case, where~$L$ is a lock target from a prior (R1) vote of~$i$ with $\finalizeHeight = h_c$.
 
 \emph{Case $h_c = h_R + 1$.}
 A lock at~$h_c$ would, by Lemma~\ref{lem:no-finalize-without-just}, require some~$J_\ast$ justified at~$h_c$ on a processed chain.
 The filter-passing argument of Lemma~\ref{lem:root-h-notarize-only} applies (with $h_R$ there replaced by~$h_c$, using $h_{F^0} \leq h_R < h_c$), so \updateForkChoiceRoot raised the cache to $\Sigma.\key_R.h \geq h_c = h_R + 1$ and Lemma~\ref{lem:Rs-key-monotone} preserves this, contradicting $\key_R.h = h_R$.
-So~$i$ is unlocked at~$h_c$ and $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
+So~$i$ is unlocked at~$h_c$ and $T_c = T$.
 
 \emph{Case $h_c = h_R$ with $\bit_R = 0$.}
-By Lemma~\ref{lem:root-h-notarize-only}, no justification at~$h_c$ has fired on any processed chain; by Lemma~\ref{lem:no-finalize-without-just},~$i$ has not cast a finalize-bearing vote at~$h_c$, so~$i$ is unlocked and $T_c = T \preceq X$ with $\sigma[T].h = h_c$.
+By Lemma~\ref{lem:root-h-notarize-only}, no justification at~$h_c$ has fired on any processed chain; by Lemma~\ref{lem:no-finalize-without-just},~$i$ has not cast a finalize-bearing vote at~$h_c$, so~$i$ is unlocked and $T_c = T$.
 
 \emph{Case $h_c = h_R$ with $\bit_R = 1$.}
-If~$i$ is unlocked, $T_c = T \preceq X$ directly.
+If~$i$ is unlocked, $T_c = T$ directly.
 Otherwise~$i$ is locked at~$h_c$ with target~$L$; Lemma~\ref{lem:no-finalize-without-just} gives $L$ justified at~$h_c$ on some processed chain, and $\bit_R = 1$ gives $R$ justified at~$h_R = h_c$ on some processed chain.
-Lemma~\ref{lem:just-unique-height} then gives $L = R \preceq X$, with $\sigma[T_c].h = \sigma[R].h = h_c$.
+Lemma~\ref{lem:just-unique-height} then gives $L = R \preceq T$, with $\sigma[T_c].h = \sigma[R].h = h_c$.
 \end{proof}
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
-Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $\Omega$ its auxiliary state, $X = \getConfirmed(\Sigma, \Omega)$ its canonical chain, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $\Omega$ its auxiliary state, $T = \getConfirmed(\Sigma, \Omega)$ its canonical chain, and $h_c = \Sigma.\sigma[T].h$ the current canonical state-height.
 Let $v$ be the vote~$i$ produces at the current slot.
-Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$, with auxiliary state $\Omega'$, such that $X' = \getConfirmed(\Sigma', \Omega')$ is an extension of~$X$ with $\Sigma'.\sigma[X'].h = h_c$, and suppose~$v$ is included on~$X'$.
-Then for every slot processed on~$X'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
+Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$, with auxiliary state $\Omega'$, such that $T' = \getConfirmed(\Sigma', \Omega')$ is an extension of~$T$ with $\Sigma'.\sigma[T'].h = h_c$, and suppose~$v$ is included on~$T'$.
+Then for every slot processed on~$T'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
 \end{theorem}
 
 \begin{proof}
-Lemma~\ref{lem:canonical-fresh-honest-vote} gives $T_c \coloneqq v.\target \preceq X \preceq X'$ with $\sigma[T_c].h = h_c$.
-The hypothesis $\Sigma'.\sigma[X'].h = h_c$ with Lemma~\ref{lem:slotmono} gives $\Sigma'.\sigma[X'].s_h = \Sigma.\sigma[X].s_h$; Remark~\ref{rem:fresh-equiv} then gives $T_c.\slot \geq \Sigma'.\sigma[X'].s_h$.
-So~$v$ is canonical-fresh on~$X'$, and processing~$v$ sets $\ntargets[i] \neq \bot$.
+Lemma~\ref{lem:canonical-fresh-honest-vote} gives $T_c \coloneqq v.\target \preceq T \preceq T'$ with $\sigma[T_c].h = h_c$.
+The hypothesis $\Sigma'.\sigma[T'].h = h_c$ with Lemma~\ref{lem:slotmono} gives $\Sigma'.\sigma[T'].s_h = \Sigma.\sigma[T].s_h$; Remark~\ref{rem:fresh-equiv} then gives $T_c.\slot \geq \Sigma'.\sigma[T'].s_h$.
+So~$v$ is canonical-fresh on~$T'$, and processing~$v$ sets $\ntargets[i] \neq \bot$.
 $\ntargets$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\ntargets[i] \neq \bot$ persists and Layer~1 does not bump~$i$.
 \end{proof}
 
@@ -1049,8 +1049,7 @@ If $\syncer(k)$ is honest, then there exists a store $\comm{\Sigma}^{\vote(k)}$ 
 By \Cref{thm:orderindep} applied to $\comm{\Sigma}^{\vote(k)}$, if additionally $f < n/3$ and \getConfirmed is deterministic, the components $(R, F, C_J, C_N)$ are common to every honest validator at $\vote(k)$.
 
 \begin{definition}[Target function]\label{rev:def:getTarget}
-$\getTarget(\Sigma, \Omega)$ returns the target~$T_c$ as assigned on line~\ref{line:unlocked-target} of \constructVote{} (\Cref{alg:voting-rule}) applied to~$\Sigma$ and computed with respect to~$\Omega$: an arbitrarily chosen ancestor of $\getConfirmed(\Sigma, \Omega)$ at state-height such that $\sigma[\getConfirmed(\Sigma, \Omega)].h = \sigma[\getTarget(\Sigma, \Omega)].h$.
-In particular, $\getTarget(\Sigma, \Omega) \preceq \getConfirmed(\Sigma, \Omega)$.
+$\getTarget(\Sigma, \Omega)$ returns the target~$T_c$ as assigned on line~\ref{line:unlocked-target} of \constructVote{} (\Cref{alg:voting-rule}) applied to~$\Sigma$ and computed with respect to~$\Omega$, namely $\getConfirmed(\Sigma, \Omega)$.
 \end{definition}
 
 \paragraph{Modified \constructVote.}
