@@ -102,7 +102,7 @@
 \newcommand{\updateRootFromVotes}{\textsf{updateRootFromVotes}\xspace}
 \newcommand{\onViewMerge}{\textsf{onViewMerge}\xspace}
 \newcommand{\updateFinalized}{\textsf{updateFinalized}\xspace}
-\newcommand{\getHead}{\textsf{getHead}\xspace}
+\newcommand{\getConfirmed}{\textsf{getConfirmed}\xspace}
 \newcommand{\getTarget}{\textsf{getTarget}\xspace}
 \newcommand{\computeRoot}{\textsf{computeRoot}\xspace}
 
@@ -467,6 +467,8 @@ The post-state then offers two cert-event descriptors to \updateForkChoiceRoot: 
 Each call to \updateForkChoiceRoot first filters out any candidate~$C$ with $C \not\succeq \Sigma.F$ and then updates $(\Sigma.R,\, \Sigma.\key_R)$ iff the candidate's cert key strictly exceeds the current $\key_R$; this maintains $R$ incrementally as the lex-max cert event ever observed on a chain extending the current $F$, never recomputed.
 Finally, \updateFinalized sets $\Sigma.F \gets \sigma[B].F$ iff $\sigma[B].F \succ \Sigma.F$ and $\sigma[B].F \preceq \Sigma.R$.
 
+$\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, under synchrony, is safe in the sense that it will not be reverted as long as more than half of the online validators are honest. Here $\Omega$ represents the state of the available chain --- whatever extra information the validator uses to disambiguate among descendants of $\Sigma.R$ in $\Sigma.\T$. The protocol fixes only that the returned block lies in $\Sigma.\T$ and descends from $\Sigma.R$; it does not constrain $\Omega$'s structure or how the choice depends on it. Different validators may pass different~$\Omega$, and a single validator may pass different~$\Omega$ at different call sites.
+
 \begin{figure}[H]
 \caption{Store and fork-choice root}\label{alg:store}
 \begin{center}
@@ -511,8 +513,8 @@ Finally, \updateFinalized sets $\Sigma.F \gets \sigma[B].F$ iff $\sigma[B].F \su
 \EndFunction
 \vspace{3pt}
 
-\Function{\getHead}{$\Sigma$} \Comment{Deterministic choice, not specified here}
-  \State \Return any block in~$\Sigma.\T$ that descends from~$\Sigma.R$
+\Function{\getConfirmed}{$\Sigma,\; \Omega$} \Comment{Choice depends on auxiliary state~$\Omega$}
+  \State \Return a block in~$\Sigma.\T$ that descends from~$\Sigma.R$, depending on~$\Omega$
 \EndFunction
 
 \end{algorithmic}
@@ -564,11 +566,11 @@ $\Sigma.F$ only advances via \updateFinalized to $F_B = \sigma[B].F$, and $\sigm
 \end{remark}
 
 \begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
-Once a node sets $\Sigma.F = F$, \getHead returns a block descending from~$F$ at all future times.
+Once a node sets $\Sigma.F = F$, $\getConfirmed(\Sigma, \Omega)$ returns a block descending from~$F$ at all future times, for every $\Omega$.
 \end{theorem}
 
 \begin{proof}
-By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq \Sigma.F \preceq \Sigma.R$, and \getHead returns a descendant of~$\Sigma.R$.
+By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq \Sigma.F \preceq \Sigma.R$, and $\getConfirmed(\Sigma, \Omega)$ returns a descendant of~$\Sigma.R$ regardless of~$\Omega$.
 \end{proof}
 
 \subsubsection*{Further properties under $f < n/3$}
@@ -616,12 +618,12 @@ $F_B$ being finalized in~$B$'s post-state requires some ancestor~$B' \preceq B$ 
 \end{proof}
 
 \begin{theorem}[Lock-in]\label{thm:lockin}
-Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~$h$ on any chain, and some block whose post-state has $(F, h)$ as its justified checkpoint has been processed by the node, then $R \succeq F$ at all future times, and \getHead always returns a descendant of~$F$.
+Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~$h$ on any chain, and some block whose post-state has $(F, h)$ as its justified checkpoint has been processed by the node, then $R \succeq F$ at all future times, and $\getConfirmed(\Sigma, \Omega)$ always returns a descendant of~$F$, for every $\Omega$.
 \end{theorem}
 
 \begin{proof}
 Lemma~\ref{lem:upgrade} gives $R \succeq F$ directly.
-\getHead (descending from~$R$) therefore returns a descendant of~$F$.
+$\getConfirmed(\Sigma, \Omega)$ (descending from~$R$ for every $\Omega$) therefore returns a descendant of~$F$.
 \end{proof}
 
 \begin{theorem}[Order independence]\label{thm:orderindep}
@@ -691,7 +693,7 @@ If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a cert event at height $
 \section{Inactivity leak}
 
 This section extends the per-chain state machine of Figure~\ref{alg:state-machine} with a penalty counter and a new transition function \processInactivityPenalties, invoked each slot by an extended \processSlot (Figure~\ref{alg:leak-processslot}); \processBlock, \processHeight, and \processVote are unchanged.
-Write $X = \getHead(\Sigma)$ for the \emph{canonical chain}.
+Write $X = \getConfirmed(\Sigma, \Omega)$ for the \emph{canonical chain}, with $\Omega$ the validator's auxiliary state.
 
 Two results follow.
 \emph{Tightness} (Theorem~\ref{thm:tightness}) is purely state-logic: on any fixed chain, the total penalty increment over a non-finality period is at least $(T-1) \cdot n/3$, with no hypothesis on synchrony, honesty, or the slashable set.
@@ -812,7 +814,7 @@ We state the honest rule explicitly, as it underpins the leak fairness proof.
 
 \begin{definition}[Honest voting rule]\label{def:voting-rule}
 Let $V$ be the set of votes $i$ has previously cast, and write $\currentSlot$ for the node's protocol time (a slot counter shared across chains).
-At each voting opportunity, $i$ constructs its vote by $\constructVote(V,\, \Sigma)$, defined in Figure~\ref{alg:voting-rule}.
+At each voting opportunity, $i$ constructs its vote by $\constructVote(V,\, \Sigma,\, \Omega)$, defined in Figure~\ref{alg:voting-rule}.
 The first-vote check in the (R1) branch ensures at most one \just vote per height~$h_c$, and the target-selection clause preserves E1-safety under view shifts.
 \end{definition}
 
@@ -822,8 +824,8 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\Function{\constructVote}{$V,\; \Sigma$}
-  \State $X \gets \getHead(\Sigma)$
+\Function{\constructVote}{$V,\; \Sigma,\; \Omega$}
+  \State $X \gets \getConfirmed(\Sigma,\; \Omega)$
   \State $h_c \gets \sigma[X].h$; \;\; $h_j \gets \sigma[X].h_j$; \;\; $J \gets \sigma[X].J$
   \vspace{3pt}
   \State \textbf{-- Target selection --}
@@ -877,7 +879,7 @@ Vacuous: $v_2.\height = h_c \neq h_\ast = v_2.\finalizeHeight$ (every height adv
 
 \subsection{Leak fairness}
 
-Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~$\Sigma$, and the canonical chain $X = \getHead(\Sigma)$.
+Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~$\Sigma$, its auxiliary state~$\Omega$, and the canonical chain $X = \getConfirmed(\Sigma, \Omega)$.
 The claim is that the vote~$v$ produced by Definition~\ref{def:voting-rule}, once included on any extension of~$X$ still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
 Height advances reset $\jtargets$ and $\ntargets$ (Figure~\ref{alg:state-machine}), so Layer-2 state at the next height is independent of~$i$'s prior votes and no ``lock'' issue propagates.
 
@@ -913,12 +915,12 @@ If~$i$ has cast a vote~$v$ with $v.\finalizeHeight = h'$ and $v.\finalizeTarget 
 \end{lemma}
 
 \begin{proof}
-Only (R1) produces $\finalizeHeight \neq \bot$, so~$v$ came from (R1) at an earlier moment with~$i$'s local store~$\Sigma_0$; by the (R1) finalize-field conditional, $(f_h, f_t) = (h_j, J) = (h', T_f)$ read from~$i$'s then-canonical $X_0 = \getHead(\Sigma_0)$, so $\sigma[X_0].h_j = h'$ and $\sigma[X_0].J = T_f$.
+Only (R1) produces $\finalizeHeight \neq \bot$, so~$v$ came from (R1) at an earlier moment with~$i$'s local store~$\Sigma_0$ and auxiliary state~$\Omega_0$; by the (R1) finalize-field conditional, $(f_h, f_t) = (h_j, J) = (h', T_f)$ read from~$i$'s then-canonical $X_0 = \getConfirmed(\Sigma_0, \Omega_0)$, so $\sigma[X_0].h_j = h'$ and $\sigma[X_0].J = T_f$.
 A state has $(h_j, J) = (h', T_f)$ only after the justification branch of \processHeight fired on that chain with target~$T_f$ at pre-state height~$h'$, i.e.\ some ancestor $B' \preceq X_0$ triggered justification of~$T_f$ at height~$h'$.
 \end{proof}
 
 \begin{lemma}[Canonical-fresh honest vote]\label{lem:canonical-fresh-honest-vote}
-Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be honest with local store~$\Sigma$, $X = \getHead(\Sigma)$, and $h_c = \sigma[X].h$.
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be honest with local store~$\Sigma$ and auxiliary state~$\Omega$, $X = \getConfirmed(\Sigma, \Omega)$, and $h_c = \sigma[X].h$.
 Let~$v$ be the vote~$i$ produces at the current slot.
 Then $v.\target \preceq X$ with $\sigma[v.\target].h = h_c$.
 In particular, $v$ is canonical-fresh on every extension $X' \succeq X$ with $\sigma[X'].h = h_c$.
@@ -946,9 +948,9 @@ Lemma~\ref{lem:just-unique-height} then gives $L = R \preceq X$, with $\sigma[T_
 \end{proof}
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
-Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $X = \getHead(\Sigma)$ its canonical chain, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
+Unless $\geq n/3$ validators are slashable, and assuming $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: let~$i$ be an honest validator, $\Sigma$ its local store, $\Omega$ its auxiliary state, $X = \getConfirmed(\Sigma, \Omega)$ its canonical chain, and $h_c = \Sigma.\sigma[X].h$ the current canonical state-height.
 Let $v$ be the vote~$i$ produces at the current slot.
-Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$ such that $X' = \getHead(\Sigma')$ is an extension of~$X$ with $\Sigma'.\sigma[X'].h = h_c$, and suppose~$v$ is included on~$X'$.
+Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$, with auxiliary state $\Omega'$, such that $X' = \getConfirmed(\Sigma', \Omega')$ is an extension of~$X$ with $\Sigma'.\sigma[X'].h = h_c$, and suppose~$v$ is included on~$X'$.
 Then for every slot processed on~$X'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
 \end{theorem}
 
@@ -967,19 +969,6 @@ Under this strengthened slashing definition, $f < n/3$ in the hypotheses of \Cre
 
 \section{Healing from asynchrony}\label{sec:healing}
 
-\paragraph{Modified \getHead.}
-For this section we use a variant of \getHead (\Cref{alg:store}) that takes an additional argument~$\Omega$, an auxiliary state of unspecified nature; the returned descendant of $\Sigma.R$ depends on $\Omega$.
-Concretely, the function in \Cref{alg:store} is replaced by:
-\begin{center}
-\begin{minipage}{0.9\textwidth}
-\begin{algorithmic}[1]
-\Function{\getHead}{$\Sigma,\; \Omega$}
-  \State \Return a block in~$\Sigma.\T$ that descends from~$\Sigma.R$, selected by~$\Omega$
-\EndFunction
-\end{algorithmic}
-\end{minipage}
-\end{center}
-
 \paragraph{Virtual-block cert events.}
 For this section, the store considers candidate cert events not only from on-chain block processing but also from a \emph{virtual extension} of the canonical chain: using the votes in $\Sigma.V$, the following routine hypothesizes a block that carries the applicable subset on top of the current head and offers the resulting cert-event descriptors to \updateForkChoiceRoot.
 The virtual block is never inserted into $\Sigma.\T$ and the hypothetical state is discarded; only $(\Sigma.R,\, \Sigma.\key_R)$ may change, via the standard cert-key guard.
@@ -987,7 +976,7 @@ The virtual block is never inserted into $\Sigma.\T$ and the hypothetical state 
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 \Function{\updateRootFromVotes}{$\Sigma,\; \Omega$}
-  \State $L \gets \getHead(\Sigma,\; \Omega)$
+  \State $L \gets \getConfirmed(\Sigma,\; \Omega)$
   \State $\sigma' \gets \Sigma.\sigma[L]$ \Comment{working copy, not persisted}
   \State $V' \gets \{v \in \Sigma.V : v.\height = \sigma'.h \land v.\target \preceq L \land v.\target.\slot \geq \sigma'.s_h\}$ \Comment{fresh on $\sigma'$}
   \State let $B_V$ be a virtual block with $\parent = L$, $\slot = \sigma'.s + 1$, and votes~$V'$
@@ -1057,11 +1046,11 @@ During the portion of slot~$k$ preceding $\vote(k)$, $\syncer(k)$ runs the \emph
 If $\syncer(k)$ is honest, then there exists a store $\comm{\Sigma}^{\vote(k)}$ such that every honest validator~$i$ has $\Sigma_i = \comm{\Sigma}^{\vote(k)}$ at time $\vote(k)$.
 \end{assumption}
 
-By \Cref{thm:orderindep} applied to $\comm{\Sigma}^{\vote(k)}$, if additionally $f < n/3$ and \getHead is deterministic, the components $(R, F, C_J, C_N)$ are common to every honest validator at $\vote(k)$.
+By \Cref{thm:orderindep} applied to $\comm{\Sigma}^{\vote(k)}$, if additionally $f < n/3$ and \getConfirmed is deterministic, the components $(R, F, C_J, C_N)$ are common to every honest validator at $\vote(k)$.
 
 \begin{definition}[Target function]\label{rev:def:getTarget}
-$\getTarget(\Sigma, \Omega)$ returns the target~$T_c$ as assigned on line~\ref{line:unlocked-target} of \constructVote{} (\Cref{alg:voting-rule}) applied to~$\Sigma$ and computed with respect to~$\Omega$: an arbitrarily chosen ancestor of $\getHead(\Sigma, \Omega)$ at state-height such that $\sigma[\getHead(\Sigma, \Omega)].h = \sigma[\getTarget(\Sigma, \Omega)].h$.
-In particular, $\getTarget(\Sigma, \Omega) \preceq \getHead(\Sigma, \Omega)$.
+$\getTarget(\Sigma, \Omega)$ returns the target~$T_c$ as assigned on line~\ref{line:unlocked-target} of \constructVote{} (\Cref{alg:voting-rule}) applied to~$\Sigma$ and computed with respect to~$\Omega$: an arbitrarily chosen ancestor of $\getConfirmed(\Sigma, \Omega)$ at state-height such that $\sigma[\getConfirmed(\Sigma, \Omega)].h = \sigma[\getTarget(\Sigma, \Omega)].h$.
+In particular, $\getTarget(\Sigma, \Omega) \preceq \getConfirmed(\Sigma, \Omega)$.
 \end{definition}
 
 \paragraph{Modified \constructVote.}
@@ -1551,12 +1540,12 @@ By view-merge, no honest's view contains a bit-$1$ cert at height~$h$ at any tim
 % Assume:
 % \begin{enumerate}
 %   \item $f < n/3$ and honest validators follow \Cref{def:voting-rule};
-%   \item \getHead is deterministic;
+%   \item \getConfirmed is deterministic;
 %   \item $\start(k) - \Delta \geq \GST$;
-%   \item $\syncer(k)$ and $\syncer(k+1)$ are honest; let $\comm{\Sigma}^{\vote(k)}, \comm{\Sigma}^{\vote(k+1)}$ be the common stores and $\comm{H}^{\vote(k)} \coloneqq \getHead(\comm{\Sigma}^{\vote(k)}, \Omega)$;
+%   \item $\syncer(k)$ and $\syncer(k+1)$ are honest; let $\comm{\Sigma}^{\vote(k)}, \comm{\Sigma}^{\vote(k+1)}$ be the common stores and $\comm{H}^{\vote(k)} \coloneqq \getConfirmed(\comm{\Sigma}^{\vote(k)}, \Omega)$;
 %   \item no honest has cast any vote at height $> \comm{H}^{\vote(k)}.h$ at any time strictly before $\vote(k)$;
-%   \item at $\start(k+1)$, \getHead applied to $\syncer(k+1)$'s store returns a chain $X \succeq \comm{H}^{\vote(k)}$ such that every vote cast at $\vote(k)$ by an honest validator with target $\preceq \comm{H}^{\vote(k)}$ is included in~$X$;
-%   \item by $\start(k+2) - \Delta$, in every honest validator's view, there exists a chain $X' \succeq X$ such that every vote cast at $\vote(k+1)$ by an honest validator with target $\preceq \comm{H}^{\vote(k+1)}$ is included in~$X'$, where $\comm{H}^{\vote(k+1)} \coloneqq \getHead(\comm{\Sigma}^{\vote(k+1)}, \Omega)$.
+%   \item at $\start(k+1)$, \getConfirmed applied to $\syncer(k+1)$'s store returns a chain $X \succeq \comm{H}^{\vote(k)}$ such that every vote cast at $\vote(k)$ by an honest validator with target $\preceq \comm{H}^{\vote(k)}$ is included in~$X$;
+%   \item by $\start(k+2) - \Delta$, in every honest validator's view, there exists a chain $X' \succeq X$ such that every vote cast at $\vote(k+1)$ by an honest validator with target $\preceq \comm{H}^{\vote(k+1)}$ is included in~$X'$, where $\comm{H}^{\vote(k+1)} \coloneqq \getConfirmed(\comm{\Sigma}^{\vote(k+1)}, \Omega)$.
 % \end{enumerate}
 % Then at $\vote(k+2)$, every honest validator has:
 % \begin{enumerate}
@@ -1843,11 +1832,11 @@ Invoking the appropriate sub-lemma at slot~$k+1$ places the system in a healed s
 \end{proof}
 
 \begin{remark}[Why the dual-height extension is needed]\label{rev:rem:dual-vote-needed}
-Without the slot-$k$ dual-height extension, the \Cref{rev:cor:processed-height-bound} bound only constrains canonical state-heights to $\{h, h+1\}$, but does not force them to agree across honest. The adversary can split honest \getTarget{}s between the two heights via the per-validator $\Omega$ component of $\getHead(\Sigma, \Omega)$, so the slot-$k$ honest contributions split between two heights:
+Without the slot-$k$ dual-height extension, the \Cref{rev:cor:processed-height-bound} bound only constrains canonical state-heights to $\{h, h+1\}$, but does not force them to agree across honest. The adversary can split honest \getTarget{}s between the two heights via the per-validator $\Omega$ component of $\getConfirmed(\Sigma, \Omega)$, so the slot-$k$ honest contributions split between two heights:
 \[
   h^*_h + h^*_{h+1} \;=\; n - f, \qquad h^*_h, h^*_{h+1} \;\geq\; 0.
 \]
-A same-slot cert at height $h^* \in \{h, h+1\}$ requires $\geq 2n/3$ contributors at $h^*$. Together with at most $f$ adversarial contributions, the threshold becomes $h^*_{h^*} \geq 2n/3 - f$. Both thresholds met simultaneously requires $h^*_h + h^*_{h+1} \geq 4n/3 - 2f$, i.e., $f \geq n/3$, contradicting $f < n/3$; so at most one height can carry a cert. The adversary can in fact split so that \emph{neither} reaches the threshold (e.g., $h^*_h = h^*_{h+1} = (n-f)/2$, giving honest mass $(n-f)/2 + f = (n+f)/2 < 2n/3$), blocking progress entirely. The split survives view-merge unchanged --- view-merge fixes $\Sigma$ but not the $\Omega$ argument of $\getHead$ --- so neither extra honest syncers nor extra slots resolve it.
+A same-slot cert at height $h^* \in \{h, h+1\}$ requires $\geq 2n/3$ contributors at $h^*$. Together with at most $f$ adversarial contributions, the threshold becomes $h^*_{h^*} \geq 2n/3 - f$. Both thresholds met simultaneously requires $h^*_h + h^*_{h+1} \geq 4n/3 - 2f$, i.e., $f \geq n/3$, contradicting $f < n/3$; so at most one height can carry a cert. The adversary can in fact split so that \emph{neither} reaches the threshold (e.g., $h^*_h = h^*_{h+1} = (n-f)/2$, giving honest mass $(n-f)/2 + f = (n+f)/2 < 2n/3$), blocking progress entirely. The split survives view-merge unchanged --- view-merge fixes $\Sigma$ but not the $\Omega$ argument of $\getConfirmed$ --- so neither extra honest syncers nor extra slots resolve it.
 
 The dual-height extension forces every honest to contribute at \emph{both} heights, raising each height's honest count to $n - f > 2n/3$ and guaranteeing a cert at height $h+1$. The extension is restricted to slot~$k$ because exactly one ``alignment slot'' is enough: post-slot-$k$, the cert at $h+1$ has fired, $R$ has advanced, and standard view-merge dynamics realign honest \getTarget{}s for slots $k+1, k+2, \ldots$ without further dual-voting.
 \end{remark}
