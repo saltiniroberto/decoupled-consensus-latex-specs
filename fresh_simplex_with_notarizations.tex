@@ -1939,6 +1939,7 @@ A tempting refinement of \Cref{def:voting-rule} is the following ``conditional d
 The rule fails at its premise: if $\getConfirmed_i = T$ has state-height $h$, no chain in $\Sigma_i.\T$ extends $T$ to a block at state-height $h+1$. By construction, $\getConfirmed$ is the deepest target on the canonical chain $\sigma_i.L \succeq T$, and $\sigma[\getConfirmed].h$ is the canonical state-height; if some $T' \succeq T$ on a chain in $\Sigma_i.\T$ had $\sigma[T'].h = h+1$, then $\getConfirmed$ would itself sit at state-height $\geq h+1$, contradicting $\sigma[\getConfirmed].h = h$. So the ``additionally vote at $h+1$'' branch never fires for the validators it was meant to recruit, and the rule reduces to \Cref{def:voting-rule} on those validators --- leaving the split untouched.
 \end{remark}
 
+\appendix
 
 \section{View-merge mechanism}\label{app:view-merge}
 

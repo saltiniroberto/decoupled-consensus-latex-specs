@@ -2024,6 +2024,8 @@ The relationships are:
 \end{itemize}
 The takeaway for the AC-layer interface is that the freshness predicate is a no-op on canonical-extending blocks for honest votes: when designing the chain-producing layer ($\getConfirmed$ and any block-proposal mechanism feeding it), the only obligations are inclusion of honest votes and view-convergence; the freshness gate adds no further constraint.
 
+\appendix
+
 \section{View-merge mechanism}\label{app:view-merge}
 
 This appendix details the view-merge mechanism abstracted by \Cref{rev:ass:view-merge} and discharges that assumption under a synchronous-slot hypothesis.
