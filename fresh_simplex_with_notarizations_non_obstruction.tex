@@ -1963,32 +1963,33 @@ Write $\Delta_{FG} \coloneqq \Delta + \Delta_{AC}$ for the FG slot duration. We 
 Under uniform slot durations, $\mathrm{AC}_{\mathrm{tar}}$ of slot~$k$ coincides with $\mathrm{AC}_{\mathrm{inc}}$ of slot~$k-1$.
 
 \begin{figure}[H]
-\caption{Timing for one FG round under AC--FG alignment, illustrated for $c = 1$ ($\Delta = \Delta_{AC}$). Boxes are the AC slots within FG slot~$k$; $\mathrm{AC}_{\mathrm{tar}}$ delivers the uniform tip $B_{\mathrm{tar}}$ confirmed at $\vote(k)$; the middle slot covers slot-$k$ vote propagation; $\mathrm{AC}_{\mathrm{inc}}$ aggregates the slot-$k$ honest votes into $B_{\mathrm{inc}}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k+1)$.}\label{rev:fig:per-round-timing}
+\caption{Timing for one FG round under AC--FG alignment, illustrated for $c = 2$ ($\Delta = 2\Delta_{AC}$). Boxes are the AC slots within FG slot~$k$; $\mathrm{AC}_{\mathrm{tar}}$ delivers the uniform tip $B_{\mathrm{tar}}$ confirmed at $\vote(k)$; the dashed region covers slot-$k$ vote propagation, spanning $c = 2$ AC slots (dotted boundary); $\mathrm{AC}_{\mathrm{inc}}$ aggregates the slot-$k$ honest votes into $B_{\mathrm{inc}}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k+1)$.}\label{rev:fig:per-round-timing}
 \begin{center}
-\begin{tikzpicture}[scale=1.05, every node/.style={font=\small}]
-  \draw[->, thick] (-1.7, 0) -- (9.3, 0) node[right] {time};
-  \foreach \x/\lbl in {0/{$\GST$}, 1/{$\start(k)$}, 3/{$\vote(k)$}, 5/{$\vote(k){+}\Delta$}, 7/{$\vote(k{+}1)$}} {
+\begin{tikzpicture}[scale=0.85, every node/.style={font=\small}]
+  \draw[->, thick] (-1.7, 0) -- (12.5, 0) node[right] {time};
+  \foreach \x/\lbl in {0/{$\GST$}, 1/{$\start(k)$}, 5/{$\vote(k)$}, 9/{$\vote(k){+}\Delta$}, 11/{$\vote(k{+}1)$}} {
     \draw[thick] (\x, -0.12) -- (\x, 0.12);
     \node[below=2pt] at (\x, -0.15) {\lbl};
   }
-  \draw[thick, fill=xblue] (1, 0.45) rectangle (3, 1.0);
-  \node at (2, 0.725) {$\mathrm{AC}_{\mathrm{tar}}$};
-  \draw[thick, fill=xlightgray, dashed] (3, 0.45) rectangle (5, 1.0);
-  \node at (4, 0.725) {(votes propagating)};
-  \draw[thick, fill=xgreen] (5, 0.45) rectangle (7, 1.0);
-  \node at (6, 0.725) {$\mathrm{AC}_{\mathrm{inc}}$};
+  \draw[thick, fill=xblue] (3, 0.45) rectangle (5, 1.0);
+  \node at (4, 0.725) {$\mathrm{AC}_{\mathrm{tar}}$};
+  \draw[thick, fill=xlightgray, dashed] (5, 0.45) rectangle (9, 1.0);
+  \draw[thick, dotted] (7, 0.45) -- (7, 1.0);
+  \node at (7, 0.725) {(votes propagating)};
+  \draw[thick, fill=xgreen] (9, 0.45) rectangle (11, 1.0);
+  \node at (10, 0.725) {$\mathrm{AC}_{\mathrm{inc}}$};
   \begin{scope}[yshift=1.35cm]
-    \draw[<->, thick] (1, 0) -- (3, 0);
-    \node[above] at (2, 0) {$\Delta_{AC}$};
     \draw[<->, thick] (3, 0) -- (5, 0);
-    \node[above] at (4, 0) {$\Delta$};
-    \draw[<->, thick] (5, 0) -- (7, 0);
-    \node[above] at (6, 0) {$\Delta_{AC}$};
+    \node[above] at (4, 0) {$\Delta_{AC}$};
+    \draw[<->, thick] (5, 0) -- (9, 0);
+    \node[above] at (7, 0) {$\Delta = c \cdot \Delta_{AC}$};
+    \draw[<->, thick] (9, 0) -- (11, 0);
+    \node[above] at (10, 0) {$\Delta_{AC}$};
   \end{scope}
-  \draw[<-, thick, red!75] (3, -0.85) -- (3, -0.18);
-  \node[below, red!75, align=center, font=\footnotesize] at (3, -0.85) {$B_{\mathrm{tar}}$ confirmed\\ in every honest's view};
-  \draw[<-, thick, red!75] (7, -0.85) -- (7, -0.18);
-  \node[below, red!75, align=center, font=\footnotesize] at (7, -0.85) {$B_{\mathrm{inc}}$ confirmed,\\ cert event fired};
+  \draw[<-, thick, red!75] (5, -0.85) -- (5, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (5, -0.85) {$B_{\mathrm{tar}}$ confirmed\\ in every honest's view};
+  \draw[<-, thick, red!75] (11, -0.85) -- (11, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (11, -0.85) {$B_{\mathrm{inc}}$ confirmed,\\ cert event fired};
 \end{tikzpicture}
 \end{center}
 \end{figure}
