@@ -1939,90 +1939,131 @@ A tempting refinement of \Cref{def:voting-rule} is the following ``conditional d
 The rule fails at its premise: if $\getConfirmed_i = T$ has state-height $h$, no chain in $\Sigma_i.\T$ extends $T$ to a block at state-height $h+1$. By construction, $\getConfirmed$ is the deepest target on the canonical chain $\sigma_i.L \succeq T$, and $\sigma[\getConfirmed].h$ is the canonical state-height; if some $T' \succeq T$ on a chain in $\Sigma_i.\T$ had $\sigma[T'].h = h+1$, then $\getConfirmed$ would itself sit at state-height $\geq h+1$, contradicting $\sigma[\getConfirmed].h = h$. So the ``additionally vote at $h+1$'' branch never fires for the validators it was meant to recruit, and the rule reduces to \Cref{def:voting-rule} on those validators --- leaving the split untouched.
 \end{remark}
 
+\section{Per-round justification on-chain}\label{sec:per-round-justification}
 
-\section{Freshness non-obstruction}\label{sec:freshness-non-obstruction}
+This section identifies sufficient conditions under which a justification cert event fires on-chain in a single FG slot, observed in every honest validator's view by the start of the next round, in time for finality at the new height to begin accumulating. The argument is parametric in the available chain (AC) on which $\getConfirmed$ depends; we assume only that the AC has slots of fixed cadence $\Delta_{AC}$ aligned with FG voting times.
 
-This section consolidates a result implicit in the leak-fairness and healing arguments of \Cref{sec:healing} into a stand-alone statement: the freshness predicate of \processVote (Figure~\ref{alg:state-machine}) does not reject honest votes when those votes are included on a canonical-extending block at the same state-height.
-Equivalently, in the interaction between the finality gadget and the available chain --- the chain returned by $\getConfirmed(\Sigma, \Omega)$, however $\Omega$ is supplied --- the freshness gate imposes no obligation beyond what inclusion and view-convergence already impose: a justification or prefix-notarization quorum on canonical can fail to form only via (i) honest vote non-inclusion in the next canonical-extending block, (ii) target divergence among honest validators, or (iii) insufficient honest participation, never as a consequence of an otherwise well-formed honest vote being filtered out.
+\subsection{Timing model}\label{rev:subsec:per-round-timing}
 
-The result is stated in two layers --- a per-validator version (\Cref{lem:freshness-honest-local}) and a multi-validator version under a common-upper-bound canonical (\Cref{lem:freshness-honest-global}) --- and capped by a quorum-formation corollary (\Cref{cor:freshness-liveness}).
+We extend the FG timing of \Cref{rev:def:slots} with an underlying AC slot structure parametrized by a single constant $\Delta_{AC}$: the duration of one AC slot, defined from ``AC slot starts'' to ``block proposed in that slot is confirmed in every honest validator's view''. This subsumes the proposer's slot operation and post-proposal confirmation into one parameter (replacing the separate $\delta_c$ of \Cref{rev:def:confirmation-delay} for this section's purposes).
 
-\begin{lemma}[Per-validator freshness for honest votes]\label{lem:freshness-honest-local}
-Unless $\geq n/3$ validators are slashable: assume $f < n/3$ and all honest validators follow \Cref{def:voting-rule}.
-Let $i$ be an honest validator with local store $\Sigma$ and auxiliary state $\Omega$; let $T_i \coloneqq \getConfirmed(\Sigma, \Omega)$, $h_c^{(i)} \coloneqq \sigma[T_i].h$, and $v_i$ the vote $i$ produces at the current slot.
-For every chain $T' \succeq T_i$ with $\sigma[T'].h = h_c^{(i)}$:
+\paragraph{AC--FG timing alignment.}
+We require $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, with $\vote(k)$ landing on an AC slot boundary, and the FG slot duration $\vote(j+1) - \vote(j) \geq \Delta + \Delta_{AC}$ uniformly across~$j$. Two distinguished AC slots per FG round (\Cref{rev:fig:per-round-timing}):
+\begin{itemize}
+  \item $\mathrm{AC}_{\mathrm{tar}}$ (target-uniformity slot): the AC slot ending exactly at $\vote(k)$, spanning $[\vote(k) - \Delta_{AC},\, \vote(k)]$.
+  \item $\mathrm{AC}_{\mathrm{inc}}$ (vote-inclusion slot): the AC slot starting exactly at $\vote(k) + \Delta$, spanning $[\vote(k) + \Delta,\, \vote(k+1)]$.
+\end{itemize}
+Under uniform slot durations, $\mathrm{AC}_{\mathrm{tar}}$ of slot~$k$ coincides with $\mathrm{AC}_{\mathrm{inc}}$ of slot~$k-1$.
+
+\begin{figure}[H]
+\caption{Timing for one FG round under AC--FG alignment, illustrated for $c = 1$ ($\Delta = \Delta_{AC}$). Boxes are the AC slots within FG slot~$k$; $\mathrm{AC}_{\mathrm{tar}}$ delivers the uniform tip $B_{\mathrm{tar}}$ confirmed at $\vote(k)$; the middle slot covers slot-$k$ vote propagation; $\mathrm{AC}_{\mathrm{inc}}$ aggregates the slot-$k$ honest votes into $B_{\mathrm{inc}}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k+1)$.}\label{rev:fig:per-round-timing}
+\begin{center}
+\begin{tikzpicture}[scale=1.05, every node/.style={font=\small}]
+  \draw[->, thick] (-1.7, 0) -- (9.3, 0) node[right] {time};
+  \foreach \x/\lbl in {0/{$\GST$}, 1/{$\start(k)$}, 3/{$\vote(k)$}, 5/{$\vote(k){+}\Delta$}, 7/{$\vote(k{+}1)$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt] at (\x, -0.15) {\lbl};
+  }
+  \draw[thick, fill=xblue] (1, 0.45) rectangle (3, 1.0);
+  \node at (2, 0.725) {$\mathrm{AC}_{\mathrm{tar}}$};
+  \draw[thick, fill=xlightgray, dashed] (3, 0.45) rectangle (5, 1.0);
+  \node at (4, 0.725) {(votes propagating)};
+  \draw[thick, fill=xgreen] (5, 0.45) rectangle (7, 1.0);
+  \node at (6, 0.725) {$\mathrm{AC}_{\mathrm{inc}}$};
+  \begin{scope}[yshift=1.35cm]
+    \draw[<->, thick] (1, 0) -- (3, 0);
+    \node[above] at (2, 0) {$\Delta_{AC}$};
+    \draw[<->, thick] (3, 0) -- (5, 0);
+    \node[above] at (4, 0) {$\Delta$};
+    \draw[<->, thick] (5, 0) -- (7, 0);
+    \node[above] at (6, 0) {$\Delta_{AC}$};
+  \end{scope}
+  \draw[<-, thick, red!75] (3, -0.85) -- (3, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (3, -0.85) {$B_{\mathrm{tar}}$ confirmed\\ in every honest's view};
+  \draw[<-, thick, red!75] (7, -0.85) -- (7, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (7, -0.85) {$B_{\mathrm{inc}}$ confirmed,\\ cert event fired};
+\end{tikzpicture}
+\end{center}
+\end{figure}
+
+For general $c \geq 1$, there are $c$ AC slots within $[\vote(k),\, \vote(k) + \Delta]$ during which slot-$k$ votes propagate; $\mathrm{AC}_{\mathrm{inc}}$ is the AC slot \emph{following} that interval.
+
+\subsection{Lemma}\label{rev:subsec:per-round-lemma}
+
+\begin{lemma}[Per-round justification on-chain]\label{rev:lem:per-round-justification}
+Assume:
 \begin{enumerate}
-  \item $v_i$ is fresh on $T'$ in the sense of \processVote (Figure~\ref{alg:state-machine}); and
-  \item if $T'$ is processed via \onBlock and includes $v_i$, and no $i$-vote with slot $> v_i.\slot$ is also included on $T'$, then in the post-\processBlock state $\sigma[T'].\ntargets[i] = v_i.\target$ and, when $v_i.\kind = \just$, $\sigma[T'].\jtargets[i] = v_i.\target$.
+  \item $f^{\vote(k+1)} < n/3$ and honest validators follow \Cref{def:voting-rule}.
+  \item The system is in a healed state at slot~$k$ with height~$\comm{h}$ (\Cref{rev:def:healed-state}).
+  \item $\start(k) - \Delta_{AC} \geq \GST$.
+  \item Every honest validator is online throughout $[\start(k) - \Delta_{AC},\, \vote(k+1)]$.
+  \item \emph{($\mathrm{AC}_{\mathrm{tar}}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\mathrm{tar}}$ is honest, producing block $B_{\mathrm{tar}}$, and no AC slot strictly between $\mathrm{AC}_{\mathrm{tar}}$ and $\vote(k)$ produces a block reaching any honest validator before $\vote(k)$. Equivalently: $\getConfirmed_v$ at $\vote(k) = B_{\mathrm{tar}}$ for every honest~$v$.
+  \item \emph{($\mathrm{AC}_{\mathrm{inc}}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\mathrm{inc}}$ is honest, includes every slot-$k$ honest vote, and produces a block $B_{\mathrm{inc}} \succeq B_{\mathrm{tar}}$.
+  \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta + \Delta_{AC}$ for every~$j$.
+  \item \emph{(Freshness of $h_c$):} no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$, where $h_c \coloneqq \sigma[B_{\mathrm{tar}}].h$.
+\end{enumerate}
+
+Then by time $\vote(k+1)$, in every honest validator's local view:
+\begin{enumerate}
+  \item[\textnormal{(C1)}] $B_{\mathrm{inc}}$ has been processed via $\onBlock$ and the justification cert event at $B_{\mathrm{tar}}$ has fired, with cert key $(h_c,\, 1,\, 0,\, B_{\mathrm{tar}}.\slot,\, \hash(B_{\mathrm{tar}}))$.
+  \item[\textnormal{(C2)}] $\sigma_v[\getConfirmed_v(\vote(k+1))].J = B_{\mathrm{tar}}$ and $\sigma_v[\getConfirmed_v(\vote(k+1))].h_j = h_c$.
+  \item[\textnormal{(C3)}] Every \mbox{(R1)} \just vote cast at $\vote(k+1)$ by an honest validator commits finalize-fields $(h_c,\, B_{\mathrm{tar}})$. Finality at height $h_c$ on $B_{\mathrm{tar}}$ begins accumulating at $\vote(k+1)$.
 \end{enumerate}
 \end{lemma}
 
-\begin{proof}
-\Cref{lem:canonical-fresh-honest-vote} gives $v_i.\target \preceq T_i$ with $\sigma[v_i.\target].h = h_c^{(i)}$.
-Fix $T' \succeq T_i$ with $\sigma[T'].h = h_c^{(i)}$:
-\begin{itemize}
-  \item $v_i.\height = h_c^{(i)} = \sigma[T'].h$;
-  \item $v_i.\target \preceq T_i \preceq T' = \sigma[T'].L$;
-  \item by \Cref{rem:fresh-equiv}, $\sigma[v_i.\target].h = \sigma[T'].h$ together with $v_i.\target \preceq T'$ gives $v_i.\target.\slot \geq \sigma[T'].s_h$.
-\end{itemize}
-All three conjuncts of the freshness predicate of \processVote hold, proving~(1).
+\subsection{Proof}\label{rev:subsec:per-round-proof}
 
-For~(2): no height advance fires while $\sigma[T'].h$ stays at $h_c^{(i)}$, so $\nslots$ retains its values from the last height advance into $h_c^{(i)}$ on $T'$'s chain (\Cref{lem:slotmono}); per-slot uniqueness of honest voting (\Cref{def:voting-rule}) ensures any prior $i$-vote at height $h_c^{(i)}$ folded on $T'$ before $v_i$ has slot $< v_i.\slot$, so the slot-gate $v_i.\slot > \sigma.\nslots[i]$ holds when \processVote folds $v_i$, and the assignment $\sigma.\ntargets[i] \gets v_i.\target$ fires (and, when $v_i.\kind = \just$, $\sigma.\jtargets[i] \gets v_i.\target$ fires).
-The added hypothesis prevents any later-slot $i$-vote from overwriting these assignments through the rest of \processBlock, so the post-state has $\sigma[T'].\ntargets[i] = v_i.\target$ and (if $v_i.\kind = \just$) $\sigma[T'].\jtargets[i] = v_i.\target$.
+\begin{proof}[Proof of \Cref{rev:lem:per-round-justification}]
+We proceed in five steps.
+
+\emph{Step 1: Honest validators cast unanimous \mbox{(R1)} \just votes for $B_{\mathrm{tar}}$ at $h_c$.}
+By~(4) every honest validator is online at $\vote(k)$. By~(5), $\getConfirmed_v$ at $\vote(k) = B_{\mathrm{tar}}$ uniformly across honest, so $h_c = \sigma[B_{\mathrm{tar}}].h$ is uniform. By~(8), no honest has previously cast at $h_c$, so the \mbox{(R1)} first-vote check fires for every honest. The target-selection clause yields $T_c = B_{\mathrm{tar}}$ either directly (unlocked) or via a lock; per-height justification uniqueness (\Cref{lem:just-unique-height}, applicable under~(1)) and \Cref{lem:no-finalize-without-just} imply that any lock-target at $h_c$ equals the unique block ever justified at $h_c$, which under~(5) and target compatibility is~$B_{\mathrm{tar}}$. Each honest~$i$ casts
+\[
+  v_i = (i,\; h_c,\; \cdot,\; B_{\mathrm{tar}},\; \just,\; f_h^i,\; f_t^i),
+\]
+and the count of honest validators is $\geq n - f^{\vote(k+1)} > 2n/3$.
+
+\emph{Step 2: $\mathrm{AC}_{\mathrm{inc}}$'s proposer receives every honest slot-$k$ vote.}
+By~(3), all messages in $[\vote(k),\, \vote(k+1)]$ are delivered within $\Delta$. Honest votes broadcast at $\vote(k)$ reach every honest validator (including $\mathrm{AC}_{\mathrm{inc}}$'s proposer) by $\vote(k) + \Delta$, which by~(7) coincides with the start of $\mathrm{AC}_{\mathrm{inc}}$.
+
+\emph{Step 3: $B_{\mathrm{inc}}$ is processed and confirmed in every honest's view by $\vote(k+1)$.}
+By~(6), $\mathrm{AC}_{\mathrm{inc}}$'s honest proposer includes every slot-$k$ honest vote in $B_{\mathrm{inc}} \succeq B_{\mathrm{tar}}$. By the definition of $\Delta_{AC}$, $B_{\mathrm{inc}}$ is confirmed in every honest's view by $\vote(k) + \Delta + \Delta_{AC}$. By~(7), $\vote(k+1) \geq \vote(k) + \Delta + \Delta_{AC}$, so confirmation lands by $\vote(k+1)$, and each honest validator has processed $B_{\mathrm{inc}}$ via $\onBlock$ by $\vote(k+1)$.
+
+\emph{Step 4: The justification cert event fires.}
+In each honest validator's $\onBlock(B_{\mathrm{inc}})$, the $\processSlot$ loop advances $\sigma'.s$ up to $B_{\mathrm{inc}}.\slot$. By~(8) no past honest votes at height $\geq h_c$ exist; combined with~(1) (dishonest alone is $\leq f < n/3 < 2n/3$), no $\geq 2n/3$ quorum at any height $\geq h_c$ has formed before this point, so no cert event at $h_c$ has fired in the path from $B_{\mathrm{tar}}$ to $B_{\mathrm{inc}}$. Hence $\sigma'.h = h_c$ throughout the loop and going into $\processBlock$.
+
+$\processBlock(\sigma',\, B_{\mathrm{inc}})$ folds in $B_{\mathrm{inc}}$'s votes, including the $\geq 2n/3$ honest slot-$k$ votes (Step~1, included by~(6)). For each such vote $v_i$:
+\begin{itemize}
+  \item \emph{Freshness}: $\sigma'.h = h_c = v_i.\height$; $v_i.\target = B_{\mathrm{tar}} \preceq B_{\mathrm{inc}} = \sigma'.L$; $v_i.\target.\slot = B_{\mathrm{tar}}.\slot \geq \sigma'.s_h$ (since $B_{\mathrm{tar}}$ itself is at state-height $h_c$).
+  \item \mbox{(R1)} clause: $\sigma'.\jtargets[i] \gets B_{\mathrm{tar}}$.
+\end{itemize}
+After folding, $|\{i : \sigma'.\jtargets[i] = B_{\mathrm{tar}}\}| \geq 2n/3$.
+
+The next $\processSlot$ tick at slot $B_{\mathrm{inc}}.\slot + 1$ (i.e.\ at real time $\vote(k+1) =$ start of the AC slot following $\mathrm{AC}_{\mathrm{inc}}$) calls $\processHeight$, whose justification branch fires at $T = B_{\mathrm{tar}}$:
+\[
+  \sigma.J \gets B_{\mathrm{tar}},\quad \sigma.h_j \gets h_c,\quad \sigma.N \gets B_{\mathrm{tar}},\quad \sigma.h_n \gets h_c,\quad \sigma.s_n \gets 0,\quad \sigma.h \gets h_c + 1,\quad \sigma.s_h \gets B_{\mathrm{inc}}.\slot.
+\]
+The cert event has key $(h_c,\, 1,\, 0,\, B_{\mathrm{tar}}.\slot,\, \hash(B_{\mathrm{tar}}))$ and is offered to $\updateForkChoiceRoot$. This proves~(C1).
+
+\emph{Step 5: Finality begins accumulating at $\vote(k+1)$.}
+By Step~3, every honest has $B_{\mathrm{inc}}$ in its store by $\vote(k+1)$. By Step~4, the cert event has fired, so the post-cert state on $B_{\mathrm{inc}}$'s chain has $J = B_{\mathrm{tar}}$, $h_j = h_c$. By target dominance (\Cref{rev:prop:target-dominance}; preamble discharged by~(2) and~(5) placing all honest $R_v^{\vote(k)}$ on $B_{\mathrm{tar}}$'s chain, premise discharged by~(5) giving $\getConfirmed_v^{\vote(k)} = B_{\mathrm{tar}}$ uniformly and HAP at slot~$k$ given by~(6) under~(7)), $\getConfirmed_v$ at $\vote(k+1) \succeq B_{\mathrm{inc}} \succeq B_{\mathrm{tar}}$ for every honest~$v$, on the chain extending $B_{\mathrm{inc}}$. Hence $\sigma_v[\getConfirmed_v(\vote(k+1))].J = B_{\mathrm{tar}}$ and $.h_j = h_c$, proving~(C2).
+
+At $\vote(k+1)$ every honest validator runs $\constructVote$. The canonical state-height has advanced to $h_c + 1$ (Step~4), and by~(8) the validator has not previously cast at any height $\geq h_c$, so in particular not at $h_c + 1$; hence the \mbox{(R1)} branch fires. The finalize-field conditional reads $(h_j, J) = (h_c,\, B_{\mathrm{tar}})$ from canonical state and checks that every prior $v \in V$ at height $h_j = h_c$ has target $J = B_{\mathrm{tar}}$. By~(8) the only such prior vote is the slot-$k$ \mbox{(R1)} from Step~1, with target $B_{\mathrm{tar}}$, satisfying the check. Thus $(f_h, f_t) = (h_c,\, B_{\mathrm{tar}})$, and the \mbox{(R1)} at $\vote(k+1)$ commits finalize-fields $(h_c,\, B_{\mathrm{tar}})$. Once included on a chain extending $B_{\mathrm{inc}}$, this contribution adds to $\sigma.P$ at $h_j = h_c$. Finality at $h_c$ on $B_{\mathrm{tar}}$ begins accumulating, proving~(C3).
 \end{proof}
 
-\begin{lemma}[Common-view freshness]\label{lem:freshness-honest-global}
-Unless $\geq n/3$ validators are slashable: assume the hypotheses of \Cref{lem:freshness-honest-local}, and additionally that there exists a block $T$ with $\sigma[T].h \eqqcolon h_c$ such that, for every honest validator $i$, $T_i \preceq T$ and $\sigma[T_i].h = h_c$ (where $T_i \coloneqq \getConfirmed(\Sigma_i, \Omega_i)$ for $i$'s local store and auxiliary state).
-Let $V_k$ denote the multiset of slot-$\vote(k)$ votes produced by honest validators (so the ``current slot'' of \Cref{lem:freshness-honest-local} is identified with $\vote(k)$).
-For every chain $T' \succeq T$ with $\sigma[T'].h = h_c$:
-\begin{enumerate}
-  \item every $v \in V_k$ is fresh on $T'$; and
-  \item if $T'$ is processed via \onBlock and includes $v$, and $T'$ contains no honest validator's vote at slot $> \vote(k)$, then in the post-\processBlock state $\sigma[T'].\ntargets[v.\validator] = v.\target$ and, when $v.\kind = \just$, $\sigma[T'].\jtargets[v.\validator] = v.\target$.
-\end{enumerate}
-\end{lemma}
+\subsection{Remarks}\label{rev:subsec:per-round-remarks}
 
-\begin{proof}
-By hypothesis, $T' \succeq T \succeq T_i$ for every honest $i$, with $\sigma[T'].h = h_c = \sigma[T_i].h = h_c^{(i)}$.
-\Cref{lem:freshness-honest-local}(1) applied to each honest $i$ delivers~(1); for~(2), the added ``no later honest vote'' hypothesis specializes \Cref{lem:freshness-honest-local}(2)'s side condition for every honest contributor.
-\end{proof}
+\paragraph{State-height alignment falls out.} Hypothesis~(5) gives uniform $B_{\mathrm{tar}}$ across honest, and combined with~(2) and~(3) every honest's $\sigma$ map is synchronized; hence $h_c = \sigma[B_{\mathrm{tar}}].h$ is well-defined and uniform without separate hypothesis.
 
-\begin{remark}[Discharging the common-upper-bound hypothesis]\label{rem:freshness-shared-canonical}
-The common-upper-bound hypothesis of \Cref{lem:freshness-honest-global} requires a block $T$ that lies $\succeq$-above every honest validator's $\getConfirmed$ output at the same state-height.
-View-merge alone (\Cref{rev:ass:view-merge}) does not deliver $T$ directly: it equates $\Sigma_i$ across honest, but $\getConfirmed(\Sigma, \Omega)$ depends on $\Omega$, and \Cref{rev:ass:view-merge} does not transfer $\Omega$.
-Two routes to $T$:
-\begin{enumerate}
-  \item (Hypothetical strengthening, not currently in the spec.) Supplement view-merge with a deterministic rule that fixes $\Omega$ from $\Sigma$, so that $\getConfirmed$ becomes a function of $\Sigma$ alone; under view-merge this then equates the per-validator outputs, and any of them serves as $T$.
-  \item (Within the spec.) Use the AC-level guarantees of \Cref{rev:sec:getConfirmed-properties}: \Cref{rev:prop:getConfirmed-compat} establishes that honest validators' $\getConfirmed$ outputs at $\vote(k)$ are pairwise $\sim$-compatible under \OHM and a stable root.
-  Combined with uniform state-height $\sigma[T_i].h = h_c$ across honest $i$ (which sits inside the healed-state notion of \Cref{rev:def:healed-state}), this places all the $T_i$ on a single chain in the height-$h_c$ band, so a deepest such $T_i$ exists and serves as $T$ with $T_j \preceq T$ for every honest $j$.
-\end{enumerate}
-\end{remark}
+\paragraph{Lock-clean falls out.} Per-height justification uniqueness (\Cref{lem:just-unique-height}, requiring $f < n/3$ + voting rule, both in~(1)) and \Cref{lem:no-finalize-without-just} together imply that any honest validator locked at $h_c$ has lock-target $= B_{\mathrm{tar}}$.
 
-\begin{corollary}[Freshness does not obstruct justification or notarization]\label{cor:freshness-liveness}
-Unless $\geq n/3$ validators are slashable: under the hypotheses of \Cref{lem:freshness-honest-global}, suppose $T' \succeq T$ with $\sigma[T'].h = h_c$ is processed via \onBlock, includes the slot-$\vote(k)$ votes of $\geq 2n/3$ honest validators sharing a common target $T_\ast \preceq T$, and contains no honest validator's vote at slot $> \vote(k)$.
-Then state-height advances to $h_c + 1$ at the next \processSlot invocation on $T'$'s chain, via either:
-\begin{itemize}
-  \item the justification branch of \processHeight, if those honest \just votes alone reach $\geq 2n/3$ in $\jtargets$ at $T_\ast$ (yielding $\sigma.J = \sigma.N = T_\ast$); or
-  \item the prefix-notarization branch, otherwise (yielding $\sigma.N = T_\ast$ and $\sigma.s_n = \vote(k)$, since every honest slot-$\vote(k)$ vote carries $\slot = \vote(k)$ via \Cref{def:voting-rule}).
-\end{itemize}
-The common-target hypothesis $v.\target = T_\ast$ for $\geq 2n/3$ honest is not arbitrary: under \Cref{lem:freshness-honest-global}, an unlocked honest $i$ has $T_c = \getConfirmed(\Sigma_i, \Omega_i) = T_i \preceq T$ via the unlocked target-selection clause of \Cref{def:voting-rule} (line~\ref{line:unlocked-target}), and a locked honest $i$ collapses onto $T_\ast = R \preceq T$ via \Cref{lem:canonical-fresh-honest-vote}'s analysis under $h_c = h_R$, $\bit_R = 1$; so the natural common $T_\ast$ in the all-unlocked case is the deepest honest $T_i$ at $h_c$ (which equals $T$ when one chooses $T$ that way in \Cref{rem:freshness-shared-canonical}).
-\end{corollary}
+\paragraph{Chained slots.} Under uniform FG slot duration~(7), $\mathrm{AC}_{\mathrm{tar}}$ of slot~$k$ coincides with $\mathrm{AC}_{\mathrm{inc}}$ of slot~$k-1$. Iterating the lemma across slots $k, k+1, k+2, \ldots$, the per-slot AC honesty count drops from two ($\mathrm{AC}_{\mathrm{tar}}$ and $\mathrm{AC}_{\mathrm{inc}}$) to one ($\mathrm{AC}_{\mathrm{inc}}$): $\mathrm{AC}_{\mathrm{tar}}$ of the next slot is inherited from $\mathrm{AC}_{\mathrm{inc}}$ of the current slot. Likewise hypothesis~(8) for the next slot's $h_c' = h_c + 1$ is automatic: the cert at $h_c$ in this slot establishes the $h_c$-advance at the start of the next slot, and~(8) for the next slot rules out the corresponding past votes since none can have been cast at $h_c + 1$ before the chain reached state-height $h_c + 1$ (\Cref{rev:cor:processed-height-bound}).
 
-\begin{proof}
-\Cref{lem:freshness-honest-global}(2) applied to each contributor populates $\sigma[T'].\ntargets[i] = T_\ast$ with $\sigma[T'].\nslots[i] = \vote(k)$ for every honest contributor, and additionally $\sigma[T'].\jtargets[i] = T_\ast$ for those casting \just.
-The next \processSlot calls \processHeight: if $|\{i : \sigma.\jtargets[i] = T_\ast\}| \geq 2n/3$, the justification branch fires by \Cref{def:justification}; otherwise the prefix-notarization branch fires by \Cref{def:notarization} at firing target $T^\ast = T_\ast$ (the $\preceq$-maximum block whose set of covering contributors at common $\nslots$ exceeds $2n/3$, which is exactly $T_\ast$ since $\geq 2n/3$ honest contributors have $\ntargets[i] = T_\ast$ at $\nslots[i] = \vote(k)$ and no $T'' \succ T_\ast$ can collect a $2n/3$-coverage quorum given $f < n/3$).
-\end{proof}
+\paragraph{Discharging hypothesis~(5).} The ``uniform tip with no later splitting block'' condition is an AC-level safety/liveness property. Different ACs satisfy it differently --- Simplex-style ACs do under sync $+$ honest $\mathrm{AC}_{\mathrm{tar}}$; longest-chain ACs require stronger conditions. The lemma is parametric in this discharge.
 
-\paragraph{Adaptation of earlier sections.}
-This section is self-contained: no edit to the earlier sections is required for the proofs above to compile or for the statements to hold.
-The relationships are:
-\begin{itemize}
-  \item \Cref{lem:freshness-honest-local} repackages \Cref{lem:canonical-fresh-honest-vote} (per-validator canonical-freshness on local extensions) and additionally draws out conclusion~(2) about the post-\processBlock state under a no-later-vote side condition, which the original lemma stops short of stating.
-  \item \Cref{lem:freshness-honest-global} and \Cref{cor:freshness-liveness} jointly factor out the reasoning embedded in Step~1 of \Cref{rev:lem:healing-one-slot} --- common honest target $T_\ast$ on canonical, plus firing of justification or prefix notarization on the next-slot block.
-  \item A future revision could shorten the proof of \Cref{rev:lem:healing-one-slot} by citing \Cref{cor:freshness-liveness} for the ``on $X$ the quorum fires'' step. This is a stylistic refactor and changes no conclusion.
-  \item The same conclusion applies to the virtual-block mechanism \updateRootFromVotes{} (\Cref{rev:sec:healing-protocol}): it explicitly filters $\Sigma.V$ by the same freshness predicate before constructing the virtual block, so under \Cref{lem:freshness-honest-global}'s hypotheses the filter is a no-op on honest votes and the corollary's quorum-formation conclusion transfers to virtual cert events --- with the difference that \updateRootFromVotes{} calls \processHeight on the working copy in-line (within \Cref{rev:sec:healing-protocol}'s pseudocode), so the cert event fires within the same call rather than at the next \processSlot.
-  \item The discharge of \Cref{rev:ass:view-merge} under synchronous slots and an honest syncer (\Cref{rev:lem:view-merge}) flows through unchanged: when that lemma applies and the common-upper-bound hypothesis on $\getConfirmed$ outputs is established (\Cref{rem:freshness-shared-canonical}), \Cref{lem:freshness-honest-global} and \Cref{cor:freshness-liveness} apply.
-\end{itemize}
-The takeaway for the AC-layer interface is that the freshness predicate is a no-op on canonical-extending blocks for honest votes: when designing the chain-producing layer ($\getConfirmed$ and any block-proposal mechanism feeding it), the only obligations are inclusion of honest votes and view-convergence; the freshness gate adds no further constraint.
+\paragraph{Discharging hypothesis~(8).} For a standalone single-slot lemma~(8) must be assumed explicitly. Under chained iterations from a healed state with cert at height $\comm{h}$, hypothesis~(8) is maintained automatically across slots, as noted in the chained-slots remark above.
+
+\paragraph{Required changes to existing sections.} The lemma is self-contained and additive: it uses existing definitions (\Cref{def:voting-rule}, \Cref{rev:def:healed-state}) and existing lemmas/properties (\Cref{lem:just-unique-height}, \Cref{lem:no-finalize-without-just}, \Cref{rev:prop:target-dominance}, \Cref{rev:cor:processed-height-bound}). The new constant $\Delta_{AC}$ is local to this section and supersedes $\delta_c$ (\Cref{rev:def:confirmation-delay}) for the lemma's purposes; the spec's existing $\delta_c$ uses elsewhere remain valid as long as $\Delta_{AC}$ subsumes one AC slot operation plus $\delta_c$ confirmation. No edits to other sections are required.
 
 \appendix
 
