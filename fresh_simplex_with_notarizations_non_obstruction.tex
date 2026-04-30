@@ -1955,7 +1955,7 @@ This section identifies sufficient conditions under which a justification cert e
 We extend the FG timing of \Cref{rev:def:slots} with an underlying AC slot structure parametrized by a single constant $\Delta_{AC}$: the duration of one AC slot, defined from ``AC slot starts'' to ``block proposed in that slot is confirmed in every honest validator's view''. This subsumes the proposer's slot operation and post-proposal confirmation into one parameter (replacing the separate $\delta_c$ of \Cref{rev:def:confirmation-delay} for this section's purposes).
 
 \paragraph{AC--FG timing alignment.}
-We require $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, with $\vote(k)$ landing on an AC slot boundary, and the FG slot duration $\vote(j+1) - \vote(j) \geq \Delta + \Delta_{AC}$ uniformly across~$j$. Two distinguished AC slots per FG round (\Cref{rev:fig:per-round-timing}):
+Write $\Delta_{FG} \coloneqq \Delta + \Delta_{AC}$ for the FG slot duration. We require $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, with $\vote(k)$ landing on an AC slot boundary, and the FG slot duration $\vote(j+1) - \vote(j) \geq \Delta_{FG}$ uniformly across~$j$. Two distinguished AC slots per FG round (\Cref{rev:fig:per-round-timing}):
 \begin{itemize}
   \item $\mathrm{AC}_{\mathrm{tar}}$ (target-uniformity slot): the AC slot ending exactly at $\vote(k)$, spanning $[\vote(k) - \Delta_{AC},\, \vote(k)]$.
   \item $\mathrm{AC}_{\mathrm{inc}}$ (vote-inclusion slot): the AC slot starting exactly at $\vote(k) + \Delta$, spanning $[\vote(k) + \Delta,\, \vote(k+1)]$.
@@ -2006,8 +2006,8 @@ Assume:
   \item Every honest validator is online throughout $[\start(k) - \Delta_{AC},\, \vote(k+1)]$.
   \item \emph{($\mathrm{AC}_{\mathrm{tar}}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\mathrm{tar}}$ is honest, producing block $B_{\mathrm{tar}}$, and no AC slot strictly between $\mathrm{AC}_{\mathrm{tar}}$ and $\vote(k)$ produces a block reaching any honest validator before $\vote(k)$. Equivalently: $\getConfirmed_v$ at $\vote(k) = B_{\mathrm{tar}}$ for every honest~$v$.
   \item \emph{($\mathrm{AC}_{\mathrm{inc}}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\mathrm{inc}}$ is honest, includes every slot-$k$ honest vote, and produces a block $B_{\mathrm{inc}} \succeq B_{\mathrm{tar}}$.
-  \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta + \Delta_{AC}$ for every~$j$.
-  \item \emph{(Freshness of $h_c$):} no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$, where $h_c \coloneqq \sigma[B_{\mathrm{tar}}].h$.
+  \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta_{FG}$ for every~$j$.
+  \item \emph{(Recent advance to $h_c$):} setting $h_c \coloneqq \sigma[B_{\mathrm{tar}}].h$, every honest validator's canonical state-height first reached $h_c$ at some time strictly after $\vote(k-1)$ (i.e., within the last FG slot of duration $\Delta_{FG}$). Equivalently, under target monotonicity (\Cref{rev:prop:target-monotonicity}): no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$.
 \end{enumerate}
 
 \yann{Seems that it all hinges on the last point, this is unclear to me.}
@@ -2070,7 +2070,7 @@ At $\vote(k+1)$ every honest validator runs $\constructVote$. The canonical stat
 
 \paragraph{Discharging hypothesis~(5).} The ``uniform tip with no later splitting block'' condition is an AC-level safety/liveness property. Different ACs satisfy it differently --- Simplex-style ACs do under sync $+$ honest $\mathrm{AC}_{\mathrm{tar}}$; longest-chain ACs require stronger conditions. The lemma is parametric in this discharge.
 
-\paragraph{Discharging hypothesis~(8).} For a standalone single-slot lemma~(8) must be assumed explicitly. Under chained iterations from a healed state with cert at height $\comm{h}$, hypothesis~(8) is maintained automatically across slots, as noted in the chained-slots remark above.
+\paragraph{Discharging hypothesis~(8).} For a standalone single-slot lemma~(8) must be assumed explicitly. Under chained iterations from a healed state, every honest validator's canonical state-height first reaches the slot's $h_c$ when the previous slot's cert event fires in its view (at time $\vote(k)$ for the present slot, by Step~4 of the proof applied to slot~$k-1$). This time lies in $(\vote(k-1),\, \vote(k)]$, the previous FG slot of duration $\Delta_{FG}$, so the recent-advance condition is satisfied automatically for every slot in the chain.
 
 \paragraph{Required changes to existing sections.} The lemma is self-contained and additive: it uses existing definitions (\Cref{def:voting-rule}, \Cref{rev:def:healed-state}) and existing lemmas/properties (\Cref{lem:just-unique-height}, \Cref{lem:no-finalize-without-just}, \Cref{rev:prop:target-dominance}, \Cref{rev:cor:processed-height-bound}). The new constant $\Delta_{AC}$ is local to this section and supersedes $\delta_c$ (\Cref{rev:def:confirmation-delay}) for the lemma's purposes; the spec's existing $\delta_c$ uses elsewhere remain valid as long as $\Delta_{AC}$ subsumes one AC slot operation plus $\delta_c$ confirmation. No edits to other sections are required.
 
