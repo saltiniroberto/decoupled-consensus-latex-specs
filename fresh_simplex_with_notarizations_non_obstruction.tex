@@ -2010,7 +2010,7 @@ Assume:
   \item \emph{(Recent advance to $h_c$):} setting $h_c \coloneqq \sigma[B_{\mathrm{tar}}].h$, every honest validator's canonical state-height first reached $h_c$ at some time strictly after $\vote(k-1)$ (i.e., within the last FG slot of duration $\Delta_{FG}$). Equivalently, under target monotonicity (\Cref{rev:prop:target-monotonicity}): no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$.
 \end{enumerate}
 
-\yann{Seems that it all hinges on the last point, this is unclear to me.}
+\yann{Seems that it all hinges on the last point. Maybe we need another assumption, that synchrony holds from earlier, such that they agree on the notarization, and thus are at the same height.}
 
 Then by time $\vote(k+1)$, in every honest validator's local view:
 \begin{enumerate}
