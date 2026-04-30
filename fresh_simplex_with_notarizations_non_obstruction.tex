@@ -15,6 +15,13 @@
 \usepackage{todonotes}
 \usepackage{booktabs,tabularx,makecell,hyperref}
 \definecolor{rowgray}{RGB}{246,246,246}
+\newcommand{\francesco}[1]{\todo[inline, color=xred]{\textbf{Francesco:} #1}}
+\newcommand{\roberto}[1]{{\todo[inline, color=xblue]{\textbf{Roberto:} #1}}}
+\newcommand{\luca}[1]{{\todo[inline, color=xgreen]{\textbf{Luca:} #1}}}
+\newcommand{\yann}[1]{\todo[inline, color=xyellow]{\textbf{Yann:} #1}}
+\usepackage{booktabs,tabularx,makecell,hyperref}
+\definecolor{rowgray}{RGB}{246,246,246}
+
 
 \usepackage{pdflscape}
 \usepackage{environ}
@@ -2002,6 +2009,8 @@ Assume:
   \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta + \Delta_{AC}$ for every~$j$.
   \item \emph{(Freshness of $h_c$):} no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$, where $h_c \coloneqq \sigma[B_{\mathrm{tar}}].h$.
 \end{enumerate}
+
+\yann{Seems that it all hinges on the last point, this is unclear to me.}
 
 Then by time $\vote(k+1)$, in every honest validator's local view:
 \begin{enumerate}
