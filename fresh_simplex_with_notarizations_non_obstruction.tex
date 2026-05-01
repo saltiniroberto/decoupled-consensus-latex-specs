@@ -2018,8 +2018,8 @@ Assume:
   \item The system is in a healed state at slot~$k$ with height~$\comm{h}$ (\Cref{rev:def:healed-state}).
   \item $\start(k) - \Delta_{AC} \geq \GST$.
   \item Every honest validator is online throughout $[\start(k) - \Delta_{AC},\, \vote(k+1)]$.
-  \item \emph{($\mathrm{AC}_{\to k}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\to k}$ is honest, producing block $B_k$, and no AC slot strictly between $\mathrm{AC}_{\to k}$ and $\vote(k)$ produces a block reaching any honest validator before $\vote(k)$. Equivalently: $\getConfirmed_v$ at $\vote(k) = B_k$ for every honest~$v$.
-  \item \emph{($\mathrm{AC}_{\to k+1}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\to k+1}$ is honest, includes every slot-$k$ honest vote, and produces a block $B_{k+1} \succeq B_k$.
+  \item \emph{($\mathrm{AC}_{\to k}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\to k}$ is honest, producing block $B_k$, with $\getConfirmed_v$ at $\vote(k) = B_k$ for every honest~$v$.
+  \item \emph{($\mathrm{AC}_{\to k+1}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\to k+1}$ is honest and receives every slot-$k$ honest vote (which then implies it includes every such vote in its block), producing a block $B_{k+1} \succeq B_k$.
   \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta_{FG}$ for every~$j$.
       \item \emph{(Recent advance to $h_c$):} setting $h_c \coloneqq \sigma[B_k].h$, every honest validator's canonical state-height first reached $h_c$ at some time strictly after $\vote(k-1)$ (i.e., within the last FG slot of duration $\Delta_{FG}$). Equivalently, under target monotonicity (\Cref{rev:prop:target-monotonicity}): no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$.
 \end{enumerate}
@@ -2051,7 +2051,7 @@ and the count of honest validators is $\geq n - f^{\vote(k+1)} > 2n/3$.
 By~(3), all messages in $[\vote(k),\, \vote(k+1)]$ are delivered within $\Delta$. Honest votes broadcast at $\vote(k)$ reach every honest validator (including $\mathrm{AC}_{\to k+1}$'s proposer) by $\vote(k) + \Delta$, which by~(7) coincides with the start of $\mathrm{AC}_{\to k+1}$.
 
 \emph{Step 3: $B_{k+1}$ is processed and confirmed in every honest's view by $\vote(k+1)$.}
-By~(6), $\mathrm{AC}_{\to k+1}$'s honest proposer includes every slot-$k$ honest vote in $B_{k+1} \succeq B_k$. By the definition of $\Delta_{AC}$, $B_{k+1}$ is confirmed in every honest's view by $\vote(k) + \Delta + \Delta_{AC}$. By~(7), $\vote(k+1) \geq \vote(k) + \Delta + \Delta_{AC}$, so confirmation lands by $\vote(k+1)$, and each honest validator has processed $B_{k+1}$ via $\onBlock$ by $\vote(k+1)$.
+By~(6), $\mathrm{AC}_{\to k+1}$'s honest proposer receives every slot-$k$ honest vote and (by honesty) includes them all in $B_{k+1} \succeq B_k$. By the definition of $\Delta_{AC}$, $B_{k+1}$ is confirmed in every honest's view by $\vote(k) + \Delta + \Delta_{AC}$. By~(7), $\vote(k+1) \geq \vote(k) + \Delta + \Delta_{AC}$, so confirmation lands by $\vote(k+1)$, and each honest validator has processed $B_{k+1}$ via $\onBlock$ by $\vote(k+1)$.
 
 \emph{Step 4: The justification cert event fires.}
 In each honest validator's $\onBlock(B_{k+1})$, the $\processSlot$ loop advances $\sigma'.s$ up to $B_{k+1}.\slot$. By~(8) no past honest votes at height $\geq h_c$ exist; combined with~(1) (dishonest alone is $\leq f < n/3 < 2n/3$), no $\geq 2n/3$ quorum at any height $\geq h_c$ has formed before this point, so no cert event at $h_c$ has fired in the path from $B_k$ to $B_{k+1}$. Hence $\sigma'.h = h_c$ throughout the loop and going into $\processBlock$.
@@ -2111,7 +2111,7 @@ The justification cert event from \Cref{rev:lem:per-round-justification} is obse
 \begin{lemma}[Per-round finalization on-chain]\label{rev:lem:per-round-finalization}
 Assume hypotheses~(1)--(8) of \Cref{rev:lem:per-round-justification}, with~(1) and~(4) extended to $\vote(k+2)$, plus:
 \begin{itemize}
-  \item[\textnormal{(9)}] \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and includes every slot-$(k+1)$ honest vote in a block $B_{k+2} \succeq B_{k+1}$.
+  \item[\textnormal{(9)}] \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and receives every slot-$(k+1)$ honest vote (and therefore includes them in its block), producing a block $B_{k+2} \succeq B_{k+1}$.
 \end{itemize}
 
 Then by time $\vote(k+2)$, in every honest validator's local view, $\sigma_v[\getConfirmed_v(\vote(k+2))].F \succeq B_k$ --- i.e., $B_k$ is finalized at height $h_c$.
@@ -2136,7 +2136,7 @@ Fix $k' \geq k$ and assume:
   \item The system is in a healed state at slot~$k$ with height~$\comm{h}$ (\Cref{rev:def:healed-state}).
   \item $\start(k) - \Delta_{AC} \geq \GST$.
   \item Every honest validator is online throughout $[\start(k) - \Delta_{AC},\, \vote(k'+1)]$.
-  \item For every $j \in [k,\, k'+1]$, $\mathrm{AC}_{\to j}$ is honest, and for $j > k$ its proposer includes every slot-$(j{-}1)$ honest vote.
+  \item For every $j \in [k,\, k'+1]$, $\mathrm{AC}_{\to j}$ is honest, and for $j > k$ its proposer receives every slot-$(j{-}1)$ honest vote (and therefore includes them in its block).
   \item AC--FG timing alignment as in~(7) of \Cref{rev:lem:per-round-justification}.
   \item Recent advance to $h_c$ at slot $k$ as in~(8) of \Cref{rev:lem:per-round-justification}.
 \end{enumerate}
