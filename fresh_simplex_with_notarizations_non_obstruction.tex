@@ -2164,7 +2164,7 @@ Invoking the lemma yields (T1) at $j+1$. If $j+1 \leq k' - 1$, hypothesis~(5) at
 
 \medskip
 \noindent\fbox{\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}
-\textbf{Disclaimer (AC honesty assumption is strong).} Hypothesis~(5) of \Cref{rev:thm:per-round-range} requires \emph{every} AC slot in $[k,\, k'+1]$ to be honest --- a substantially stronger assumption than today's protocols typically rely on. Modern AC designs achieve safety/liveness under weaker conditions, e.g., a fraction of honest AC slots over a window or amortized honest participation. The lemmas and theorem here should be read as a clean baseline: each consecutive honest AC slot makes one round of progress, and the chain catches up at the rate of consecutive honest AC slots. Weakening this requirement (so that scattered honest AC slots over a longer window suffice) is the subject of separate liveness analysis.
+\textbf{Disclaimer (last-AC-slot honesty per round is strong).} Hypothesis~(5) requires the \emph{last} AC slot of each FG round in the range --- formally, $\mathrm{AC}_{\to j}$ for every $j \in [k,\, k'+1]$ --- to be honest. To be precise: the $c$ intermediate AC slots within each FG round (those strictly between $\vote(j)$ and $\vote(j+1) - \Delta_{AC}$) need not be honest; only the boundary AC slot $\mathrm{AC}_{\to (j+1)}$, which closes round $j$ by landing its votes on-chain, strictly requires honesty. Even so, requiring last-AC-slot honesty in \emph{every} round is a substantially stronger assumption than today's protocol relies on. The theorem here should be read as a clean baseline; weakening further --- so that scattered honest last-AC-slots over a longer window suffice --- is the subject of separate liveness analysis.
 \end{minipage}}
 \medskip
 
