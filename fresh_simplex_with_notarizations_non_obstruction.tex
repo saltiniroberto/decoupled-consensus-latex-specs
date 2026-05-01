@@ -2023,10 +2023,10 @@ Assume:
   \item \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{AC}$ for some integer $c \geq 1$, $\vote(k)$ on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta_{FG}$ for every~$j$.
       \item \emph{(Recent advance to $h_c$):} setting $h_c \coloneqq \sigma[B_k].h$, every honest validator's canonical state-height first reached $h_c$ at some time strictly after $\vote(k-1)$ (i.e., within the last FG slot of duration $\Delta_{FG}$). Equivalently, under target monotonicity (\Cref{rev:prop:target-monotonicity}): no honest validator has cast any vote at any height $\geq h_c$ at any time strictly before $\vote(k)$.
 \end{enumerate}
+\yann{The last item is the least clear to me.}
 
 Hypotheses~(2) and~(8) together force $h_c = \comm{h} + 1$: $R$'s establishment at cert-key height~$\comm{h}$ required honest contributions at height~$\comm{h}$, so~(8) gives $h_c > \comm{h}$; combined with $h_c \leq \comm{h} + 1$ (\Cref{rev:cor:processed-height-bound}), $h_c = \comm{h} + 1$ exactly. The lemma takes the chain from state-height $\comm{h}+1$ entering the round to a new cert at $h_c = \comm{h}+1$ by $\vote(k+1)$.
 
-\yann{The last item is the least clear to me.}
 
 Then by time $\vote(k+1)$, in every honest validator's local view:
 \begin{enumerate}
