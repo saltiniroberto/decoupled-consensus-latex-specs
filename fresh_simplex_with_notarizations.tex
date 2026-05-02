@@ -98,7 +98,6 @@
 \newcommand{\constructVote}{\textsf{constructVote}\xspace}
 \newcommand{\onBlock}{\textsf{onBlock}\xspace}
 \newcommand{\updateForkChoiceRoot}{\textsf{updateForkChoiceRoot}\xspace}
-\newcommand{\updateRootInSlot}{\textsf{updateRootInSlot}\xspace}
 \newcommand{\updateRootFromVotes}{\textsf{updateRootFromVotes}\xspace}
 \newcommand{\onViewMerge}{\textsf{onViewMerge}\xspace}
 \newcommand{\updateFinalized}{\textsf{updateFinalized}\xspace}
@@ -133,6 +132,8 @@
 \newtheorem{remark}[theorem]{Remark}
 
 \crefname{condition}{condition}{conditions}
+\crefname{property}{property}{properties}
+\Crefname{property}{Property}{Properties}
 \newtheorem{condition}{Condition}
 \newtheorem{assumption}[theorem]{Assumption}
 \newcommand{\GST}{\ensuremath{\mathsf{GST}}}
@@ -438,7 +439,7 @@ When \processHeight fires a height advance on a chain (Figure~\ref{alg:state-mac
 \end{itemize}
 The associated \emph{cert key} is the lexicographic tuple
 \[
-  \key(X, h, b, s_n) \;\coloneqq\; \bigl(h,\; b,\; s_n,\; X.\slot,\; \hash(X)\bigr).
+  \key(X, h, b, s_n) \;\coloneqq\; \bigl(h,\; b,\; s_n,\; -X.\slot,\; \hash(X)\bigr).
 \]
 \end{definition}
 
@@ -500,7 +501,7 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
 \vspace{3pt}
 
 \Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, b,\, C,\, s_n)$} \Comment{Filter by $\Sigma.F \preceq C$, then running max}
-  \State $\newKey \gets (h,\; b,\; s_n,\; C.\slot,\; \hash(C))$
+  \State $\newKey \gets (h,\; b,\; s_n,\; -C.\slot,\; \hash(C))$
   \If{$\newKey > \Sigma.\key_R$ and $\Sigma.F \preceq C$}
     \State $\Sigma.R \gets C$; \;\; $\Sigma.\key_R \gets \newKey$
   \EndIf
@@ -691,6 +692,18 @@ Unless $\geq n/3$ validators are slashable, every processed block~$B$ satisfies 
 
 \begin{proof}
 If $\sigma[B].h \geq 1$, \Cref{lem:heightprog} produces a cert event at height $\sigma[B].h - 1$ on $B$'s chain (the most recent height advance leading to $\sigma[B].h$); by \Cref{rev:cor:no-high-cn}, $\sigma[B].h - 1 \leq R.h$.
+\end{proof}
+
+\begin{lemma}[State-height range for blocks descending from $R$]\label{rev:lem:confirmed-h-range}
+Unless $\geq n/3$ validators are slashable, every block $B \in \Sigma.\T$ with $\Sigma.R \preceq B$ satisfies $\sigma[B].h \in \{\Sigma.\key_R.h,\, \Sigma.\key_R.h + 1\}$. In particular, $\sigma[\getConfirmed(\Sigma, \Omega)].h \in \{\Sigma.\key_R.h,\, \Sigma.\key_R.h + 1\}$ for every auxiliary state~$\Omega$.
+\end{lemma}
+
+\begin{proof}
+Write $h \coloneqq \Sigma.\key_R.h$ and $R \coloneqq \Sigma.R$. We show $\sigma[R].h = h$. If $R = \genesis$, $\sigma[\genesis].h = 0 = h$ directly from the genesis state. Otherwise the cert event that established $(R, \key_R)$ fired on some chain in $\Sigma.\T$ with pre-advance $\sigma[L].h = h$ at firing block~$L \succeq R$, and freshness places $R \preceq L$ with $R.\slot \geq \sigma[L].s_h$; by \Cref{rem:fresh-equiv}, $\sigma[R].h = \sigma[L].h = h$.
+
+\Cref{lem:slotmono} (state-height monotonicity along $\preceq$) applied to $R \preceq B$ then gives $\sigma[B].h \geq \sigma[R].h = h$. \Cref{rev:cor:processed-height-bound} gives $\sigma[B].h \leq h+1$. Hence $\sigma[B].h \in \{h, h+1\}$.
+
+The store invariant ($\getConfirmed(\Sigma, \Omega) \succeq \Sigma.R$, \Cref{alg:store}) gives the in-particular claim.
 \end{proof}
 
 \section{Inactivity leak}
@@ -1069,45 +1082,29 @@ If there exists an honest validator $v_\ell$ such that $\getConfirmed_{v_\ell}^{
 \subsection{Protocol modifications}\label{rev:sec:healing-protocol}
 
 \paragraph{Virtual-block cert events.}
-For this section, the store considers candidate cert events not only from on-chain block processing but also from a \emph{virtual extension} of the canonical chain: using the votes in $\Sigma.V$, the following routine hypothesizes a block that carries the applicable subset on top of the current head and offers the resulting cert-event descriptors to \updateForkChoiceRoot.
-The virtual block is never inserted into $\Sigma.\T$ and the hypothetical state is discarded; only $(\Sigma.R,\, \Sigma.\key_R)$ may change, via the standard cert-key guard.
+For this section, the store considers candidate cert events not only from on-chain block processing but also from \emph{virtual extensions} of every sufficient head in $\Sigma.\T$: using the votes in $\Sigma.V$, the following routine hypothesizes, for each candidate head, a block that carries the applicable subset on top of it and offers the resulting cert-event descriptors to \updateForkChoiceRoot. The candidate heads are the canonical block $\getConfirmed(\Sigma, \Omega)$ together with every leaf of $\Sigma.\T$ at state-height~$\geq \Sigma.\key_R.h$.
+The virtual blocks are never inserted into $\Sigma.\T$ and the hypothetical states are discarded; only $(\Sigma.R,\, \Sigma.\key_R)$ may change, via the standard cert-key guard.
 \begin{center}
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 \Function{\updateRootFromVotes}{$\Sigma,\; \Omega$}
-  \State $L \gets \getConfirmed(\Sigma,\; \Omega)$
-  \State $\sigma' \gets \Sigma.\sigma[L]$ \Comment{working copy, not persisted}
-  \State $V' \gets \{v \in \Sigma.V : v.\height = \sigma'.h \land v.\target \preceq L \land v.\target.\slot \geq \sigma'.s_h\}$ \Comment{fresh on $\sigma'$}
-  \State let $B_V$ be a virtual block with $\parent = L$, $\slot = \sigma'.s + 1$, and votes~$V'$
-  \State $\sigma' \gets \processSlot(\sigma')$ \Comment{advances $\sigma'.s$; runs \processHeight}
-  \State $\sigma' \gets \processBlock(\sigma',\; B_V)$
-  \State $\sigma' \gets \processHeight(\sigma')$ \Comment{fires any cert event enabled by $V'$}
-  \State $\Sigma \gets \updateRootInSlot(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.J,\; \sigma'.s_n))$
-  \State $\Sigma \gets \updateRootInSlot(\Sigma,\; (\sigma'.h_n,\; 0,\; \sigma'.N,\; \sigma'.s_n))$
+  \State $\mathcal{L} \gets \{\getConfirmed(\Sigma,\; \Omega)\} \cup \{B \in \Sigma.\T : B \text{ is a leaf of } \Sigma.\T \land \sigma[B].h \geq \Sigma.\key_R.h\}$
+  \For{each $L \in \mathcal{L}$}
+    \State $\sigma' \gets \Sigma.\sigma[L]$ \Comment{working copy, not persisted}
+    \State $V' \gets \{v \in \Sigma.V : v.\height = \sigma'.h \land v.\target \preceq L \land v.\target.\slot \geq \sigma'.s_h\}$ \Comment{fresh on $\sigma'$}
+    \State let $B_V$ be a virtual block with $\parent = L$, $\slot = \sigma'.s + 1$, and votes~$V'$
+    \State $\sigma' \gets \processSlot(\sigma')$ \Comment{advances $\sigma'.s$; runs \processHeight}
+    \State $\sigma' \gets \processBlock(\sigma',\; B_V)$
+    \State $\sigma' \gets \processHeight(\sigma')$ \Comment{fires any cert event enabled by $V'$}
+    \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.J,\; \sigma'.s_n))$
+    \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_n,\; 0,\; \sigma'.N,\; \sigma'.s_n))$
+  \EndFor
   \State \Return $\Sigma$
 \EndFunction
 \end{algorithmic}
 \end{boxedminipage}
 \end{center}
-\noindent In particular, whenever received-but-not-yet-on-chain votes would justify or notarize some block with a cert key strictly higher than $\key_R$, $R$ advances accordingly.
-
-\paragraph{Root updates during a slot.}
-For this section, invocations of \updateForkChoiceRoot{} during a slot --- i.e., by \onBlock{} of \Cref{alg:store} and by \updateRootFromVotes{} above --- use a stricter guard: the cached root advances only when the incoming cert event strictly improves the $(h, s_n)$ pair of $\Sigma.\key_R$. Candidates tied on both coordinates are \emph{not} adopted. Concretely, every in-slot call to \updateForkChoiceRoot{} is replaced by a call to \updateRootInSlot{} below:
-\begin{center}
-\begin{boxedminipage}{\textwidth}
-\begin{algorithmic}[1]
-\Function{\updateRootInSlot}{$\Sigma,\; (h,\, b,\, C,\, s_n)$} \Comment{in-slot: strict $(h, s_n)$ guard}
-  \State $\newKey \gets (h,\; b,\; s_n,\; C.\slot,\; \hash(C))$
-  \If{($h > \Sigma.\key_R.h$) \textbf{or} ($h = \Sigma.\key_R.h$ \textbf{and} $s_n > \Sigma.\key_R.s_n$)}
-    \If{$\Sigma.F \preceq C$}
-      \State $\Sigma.R \gets C$; \;\; $\Sigma.\key_R \gets \newKey$
-    \EndIf
-  \EndIf
-  \State \Return $\Sigma$
-\EndFunction
-\end{algorithmic}
-\end{boxedminipage}
-\end{center}
+\noindent In particular, whenever received-but-not-yet-on-chain votes would justify or notarize a block on any sufficient head with a cert key strictly higher than $\key_R$, $R$ advances accordingly.
 
 \paragraph{View-merge processing.}
 The view-merge protocol (\Cref{app:view-merge}) delivers to each honest validator the syncer's block tree $\comm{\T}$ and message set $\comm{V}$; no other store components are transferred. Upon receipt at $\vote(k)$, the validator folds the newly-delivered blocks through \onBlock{} and then invokes \updateRootFromVotes{} on the enlarged $\Sigma.V$. Formally:
@@ -1125,7 +1122,7 @@ The view-merge protocol (\Cref{app:view-merge}) delivers to each honest validato
 \end{algorithmic}
 \end{boxedminipage}
 \end{center}
-\noindent Because the other store components --- $\sigma,\, F,\, R,\, \key_R$ --- are pure functions of $(\Sigma.\T,\, \Sigma.V)$ under \Cref{alg:store} together with \updateRootInSlot{} and \updateRootFromVotes{}, honest validators that have merged the same $(\comm{\T},\, \comm{V})$ by time $\vote(k)$ obtain matching $\sigma,\, F,\, R,\, \key_R$ locally.
+\noindent Because the other store components --- $\sigma,\, F,\, R,\, \key_R$ --- are pure functions of $(\Sigma.\T,\, \Sigma.V)$ under \Cref{alg:store} together with \updateRootFromVotes{}, honest validators that have merged the same $(\comm{\T},\, \comm{V})$ by time $\vote(k)$ obtain matching $\sigma,\, F,\, R,\, \key_R$ locally.
 
 To state the conditions under which the protocol \emph{heals} after a prolonged period of asynchrony, we enrich the system model with slot-based timing and a per-slot view-merge mechanism.
 The view-merge mechanism is detailed in \Cref{app:view-merge}; in this section we abstract it via an assumption sufficient for the healing arguments.
@@ -1226,9 +1223,9 @@ Comparing the two bounds on $h_X + h_Y$ gives $4n/3 - 2f \leq n - f$, i.e.\ $f \
 We say the system is in a \emph{healed state at slot $k$ with height $\comm{h}$} when:
 \begin{enumerate}
   \item\label{rev:def:healed-state:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:def:healed-state:R} for any honest validator $v$, $R_v^{\vote(k)}.h = \comm{h}$;
+  \item\label{rev:def:healed-state:R} for any honest validator $v$, $R_v^{\vote(k)}.h \geq \comm{h}$;
   \item\label{rev:def:healed-state:gt-compat} for any two honest validators $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
-  \item\label{rev:def:healed-state:no-just} no honest validator has cast any vote at height $> \comm{h}+1$ at any time strictly before $\vote(k)$;
+  % \item\label{rev:def:healed-state:no-just} no honest validator has cast any vote at height $> \comm{h}+1$ at any time strictly before $\vote(k)$;
   \item\label{rev:def:healed-state:target-cap} there exists an honest validator $v_\ell$ such that any honest vote sent for any height $\geq \comm{h}$ at a time strictly before $\vote(k)$ has target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
   % \item\label{rev:def:healed-state:just-bound} for every checkpoint $C$ for height $\comm{h}$ that can be justified by time $\vote(k)$, there exists an honest validator $v_\ell$ such that $C \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
   % \item\label{rev:def:healed-state:notar-bound} for any honest validator $v$, if $R_v^{\vote(k)}$ is notarized for slot $k_n$, then:
@@ -1254,26 +1251,41 @@ then
 \end{lemma}
 
 \begin{proof}
-Both \Cref{rev:prop:getConfirmed-compat} and \Cref{rev:prop:target-monotonicity} share the same preamble (R-compatibility at $\vote(k)$) and the same premise (existence of an honest $v_\ell$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$). We discharge both, then derive the lemma's conclusions.
+We discharge the preamble (R-compatibility at $\vote(k)$) and premise ($\exists$ honest~$v_\ell$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$) of \Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity}; the lemma's conclusions follow from those properties' conclusions.
 
-\emph{Preamble.}
-By condition~\ref{rev:def:healed-state:gt-compat} of the healed state (\Cref{rev:def:healed-state}), the honest $\getConfirmed_v^{\vote(k)}$ are pairwise compatible; let~$D$ denote the chain extending them. By \Cref{alg:store}, each $R_v^{\vote(k)}$ is an ancestor of $\getConfirmed_v^{\vote(k)}$, hence lies on~$D$. The honest $R_v^{\vote(k)}$ are therefore pairwise compatible.
+\emph{Preamble and premise at $t = \vote(k)$.}
+By condition~\ref{rev:def:healed-state:gt-compat}, the honest $\getConfirmed_v^{\vote(k)}$ are pairwise compatible; let~$D$ be the chain extending them, and pick $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k)} = \max_\preceq$ on~$D$. By the store invariant ($R \preceq \getConfirmed$, \Cref{alg:store}), each $R_v^{\vote(k)} \preceq \getConfirmed_v^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ on~$D$, establishing pairwise compatibility of the $R_v^{\vote(k)}$ and the premise at $t = \vote(k)$.
 
-\emph{Premise.}
-Pick $v_\ell$ with $\getConfirmed_{v_\ell}^{\vote(k)} = \max_\preceq \{\getConfirmed_i^{\vote(k)} : i \text{ honest}\}$ on~$D$ (well-defined since the $\getConfirmed$'s are linearly ordered along~$D$). We verify $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
-
-By condition~\ref{rev:def:healed-state:R} of the healed state, $R_v^{\vote(k)}.h = \comm{h}$, and by \Cref{lem:Rs-key-monotone} also $\Sigma_v.\key_R.h \leq \comm{h}$ at every earlier time. By condition~\ref{rev:def:healed-state:no-just} of the healed state and \Cref{rev:cor:processed-height-bound} applied per-honest at every time, no honest validator has cast at height $> \comm{h}+1$ before $\vote(k)$ (a vote at height $> \comm{h}+1$ would require $\sigma[\getConfirmed].h > \comm{h}+1 \geq R.h + 1$, contradicting the bound), so with the dishonest-only-quorum bound ($f < 2n/3$), no cert event at height $> \comm{h}+1$ exists in any honest's view at $\vote(k)$ or earlier. In $[\vote(k),\, \vote(k+1)]$, slot-$k$ honest contributions lie at heights $\leq \comm{h}+1$ (by \Cref{rev:cor:processed-height-bound}), and no voting event lies in $(\vote(k),\, \vote(k+1))$, so the same dishonest-only-quorum bound rules out cert events at height $> \comm{h}+1$ in the interval. Hence by \Cref{lem:Rs-key-monotone}, $R_v^t.h \leq \comm{h}+1$ throughout~$[\vote(k),\, \vote(k+1)]$.
-
-Any cert event that updates $R_v^t$ during the interval has its target on~$D$: it is either the slot-$k$ same-slot cert at height in $\{\comm{h}, \comm{h}+1\}$ produced by the prefix-notar $\arg\max$-by-$\preceq$ in \processHeight{} (whose target is the deepest common ancestor of the honest $\ntargets$ values, hence on~$D$), or a pre-existing cert at height~$\leq \comm{h}+1$ on~$D$ (any pre-existing bit-$0$ off-$D$ cert at height~$\leq \comm{h}$ would, if processed before $\vote(k)$, place $R_v^{\vote(k)}$ off $D$, contradicting the preamble; pre-existing certs at height~$\comm{h}+1$ off~$D$ are similarly ruled out by condition~\ref{rev:def:healed-state:no-just} of the healed state and the dishonest-only-quorum bound). Hence $R_v^t \in D$ at chain-height $\leq \comm{h}+1 \leq \getConfirmed_{v_\ell}^{\vote(k)}.h$ throughout (the last inequality holds since $\getConfirmed_{v_\ell}^{\vote(k)}$ has state-height in $\{\comm{h}, \comm{h}+1\}$ and chain-height at least its state-height, while $\getConfirmed_{v_\ell}$ is the $\preceq$-maximum on~$D$ at state-height $\geq \comm{h}$). Therefore $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$.
-
-\emph{Conclusion 1.}
-\Cref{rev:prop:getConfirmed-compat} applied with the discharged preamble and premise directly yields, for every honest validators~$v, v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$.
-
-\emph{Conclusion 2.}
-\Cref{rev:prop:target-monotonicity} applied with the same discharge directly yields, for every honest validator~$v$ and any $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\emph{Premise at $t \in (\vote(k),\, \vote(k+1)]$.}
+$R_v$ updates only via cert events with key strictly dominating $\Sigma_v.\key_R$; condition~\ref{rev:def:healed-state:R} and \Cref{lem:Rs-key-monotone} give $\Sigma_v.\key_R.h \geq \comm{h}$, so any updating cert has height $h^* \geq \comm{h}$. Such a cert is witnessed by a $\geq 2n/3$ vote quorum, of which $\geq 2n/3 - f \geq 1$ are honest (under \OHM, $f < 2n/3$). The cert target is $\preceq$ some honest contribution: bit-$1$ (justification) shares its target across the quorum directly; bit-$0$ (prefix-notarization) has cert target $\preceq \ntargets[i]$ for every contributor~$i$, and for an honest~$i$ this is the $\preceq$-max of $i$'s fresh-vote targets at height~$h^*$, each cast at some $\tau \leq \vote(k)$. So it suffices to show every honest vote~$u$ at height~$\geq \comm{h}$ cast at some $\tau \leq \vote(k)$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\begin{itemize}
+  \item \emph{$\tau < \vote(k)$.} Condition~\ref{rev:def:healed-state:target-cap} gives the bound, with the condition's witness lifted to~$v_\ell$ by maximality on~$D$.
+  \item \emph{$\tau = \vote(k)$.} $u$ is the slot-$k$ vote of some honest~$i$ with target~$T_c$ from \Cref{def:voting-rule}: unlocked, $T_c = \getConfirmed_i^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ by maximality; locked, $T_c = L$ was justified at height~$u.\height$ on some chain at some $\tau'' < \vote(k)$ via a $\geq 2n/3$ \just-quorum targeting~$L$ (\Cref{lem:no-finalize-without-just}), of which $\geq 2n/3 - f \geq 1$ honest contributors each cast a before-$\vote(k)$ \just vote with target~$L$ at height~$u.\height \geq \comm{h}$, so the previous bullet gives $L \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\end{itemize}
 \end{proof}
 
 \subsection{Healing persistence}\label{rev:sec:healing-persistence}
+
+
+\begin{lemma}[Bound on virtual-block advance]\label{rev:lem:virtual-block-advance}
+Take an honest validator with local store $\Sigma$. Let $h \coloneqq \Sigma.\key_R.h$ before \updateRootFromVotes is invoked, and let $h' \coloneqq \Sigma.\key_R.h$ immediately after. If $h' > h$, then $h' = h+1$, and every block $B \in \Sigma.\T$ satisfies $\sigma[B].h \leq h+1$.
+\end{lemma}
+
+\begin{proof}
+\Cref{rev:cor:processed-height-bound} at the pre-call moment gives $\sigma[B].h \leq h+1$ for every $B \in \Sigma.\T$, in particular $\sigma[L].h \leq h+1$ where $L \coloneqq \getConfirmed(\Sigma, \Omega)$.
+
+\updateRootFromVotes performs two \processHeight{} invocations: one inside \processSlot{} (operating on $\sigma' = \sigma[L]$ with $\sigma'.V = \sigma[L].V$, before $B_V$'s votes are folded in), and one at the end (operating on $\sigma'$ enriched with $B_V$'s votes). Each increments $\sigma'.h$ by at most~$1$ and fires at most one cert event with key-height equal to the pre-advance value of $\sigma'.h$.
+
+\emph{First invocation.}
+If $\sigma[L].V$ contained a $\geq 2n/3$ quorum at any height $>h$, that quorum would already have fired a cert event during $L$'s on-chain processing, advancing $\Sigma.\key_R$ above $h$ — contradicting $\Sigma.\key_R.h = h$. Hence the first invocation fires (if at all) at $\sigma'.h \leq h$, with cert key-height $\leq h$, leaving $\sigma'.h \leq h+1$.
+
+\emph{Final invocation.}
+$\sigma'.h \leq h+1$ entering this invocation; its cert key-height (if any) is $\leq h+1$.
+
+The cert keys passed to \updateForkChoiceRoot{} are derived from $\sigma'.h_j$ and $\sigma'.h_n$, themselves bounded by either pre-call values ($\sigma[L].h_j, \sigma[L].h_n \leq \sigma[L].h \leq h+1$) or new firings ($\leq h+1$ above). So $\Sigma.\key_R.h \leq h+1$ after the call; with $h' > h$, $h' = h+1$.
+
+Finally, \updateRootFromVotes does not insert blocks into $\Sigma.\T$ (the virtual block $B_V$ is discarded), so $\sigma[B].h \leq h+1$ persists post-call.
+\end{proof}
 
 \begin{lemma}[Healing: persistence over one slot]\label{rev:lem:healing-persistence}
 If
@@ -1282,88 +1294,47 @@ If
   \item\label{rev:hp:ohm} the \OHM holds at slot~$k$;
   \item\label{rev:hp:hs} the system is in a healed state at slot $k$ with height $\comm{h}$ (\Cref{rev:def:healed-state}),
 \end{enumerate}
-then there exists $\comm{h}' \in \{\comm{h},\, \comm{h}+1\}$ such that:
+then:
 \begin{enumerate}
-  \item the system is in a healed state at slot $k+1$ with height $\comm{h}'$;
+  \item the system is in a healed state at slot $k+1$ with height $\comm{h}$;
   \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
   \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
 \end{enumerate}
 \end{lemma}
 
+
+
 \begin{proof}
-Write $h \coloneqq \comm{h}$.
+Write $h \coloneqq \comm{h}$. By condition~\ref{rev:def:healed-state:gt-compat} the honest $\getConfirmed_v^{\vote(k)}$ are pairwise compatible; let~$D$ be the chain extending them. Pick $v^*_\ell$ honest with $\getConfirmed_{v^*_\ell}^{\vote(k)} = \max_\preceq \{\getConfirmed_i^{\vote(k)} : i \text{ honest}\}$ on~$D$.
 
-By \Cref{rev:cor:processed-height-bound} applied per-honest, $\sigma_v[\getConfirmed_v^{\vote(k)}].h \leq R_v^{\vote(k)}.h + 1 = h + 1$. Combined with the lower bound $\sigma_v[\getConfirmed_v^{\vote(k)}].h \geq R_v^{\vote(k)}.h = h$ (since $\getConfirmed_v$ descends from $R_v$ and state-height is monotone non-decreasing along chain ancestry), $\sigma_v[\getConfirmed_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$. By the voting rule, each honest casts at $\vote(k)$ at height equal to the state-height of its $\getConfirmed$. We split on the heights:
+\emph{Conclusions~(2) and~(3).}
+\Cref{rev:lem:intra-slot-target-compat-monotone} at slot~$k$ (hypotheses~\ref{rev:hp:f}, \ref{rev:hp:ohm}, \ref{rev:hp:hs} discharge~\ref{rev:istcm:f}, \ref{rev:istcm:ohm}, \ref{rev:istcm:hs} verbatim) yields conclusions~(2) and~(3) over $[\vote(k),\, \vote(k+1)]$.
 
-\emph{Case 1: every honest's $\getConfirmed_v^{\vote(k)}$ is at state-height~$h$.}
-All honest cast a slot-$k$ \just vote at~$h$ with target $T_v = \getConfirmed_v^{\vote(k)}$ on the chain~$D$ extending honest $\getConfirmed$'s (well-defined by condition~\ref{rev:def:healed-state:gt-compat}). Per honest~$v$:
+\emph{Conclusion~(1): healed-state conditions at slot~$k+1$ with height~$h$.}
+Pick $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+1)} = \max_\preceq \{\getConfirmed_i^{\vote(k+1)} : i \text{ honest}\}$ on the chain extending the honest $\getConfirmed^{\vote(k+1)}$ (well-defined by conclusion~(2)).
 \begin{itemize}
-  \item If $R_v^{\vote(k)}$ is justified at~$h$ (cached $\Sigma_v.\key_R \geq (h, 1, 0, \ldots)$), the cached key dominates any slot-$k$ same-slot cert key at~$h$, so $R_v$ does not advance: $R_v^{\vote(k+1)} = R_v^{\vote(k)}$ remains justified at~$h$.
-  \item If $R_v^{\vote(k)}$ is bit-$0$ notarized at~$h$ for slot~$k-1$ (cached $(h, 0, k-1, \ldots)$), the slot-$k$ same-slot cert at~$h$ produced by the prefix-notar $\arg\max$ in \processHeight{} (target $B^\star_v \in D$, key $(h, 0, k, \ldots)$) strictly dominates the cached key on the $s_n$ coordinate; if honest $\jtargets$ coincide at a common $T \in D$ a bit-$1$ cert at~$T$ also fires. In either case, $R_v^{\vote(k+1)}$ updates to a block on~$D$ at cert-key height~$h$, justified or bit-$0$ notarized for slot~$k = (k+1)-1$.
+  \item \emph{\ref{rev:def:healed-state:sync}.}
+  $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$ by slot spacing and condition~\ref{rev:def:healed-state:sync}.
+
+  \item \emph{\ref{rev:def:healed-state:R}.}
+  By \Cref{lem:Rs-key-monotone}, $\Sigma_v.\key_R.h$ is non-decreasing in time, so $R_v^{\vote(k+1)}.h \geq R_v^{\vote(k)}.h \geq h$ by condition~\ref{rev:def:healed-state:R}.
+
+  \item \emph{\ref{rev:def:healed-state:gt-compat}.}
+  Conclusion~(2) at $t = t' = \vote(k+1)$.
+
+  \item \emph{\ref{rev:def:healed-state:target-cap}.}
+  Take any honest vote~$u$ sent at any time $\tau < \vote(k+1)$ with $u.\height \geq h$; we show $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$. Either $\tau < \vote(k)$ or $\tau = \vote(k)$ (the only honest voting times in $[0,\, \vote(k+1))$).
+
+  \emph{Case $\tau < \vote(k)$.}
+  Condition~\ref{rev:def:healed-state:target-cap} gives $u.\target \preceq \getConfirmed_{v^*_\ell}^{\vote(k)}$. Conclusion~(3) at $v^*_\ell$ lifts to $\getConfirmed_{v^*_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v^*_\ell}^{\vote(k)}$, and maximality of~$v_\ell$ at $\vote(k+1)$ gives $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v^*_\ell}^{\vote(k+1)}$. Composing, $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$.
+
+  \emph{Case $\tau = \vote(k)$.}
+  $u$ is the slot-$k$ vote of some honest~$i$ with target~$T_c$ produced by \Cref{def:voting-rule}: either $T_c = \getConfirmed_i^{\vote(k)}$ (unlocked) or $T_c = L$ (locked), where $L$ is the lock target from a prior $i$-vote with $\finalizeTarget = L$ at $\finalizeHeight = u.\height$.
+
+  In the unlocked sub-case, maximality of~$v^*_\ell$ on~$D$ gives $\getConfirmed_i^{\vote(k)} \preceq \getConfirmed_{v^*_\ell}^{\vote(k)}$, and the monotonicity~+ maximality argument from Case~$\tau < \vote(k)$ closes $T_c \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$.
+
+  In the locked sub-case, by \Cref{lem:no-finalize-without-just} the lock target~$L$ was justified at height~$u.\height$ on some chain at some time $\tau' < \vote(k)$, via a $\geq 2n/3$ \just-quorum targeting~$L$; of these contributors, $\geq 2n/3 - f \geq 1$ are honest (under \OHM, $f < 2n/3$). Pick any honest contributor~$j$, whose \just vote~$u'$ has $u'.\target = L$, $u'.\height = u.\height \geq h$, and was cast at $\tau' < \vote(k)$. Condition~\ref{rev:def:healed-state:target-cap} applied to~$u'$ gives $L \preceq \getConfirmed_{v^*_\ell}^{\vote(k)}$, and the same monotonicity~+ maximality argument closes $T_c = L \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$.
 \end{itemize}
-The $R_v^{\vote(k+1)}$'s may differ across honest (e.g., distinct $B^\star_v$'s), but each lies on~$D$. The conditions of the healed state at slot~$k+1$ with $\comm{h}' = h$ hold:
-\begin{itemize}
-  \item Condition~\ref{rev:def:healed-state:R}: per the per-honest analysis just above; pairwise compatibility of bit-$0$ targets follows from \Cref{rev:lem:notar-unique-per-slot}.
-  \item Condition~\ref{rev:def:healed-state:no-just}: condition~\ref{rev:def:healed-state:no-just} of the healed state at slot~$k$ rules out pre-$\vote(k)$ honest votes at~$>h+1$; slot-$k$ honest \just votes are at height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$.
-  \item Condition~\ref{rev:def:healed-state:target-cap}: condition~\ref{rev:def:healed-state:target-cap} of the healed state at slot~$k$ provides an honest~$v_\ell$ such that every pre-$\vote(k)$ honest vote at height~$>h$ has target~$\preceq \getConfirmed_{v_\ell}^{\vote(k)}$. Slot-$k$ honest votes lie at height~$h$ exactly, so the set of pre-$\vote(k+1)$ honest votes at height~$>h$ equals the pre-$\vote(k)$ set. Conclusion~(3) below gives $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$, so all such targets are $\preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$.
-  \item Condition~\ref{rev:def:healed-state:just-bound}: let $C$ be a checkpoint at~$h$ justified at any time. Condition~\ref{rev:def:healed-state:just-bound} of the healed state at slot~$k$ provides an honest~$v_\ell$ with $C \preceq \getConfirmed_{v_\ell}^{\vote(k)}$. Conclusion~(3) below over $[\vote(k),\, \vote(k+1)]$ then yields $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)} \succeq C$.
-  \item Condition~\ref{rev:def:healed-state:notar-bound}: if $R_v^{\vote(k+1)}$ is bit-$0$ notarized for slot $k_n^v$ then $k_n^v = k$ (the justified subcase is vacuous), so~\ref{rev:def:healed-state:notar-bound:past} holds. For coverage, the only relevant $k'$ is $k$: any bit-$0$ notarization at~$h$ for slot~$k$ targeting~$C$ is a slot-$k$ same-slot cert satisfying $C \preceq T_i$ for every honest contributor~$i$ (the prefix-notar $\arg\max$ lies below every contributing target), with $T_i = \getConfirmed_i^{\vote(k)}$. By \OHM, the quorum has at least one honest contributor~$i$. Conclusion~(3) below over $[\vote(k),\, \vote(k+1)]$ yields $\getConfirmed_i^{\vote(k+1)} \succeq T_i \succeq C$.
-\end{itemize}
-Condition~\ref{rev:def:healed-state:gt-compat} (\getConfirmed{} pairwise compatibility at $\vote(k+1)$) is established below as a corollary of conclusion~(2).
-
-\emph{Case 2: every honest's $\getConfirmed_v^{\vote(k)}$ is at state-height~$h+1$.}
-All honest cast a slot-$k$ \just vote at~$h+1$ with target $T_v = \getConfirmed_v^{\vote(k)} \in D$ (where $D$ extends the honest $\getConfirmed$'s, well-defined by~\ref{rev:def:healed-state:gt-compat}).
-
-\emph{Sub-case 2.a: a slot-$k$ same-slot cert at~$h+1$ has fired in some honest's view by $\vote(k+1)$.}
-By synchrony, the cert is in every honest's view by $\vote(k+1)$. The cert is bit-$1$ for a single target $T^\star$ if all honest $\jtargets$ coincide, bit-$0$ for the prefix-notar $\arg\max$ block~$B^\star \in D$ otherwise; the cert key $(h+1, \ast, k, \ldots)$ strictly dominates $\Sigma_v.\key_R$ on the first coordinate, so $R_v^{\vote(k+1)}$ advances to $T^\star$ (justified) or $B^\star$ (bit-$0$ notarized at~$h+1$ slot~$k$); pairwise compatibility follows from uniqueness of the bit-$1$ target (quorum intersection at~$h+1$) or \Cref{rev:lem:notar-unique-per-slot} for the bit-$0$ case. Conditions of the healed state at slot~$k+1$ with $\comm{h}' = h+1$ hold:
-\begin{itemize}
-  \item Condition~\ref{rev:def:healed-state:R}: $R_v^{\vote(k+1)}.h = h+1$ uniformly, justified or bit-$0$ notarized for slot~$k = (k+1)-1$.
-  \item Condition~\ref{rev:def:healed-state:no-just}: input rules out pre-$\vote(k)$ honest votes at~$>h+1$ (a fortiori at~$>h+2$); slot-$k$ honest \just votes are at~$h+1 \leq h+2$; no voting in $(\vote(k),\vote(k+1))$.
-  \item Condition~\ref{rev:def:healed-state:target-cap}: pre-$\vote(k)$ honest votes at~$>h+1$ are excluded by input :no-just, and slot-$k$ honest votes lie at~$h+1$ exactly; hence no honest vote at~$>h+1$ before $\vote(k+1)$, and the condition holds vacuously.
-  \item Condition~\ref{rev:def:healed-state:just-bound}: let $C$ be a checkpoint at~$h+1$ justified at any time, with witnessing $\geq 2n/3$ \just-quorum at target~$C$. By \OHM, the quorum has at least one honest contributor~$i$, with $T_i = C$. By R1, $i$'s \just at~$h+1$ is unique. If cast before $\vote(k)$, input :target-cap gives $v_\ell$ with $T_i \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, hence $C \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; if cast at slot~$k$, $C = \getConfirmed_i^{\vote(k)}$. Either way, conclusion~(3) below lifts to $C \preceq \getConfirmed_{\,\cdot\,}^{\vote(k+1)}$.
-  \item Condition~\ref{rev:def:healed-state:notar-bound}: if $R_v^{\vote(k+1)}$ is bit-$0$ notarized for slot $k_n^v$ then $k_n^v = k$ (justified subcase vacuous). For coverage, the only relevant $k'$ is~$k$: any bit-$0$ notarization at~$h+1$ for slot~$k$ targeting~$C$ satisfies $C \preceq T_i$ for every honest contributor~$i$, with $T_i = \getConfirmed_i^{\vote(k)}$; \OHM gives $\geq 1$ such~$i$. Conclusion~(3) yields $\getConfirmed_i^{\vote(k+1)} \succeq T_i \succeq C$.
-\end{itemize}
-Condition~\ref{rev:def:healed-state:gt-compat} is established below as a corollary of conclusion~(2).
-
-\emph{Sub-case 2.b: no slot-$k$ same-slot cert at~$h+1$ has fired in any honest's view by $\vote(k+1)$.}
-By the dishonest-only-quorum bound (under \OHM, dishonest contributions to any quorum are bounded by online dishonest, $<n/2 < 2n/3$), and since input :no-just rules out pre-$\vote(k)$ honest votes at~$>h+1$ while slot-$k$ honest votes lie at~$h+1$ exactly, no cert at height~$>h+1$ fires in any honest's view in $[\vote(k),\vote(k+1)]$; combined with the sub-case hypothesis (no slot-$k$ cert at~$h+1$), no cert at~$\geq h+1$ fires. Cert events at heights~$\leq h$ are dominated by $\Sigma_v.\key_R$ on the first coordinate (input :R gives $R_v^{\vote(k)}.h = h$). Hence $R_v^{\vote(k+1)} = R_v^{\vote(k)}$ for every honest~$v$. Conditions of the healed state at slot~$k+1$ with $\comm{h}' = h$ hold:
-\begin{itemize}
-  \item Condition~\ref{rev:def:healed-state:R}: $R_v^{\vote(k+1)} = R_v^{\vote(k)}$ has $.h = h$ by input.
-  \item Condition~\ref{rev:def:healed-state:no-just}: input rules out pre-$\vote(k)$ honest votes at~$>h+1$; slot-$k$ honest votes at~$h+1 \leq h+1$; no voting in $(\vote(k),\vote(k+1))$.
-  \item Condition~\ref{rev:def:healed-state:target-cap}: pick $v_\ell$ with $\getConfirmed_{v_\ell}^{\vote(k+1)} = \max_\preceq \{\getConfirmed_i^{\vote(k+1)} : i \text{ honest}\}$ on~$D$ (well-defined by conclusion~(2) below). Pre-$\vote(k)$ honest votes at~$>h$ have target~$\preceq \getConfirmed_{v'_\ell}^{\vote(k)}$ for some honest $v'_\ell$ (input :target-cap), and conclusion~(3) plus maximality lifts to $\preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$. Slot-$k$ honest votes at~$h+1$ have target $T_v = \getConfirmed_v^{\vote(k)}$, similarly bounded.
-  \item Condition~\ref{rev:def:healed-state:just-bound}: input :just-bound provides $v_\ell$ with $C \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; conclusion~(3) lifts to $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq C$.
-  \item Condition~\ref{rev:def:healed-state:notar-bound}: $R_v^{\vote(k+1)} = R_v^{\vote(k)}$, so the $k_n^v$ value at output equals that at input. Coverage of $k' \in [k_n^v, k)$ is by input :notar-bound + monotonicity; for $k' = k$, no bit-$0$ notarization at~$h$ for slot~$k$ exists (slot-$k$ honest contributions are at~$h+1$ exclusively; dishonest-only $<2n/3$ by \OHM cannot form a slot-$k$ quorum at~$h$), so the case is vacuous.
-\end{itemize}
-Condition~\ref{rev:def:healed-state:gt-compat} is established below.
-
-\emph{Case 3: state-heights at $\vote(k)$ are mixed (some honest at~$h$, others at~$h+1$).}
-By the same dishonest-only-quorum bound and \Cref{lem:Rs-key-monotone} reasoning as in Case~1, no cert event at height~$>h+1$ fires in $[\vote(k),\vote(k+1)]$, and no off-chain pre-existing cert at~$h+1$ moves any honest's $R$ off the chain~$D$ extending honest $\getConfirmed$'s.
-
-\emph{Sub-case 3.a: a cert at height~$h+1$ has fired in some honest's view by $\vote(k+1)$.}
-By synchrony, the cert is in every honest's view by $\vote(k+1)$. $R_v^{\vote(k+1)}$ updates to a block at~$h+1$ (justified or bit-$0$ notarized for slot~$k$).
-
-Condition~\ref{rev:def:healed-state:R} holds as in Sub-case 2.a. Condition~\ref{rev:def:healed-state:no-just}: input rules out pre-$\vote(k)$ honest at~$>h+1$, slot-$k$ honest votes at~$\leq h+1$, no voting in $(\vote(k),\vote(k+1))$. Condition~\ref{rev:def:healed-state:target-cap}: vacuous as in Sub-case 2.a.
-
-Condition~\ref{rev:def:healed-state:just-bound}: let $C$ be at~$h+1$ justified at any time. By \OHM the quorum has $\geq 1$ honest contributor~$i$ with unique \just at~$h+1$ at slot~$s \leq k$ (some honest had R1 quota at~$h+1$ exhausted pre-$\vote(k)$; the rest fire R1 at slot~$k$ — those whose canonical state-height at slot~$k$ is~$h+1$). With $T_i = C$: if $s < k$, input :target-cap bounds $C$ via $\getConfirmed_{v_\ell}^{\vote(k)}$; if $s = k$, $C = \getConfirmed_i^{\vote(k)}$. Conclusion~(3) lifts to $C \preceq \getConfirmed_{\,\cdot\,}^{\vote(k+1)}$.
-
-Condition~\ref{rev:def:healed-state:notar-bound}: same argument as in Sub-case 2.a (slot-$k$ contributions on~$D$, honest contributor~$i$ with $T_i = \getConfirmed_i^{\vote(k)} \succeq C$, conclusion~(3) lift). Condition~\ref{rev:def:healed-state:gt-compat} is established below.
-
-\emph{Sub-case 3.b: no cert at height~$h+1$ has fired in any honest's view by $\vote(k+1)$.}
-The slot-$k$ same-slot cert at~$h$ may or may not fire (its target is on~$D$ at chain-key height~$h$, slot~$k$, by the prefix-notar $\arg\max$ argument), but no cert at height~$>h$ fires by sub-case hypothesis and the dishonest-only-quorum bound. Hence $R_v^{\vote(k+1)}.h = h$ for every honest~$v$, with $R_v^{\vote(k+1)}$ either equal to $R_v^{\vote(k)}$ or advanced to a slot-$k$ bit-$0$ notarization at~$h$ on~$D$. Conditions of the healed state at slot~$k+1$ with $\comm{h}' = h$ hold:
-\begin{itemize}
-  \item Condition~\ref{rev:def:healed-state:R}: $R_v^{\vote(k+1)}.h = h$.
-  \item Condition~\ref{rev:def:healed-state:no-just}: as in Sub-case 2.b — slot-$k$ honest votes at~$\leq h+1$.
-  \item Condition~\ref{rev:def:healed-state:target-cap}: as in Sub-case 2.b — slot-$k$ honest votes at~$h+1$ have target $T_v = \getConfirmed_v^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$ for $v_\ell$ the $\preceq$-max on~$D$; pre-$\vote(k)$ honest at~$>h$ bounded by input :target-cap + monotonicity + maximality.
-  \item Condition~\ref{rev:def:healed-state:just-bound}: input + monotonicity (as in Sub-case 2.b).
-  \item Condition~\ref{rev:def:healed-state:notar-bound}: per honest~$v$, $k_n^v$ at output is either $k_n^v$ at input ($R_v$ stays) or~$k$ ($R_v$ advances via slot-$k$ cert at~$h$). Coverage at $k' < k$ inherits from input + monotonicity. Coverage at $k' = k$: any bit-$0$ notarization at~$h$ for slot~$k$ targeting~$C$ has $C \preceq T_i$ for every honest contributor~$i$, with $T_i = \getConfirmed_i^{\vote(k)}$ (slot-$k$ honest at~$h$); \OHM gives $\geq 1$ such~$i$, conclusion~(3) lifts.
-\end{itemize}
-Condition~\ref{rev:def:healed-state:gt-compat} is established below.
-
-\emph{Conclusion~(1) (the system is in a healed state at slot $k+1$ with height $\comm{h}'$).}
-Condition~\ref{rev:def:healed-state:sync} (synchrony at slot~$k+1$) holds since $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$. Conditions~\ref{rev:def:healed-state:R}, \ref{rev:def:healed-state:no-just}, \ref{rev:def:healed-state:target-cap}, \ref{rev:def:healed-state:just-bound}, and~\ref{rev:def:healed-state:notar-bound} have been verified case-by-case. Condition~\ref{rev:def:healed-state:gt-compat} (\getConfirmed{} pairwise compatibility at $\vote(k+1)$) follows from conclusion~(2) below, specialized to $t = t' = \vote(k+1)$.
-
-\emph{Conclusions~(2) and~(3) (intra-interval \getConfirmed{} compatibility and monotonicity).}
-\Cref{rev:lem:intra-slot-target-compat-monotone} applied at slot~$k$ (whose hypothesis~\ref{rev:istcm:hs} is exactly hypothesis~\ref{rev:hp:hs} of the present lemma — the system is in a healed state at slot~$k$ with height $\comm{h}$) directly yields conclusions~(2) and~(3) over $[\vote(k),\vote(k+1)]$.
 \end{proof}
 
 \begin{lemma}[Healing: persistence over unbounded times]\label{rev:lem:healing-unbounded}
@@ -1406,8 +1377,328 @@ Assume the conclusions hold over $[\vote(k),\, \vote(K_n)]$. The previous paragr
 Since the $K_n$'s are unbounded, every $t, t' \geq \vote(k)$ lie in $[\vote(k),\, \vote(K_n)]$ for some sufficiently large $n$. The lemma's conclusions follow.
 \end{proof}
 
-
 \subsection{Healing advances by $N$ slots}\label{rev:sec:healing-advances}
+
+
+\begin{lemma}[Two-slot healing from a justified common root]\label{rev:lem:healing-from-justified}
+Assume:
+\begin{enumerate}
+  \item\label{rev:hfj:f} $f^{\vote(k+2)} < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item\label{rev:hfj:sync} $\start(k) - \Delta \geq \GST$;
+  \item\label{rev:hfj:ohm} the \OHM holds at slots~$k$ and $k+1$;
+  \item\label{rev:hfj:aha} the \AHA condition holds at slots~$k$ and $k+1$;
+  \item\label{rev:hfj:har} the \HAR condition holds at slot~$k$;
+  \item\label{rev:hfj:r} for every honest validator~$v$, $R_v^{\vote(k)}$ is the same justified block; denote it by $\comm{R}^{\vote(k)}$;
+  % \item\label{rev:hfj:gt} $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
+  \item\label{rev:hfj:nh} no honest validator has cast any vote at height $> \comm{R}^{\vote(k)}.h$ at any time strictly before $\vote(k)$.
+\end{enumerate}
+Then the system is in a healed state at slot $k+2$ with height $h+1$ (\Cref{rev:def:healed-state}).
+\end{lemma}
+
+\begin{proof}
+Let $h \coloneqq \comm{R}^{\vote(k)}.h$. By \Cref{rev:lem:confirmed-h-range} applied per-honest, $\sigma[\getConfirmed_v^{\vote(k)}].h \in \{R_v^{\vote(k)}.h,\, R_v^{\vote(k)}.h + 1\} = \{h, h+1\}$ for every honest~$v$, splitting into two cases.
+
+\begin{description}
+\item[{Case 1: $\sigma[\getConfirmed_v^{\vote(k)}].h = h$ for every honest~$v$.}]\hfill
+
+\emph{Step 1: $R_v^t = \comm{R}^{\vote(k)}$ throughout $[\vote(k),\, \vote(k+1)]$.}
+By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified at height~$h$ in every honest's view, so $\Sigma_v.\key_R \geq (h, 1, 0, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; the case assumption forces every slot-$k$ honest vote at canonical state-height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$. Hence honest contributions at height~$>h$ in $[\vote(k),\, \vote(k+1)]$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h$ fires. \Cref{lem:Rs-key-monotone} keeps $\Sigma_v.\key_R.h \leq h$, and the bit-$1$ cached key dominates any bit-$0$ candidate at the same height. \Cref{lem:just-unique-height} (under $f < n/3$ from hypothesis~\ref{rev:hfj:f}) makes $\comm{R}^{\vote(k)}$ the unique justified block at height~$h$. Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
+
+\emph{Step 2: pairwise compatibility, monotonicity, and slot-$k$ vote inclusion at $\vote(k+1)$.}
+The preamble (R-compatibility at $\vote(k)$) of \Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} is trivial since $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ uniformly. Pick any honest~$v_\ell$; by Step~1, $\getConfirmed_{v_\ell}^{\vote(k)} \succeq \comm{R}^{\vote(k)} = R_v^t$ for every honest~$v$ and $t \in [\vote(k),\, \vote(k+1)]$, discharging the premise. Then:
+\begin{itemize}
+  \item \Cref{rev:prop:getConfirmed-compat} gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+1)}$; let~$D'$ be the chain extending them.
+  \item \Cref{rev:prop:target-monotonicity} gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_v^{\vote(k)}$ for every honest~$v$.
+  \item \Cref{rev:prop:honest-vote-inclusion} (under hypothesis~\ref{rev:hfj:har}) gives that the chain at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; in particular, every slot-$k$ honest vote target $T_i = \getConfirmed_i^{\vote(k)}$ lies on~$D'$.
+\end{itemize}
+
+\emph{Step 3: canonical state-height reaches~$h+1$ at $\vote(k+1)$.}
+By Step~2, the chain at $\getConfirmed_v^{\vote(k+1)}$ contains the $\geq 2n/3$ slot-$k$ honest \just votes, each with target $T_i \in D'$ at state-height~$h$. After processing on~$D'$, each honest contributor~$i$ has $\sigma.\ntargets[i] = T_i$ and $\sigma.\nslots[i] = k$ at state-height~$h$. The prefix-notar $\arg\max_\preceq$ in \processHeight{} fires a bit-$0$ cert at $(h, 0, k, -B^\star.\slot, \hash(B^\star))$ for some $B^\star \in D'$ at state-height~$h$, advancing canonical state-height to~$h+1$ (the cert key is dominated by the cached bit-$1$, so $R_v$ doesn't update). Combining with $\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq R_v^{\vote(k+1)}.h + 1 = h+1$ (\Cref{rev:cor:processed-height-bound}) gives $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.
+
+\emph{Step 4: slot-$(k+1)$ honest votes form a same-slot cert at~$h+1$ on~$D'$.}
+By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The (R1) branch fires (no prior honest vote at height~$h+1$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, Step~3 places slot-$k$ at height~$h$ exactly), and the lock check fails (hypothesis~\ref{rev:hfj:nh} also excludes before-$\vote(k)$ honest finalize-bearing at height~$h+1$; slot-$k$ has $\finalizeHeight \leq h - 1 < h+1$). So the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
+
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest validators cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the $\geq 2n/3$ slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
+
+\emph{Step 5: $R_v^{\vote(k+2)}$ is a uniform bit-$0$ notarization at height~$h+1$ with notarization slot~$k+1$.}
+\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes (uniform across honest by synchrony) into a virtual block extending its canonical (on~$D'$). The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star} \in D'$ at state-height~$h+1$, with $\geq 2n/3$ honest contributors having $B^{\star\star} \preceq T_v^{(k+1)}$. The selection depends only on the honest contributions (which dominate the $\geq 2n/3$ count alone) and $D'$'s linear structure, so $B^{\star\star}$ is uniform across honest validators. The cert key $(h+1, 0, k+1, -B^{\star\star}.\slot, \hash(B^{\star\star}))$ strictly dominates the cached $(h, 1, 0, \ldots)$ on the leading coordinate, so $R_v^{\vote(k+2)} = B^{\star\star}$ for every honest~$v$, with cert-key height~$h+1$ and notarization slot~$k+1 = (k+2) - 1$.
+
+\emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+We verify each condition of \Cref{rev:def:healed-state}.
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}.}
+  $\start(k+2) - \Delta \geq \start(k) + 4\Delta - \Delta = \start(k) + 3\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
+
+  \item \emph{\ref{rev:def:healed-state:R}.}
+  Step~5 gives $R_v^{\vote(k+2)}.h = h+1$.
+
+  \item \emph{\ref{rev:def:healed-state:gt-compat}.}
+  Apply \Cref{rev:prop:getConfirmed-compat} at slot~$k+1$. Preamble: $R_v^{\vote(k+1)} = \comm{R}^{\vote(k)}$ uniformly (Step~1), trivially pairwise compatible. Premise: pick $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+1)}$ the $\preceq$-max on~$D'$. For $t \in [\vote(k+1),\, \vote(k+2)]$, $R_v^t \in \{\comm{R}^{\vote(k)},\, B^{\star\star}\}$; $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \comm{R}^{\vote(k)}$ trivially, and $B^{\star\star} \preceq T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$ by Step~5 and maximality. The conclusion gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+2)}$.
+
+  \item \emph{\ref{rev:def:healed-state:target-cap}.}
+  Before-$\vote(k)$ honest votes at height~$\geq h+1$: ruled out by hypothesis~\ref{rev:hfj:nh}. Slot-$k$ honest votes: at height~$h$, not~$\geq h+1$. Slot-$(k+1)$ honest votes: at height~$h+1$ with target $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)}$. \Cref{rev:prop:target-monotonicity} at slot~$k+1$ (premise discharged as in the previous bullet) gives $\getConfirmed_v^{\vote(k+2)} \succeq \getConfirmed_v^{\vote(k+1)} = T_v^{(k+1)}$; by the previous bullet's pairwise compatibility, picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+2)}$ the $\preceq$-max gives $T_v^{(k+1)} \preceq \getConfirmed_v^{\vote(k+2)} \preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$.
+\end{itemize}
+All four conditions verified, the system is in a healed state at slot~$k+2$ with height~$h+1$.
+
+
+\item[{Case 2: $\sigma[\getConfirmed_v^{\vote(k)}].h = h+1$ for some honest~$v$.}]\hfill
+
+\emph{Step 1: cert-target compatibility throughout $[\vote(k),\, \vote(k+1)]$.}
+By hypothesis~\ref{rev:hfj:r}, $\Sigma_v.\key_R \geq (h, 1, 0, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest votes at heights~$\leq h+1$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Honest contributions at height~$>h+1$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h+1$ fires; \Cref{lem:Rs-key-monotone} keeps $\Sigma_v.\key_R.h \leq h+1$.
+
+We classify cert events whose key may dominate the cached $(h, 1, 0, \ldots)$ in $v$'s view in the interval. At height~$h$, bit-$1$ uniquely targets $\comm{R}^{\vote(k)}$ (\Cref{lem:just-unique-height} under $f<n/3$, hypothesis~\ref{rev:hfj:f}); bit-$0$ at height~$h$ is dominated. At height~$h+1$, bit-$1$ uniquely targets some $J^*$ (\Cref{lem:just-unique-height}); bit-$0$ slot-$k$ same-slot certs at $h+1$ are pairwise compatible (\Cref{rev:lem:notar-unique-per-slot}). For any cert at height~$h+1$, the witnessing quorum has $\geq 2n/3 - f \geq 1$ honest contributors; each honest contribution at slot~$k$ at height~$h+1$ is a slot-$k$ vote by some honest~$i$ with $\sigma[\getConfirmed_i^{\vote(k)}].h = h+1$, and the (R1) clause of \Cref{def:voting-rule} (unlocked, since hypothesis~\ref{rev:hfj:nh} excludes any before-$\vote(k)$ honest vote at height~$>h$, in particular finalize-bearing ones at $h+1$) gives the contributor's vote target equal to $\getConfirmed_i^{\vote(k)}$. So every cert target $T^{**}$ at height~$h+1$ satisfies $T^{**} \preceq \getConfirmed_i^{\vote(k)}$ for some honest~$i$ at state-height~$h+1$, hence lies on the chain extending $\comm{R}^{\vote(k)}$ through $\getConfirmed_i^{\vote(k)}$ (since $\getConfirmed_i^{\vote(k)} \succeq \comm{R}^{\vote(k)}$ by the store invariant). Combined with the pairwise-compatibility statements above, $\comm{R}^{\vote(k)}$, $J^*$ (when applicable), every slot-$k$ same-slot cert target at $h+1$, and the $\getConfirmed_i^{\vote(k)}$ at state-height~$h+1$ that bound them all lie on a common chain~$D$ extending $\comm{R}^{\vote(k)}$.
+
+\emph{Step 2: pairwise compatibility, monotonicity, and slot-$k$ vote inclusion at $\vote(k+1)$.}
+The preamble of \Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} (R-compatibility at $\vote(k)$) is trivial since $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ uniformly. Pick $v_\ell$ honest with $\sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h = h+1$ (case assumption guarantees one) and $\getConfirmed_{v_\ell}^{\vote(k)}$ the $\preceq$-max on~$D$ among the honest \getConfirmed{}s at $\vote(k)$ at state-height~$h+1$ on~$D$. By Step~1, every cert target~$T^{**}$ at height~$\leq h+1$ that may update $R_v$ in the interval satisfies $T^{**} \preceq \getConfirmed_i^{\vote(k)}$ for some honest~$i$ on~$D$, and $\getConfirmed_i^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ by maximality; together with $\comm{R}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ (store invariant), every $R_v^t$ for $t \in [\vote(k),\, \vote(k+1)]$ satisfies $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, discharging the premise. Then:
+\begin{itemize}
+  \item \Cref{rev:prop:getConfirmed-compat} gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+1)}$; let~$D'$ be the chain extending them ($D \subseteq D'$ since $\getConfirmed_{v_\ell}^{\vote(k)} \in D$ and $\getConfirmed_{v_\ell}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k+1)} \in D'$ by the next bullet).
+  \item \Cref{rev:prop:target-monotonicity} gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_v^{\vote(k)}$ for every honest~$v$.
+  \item \Cref{rev:prop:honest-vote-inclusion} (under hypothesis~\ref{rev:hfj:har}) gives that the chain at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; in particular, every slot-$k$ honest vote target lies on~$D'$.
+\end{itemize}
+
+\emph{Step 3: state-height at $\vote(k+1)$ lies in $\{h+1, h+2\}$.}
+Pick any honest~$v_h$ with $\sigma[\getConfirmed_{v_h}^{\vote(k)}].h = h+1$ (case assumption guarantees one). Its canonical at $\vote(k)$ lies on a chain~$L_{v_h}$ where the cert-at-$h$ targeting $\comm{R}^{\vote(k)}$ has fired before-$\vote(k)$ (state-height~$h+1$ requires it); the before-$\vote(k)$ honest \just votes that established the $\geq 2n/3$ \just-quorum at $\comm{R}^{\vote(k)}$ on~$L_{v_h}$ are in blocks on~$L_{v_h}$. By Step~2's monotonicity, $\getConfirmed_{v_h}^{\vote(k+1)} \succeq \getConfirmed_{v_h}^{\vote(k)}$, so the chain at $\getConfirmed_{v_h}^{\vote(k+1)}$ extends $L_{v_h}$ at least up to $\getConfirmed_{v_h}^{\vote(k)}$; this initial segment of~$L_{v_h}$ thus lies on~$D'$. The bit-$1$ cert at height~$h$ targeting $\comm{R}^{\vote(k)}$ thus fires on~$D'$, advancing canonical state-height to~$h+1$. Combined with $\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq R_v^{\vote(k+1)}.h + 1 \leq h+2$ (\Cref{rev:cor:processed-height-bound}), $\sigma[\getConfirmed_v^{\vote(k+1)}].h \in \{h+1, h+2\}$ for every honest~$v$. We sub-split on the value.
+
+\begin{description}
+\item[{Case 2.A: $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.}]\hfill
+
+\emph{Step 4: slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.}
+By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The lock check at $h+1$ fails: hypothesis~\ref{rev:hfj:nh} excludes any before-$\vote(k)$ honest vote at height~$>h$, in particular finalize-bearing at $h+1$; slot-$k$ (R1) honest votes have $\finalizeHeight = h_j \leq h < h+1$ (canonical $h_j$ equals~$h$ on chains where the cert-at-$h$ has fired, and is $\leq h-1$ otherwise). Hence the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
+
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
+
+\emph{Step 5: $R_v^{\vote(k+2)}.h = h+1$ for every honest~$v$, with target on~$D'$.}
+\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into a virtual block extending its canonical chain (on~$D'$); the prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star}_v \in D'$ at state-height~$h+1$, firing a bit-$0$ cert event with key $(h+1, 0, k+1, -B^{\star\star}_v.\slot, \hash(B^{\star\star}_v))$. The $\arg\max$ depends on $\Sigma_v.V$ (which has uniform honest content by synchrony) and~$D'$'s linear structure; honest contributions alone form a $\geq n - f > 2n/3$ quorum, so $B^{\star\star}_v$ is uniform across honest validators.
+
+We compare the new cert key to $\Sigma_v.\key_R$:
+\begin{itemize}
+  \item If $\Sigma_v.\key_R.h < h+1$: the slot-$(k+1)$ key dominates on the leading coordinate; $R_v$ updates to~$B^{\star\star}_v$.
+  \item If $\Sigma_v.\key_R = (h+1, 0, k', \ldots)$ with $k' \leq k$ (slot-$\geq k+1$ contributions do not exist before $\vote(k+1)$): the slot-$(k+1)$ key dominates on the $s_n$ coordinate; $R_v$ updates to~$B^{\star\star}_v$.
+  \item If $\Sigma_v.\key_R = (h+1, 1, 0, J^*)$ for some $J^*$ justified at height~$h+1$ in $v$'s view: the cached bit-$1$ dominates and $R_v$ stays at~$J^*$. The bit-$1$ quorum has $\geq 2n/3 - f$ honest contributors at common target $J^* = \getConfirmed_i^{\vote(k)}$ for some honest~$i$ at state-height~$h+1$, and Step~2's vote inclusion places that target on~$D'$.
+\end{itemize}
+In every case $R_v^{\vote(k+2)}.h = h+1$ and $R_v^{\vote(k+2)} \in D'$ at state-height~$h+1$.
+
+\emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+We verify each condition of \Cref{rev:def:healed-state}.
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}.}
+  $\start(k+2) - \Delta \geq \start(k) + 4\Delta - \Delta = \start(k) + 3\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
+
+  \item \emph{\ref{rev:def:healed-state:R}.}
+  Step~5 gives $R_v^{\vote(k+2)}.h = h+1$.
+
+  \item \emph{\ref{rev:def:healed-state:gt-compat}.}
+  Apply \Cref{rev:prop:getConfirmed-compat} at slot~$k+1$. Preamble: $R_v^{\vote(k+1)} \in D'$ (Step~1 if no cert at $h+1$ has updated~$R_v$ by $\vote(k+1)$, Step~5's classification otherwise), pairwise compatible. Premise: pick $v_\ell'$ honest with $\getConfirmed_{v_\ell'}^{\vote(k+1)}$ the $\preceq$-max on~$D'$ among honest \getConfirmed{}s at $\vote(k+1)$. For $t \in [\vote(k+1),\, \vote(k+2)]$, $R_v^t \in D'$ at state-height~$h+1$ (Step~5 covers $t = \vote(k+2)$ and the bit-$1$/bit-$0$ classification covers earlier $t$). Each such $R_v^t$ is~$\preceq \getConfirmed_j^{\vote(k+1)}$ for some honest~$j$ (slot-$k$ certs by Step~2's vote inclusion + maximality, slot-$(k+1)$ certs by Step~5's $\arg\max$ giving $B^{\star\star}_v \preceq \getConfirmed_v^{\vote(k+1)}$ for $\geq 2n/3$ honest); maximality of~$v_\ell'$ then gives $R_v^t \preceq \getConfirmed_{v_\ell'}^{\vote(k+1)}$. The conclusion gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+2)}$.
+
+  \item \emph{\ref{rev:def:healed-state:target-cap}.}
+  Before-$\vote(k)$ honest votes at height~$\geq h+1$: ruled out by hypothesis~\ref{rev:hfj:nh}. Slot-$k$ honest votes at height~$\geq h+1$: those at height~$h+1$ exactly, with target $T_i = \getConfirmed_i^{\vote(k)} \in D'$ (Step~2's vote inclusion). \Cref{rev:prop:target-monotonicity} (premise as in the previous bullet) gives $\getConfirmed_i^{\vote(k+2)} \succeq \getConfirmed_i^{\vote(k+1)} \succeq T_i$; pairwise compatibility (previous bullet) and picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+2)}$ the $\preceq$-max gives $T_i \preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$. Slot-$(k+1)$ honest votes at height~$h+1$ with target $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)}$: same monotonicity~+ maximality argument gives $T_v^{(k+1)} \preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$.
+\end{itemize}
+All four conditions verified, the system is in a healed state at slot~$k+2$ with height~$h+1$.
+
+
+\item[{Case 2.B: $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$ for some honest~$v_*$.}]\hfill
+
+\emph{Step 4: $v_*$'s view contains a cert event at height~$h+1$ with target on~$D'$, fired during onBlock processing of some block~$B^* \in \Sigma_{v_*}.\T$.}
+\Cref{rev:cor:processed-height-bound} applied to $\Sigma_{v_*}^{\vote(k+1)}$ gives $R_{v_*}^{\vote(k+1)}.h \geq h+1$. Step~1's bound $\Sigma_v.\key_R.h \leq h+1$ then forces $R_{v_*}^{\vote(k+1)}.h = h+1$. By Step~1's classification of cert events that may dominate the cached key, the corresponding cert event has target $T^* \in D'$. Since $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$, the cert event also fired on $v_*$'s canonical chain (the height-advance from $h+1$ to $h+2$ requires processHeight to fire the cert at~$h+1$ on canonical), at processSlot for some block~$B^* \in \Sigma_{v_*}^{\vote(k+1)}.\T$ on canonical.
+
+\emph{Step 5: every honest validator has $R_v^{\vote(k+2)}.h \geq h+1$ with target on~$D'$.}
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$, post-GST), every block in $\Sigma_{v_*}^{\vote(k+1)}.\T$ is delivered to every honest by $\vote(k+2) - \Delta$, and honest validators process received blocks via onBlock in $\preceq$-respecting order. In particular, every honest~$v$ processes~$B^*$ together with all of its ancestors by $\vote(k+2)$. The state map is a deterministic function of the chain (\Cref{thm:orderindep}), so $\sigma_v[B^*.\parent] = \sigma_{v_*}[B^*.\parent]$, and the same processSlot/processHeight that fired the cert at~$h+1$ in $v_*$'s view fires it in $v$'s view; the descriptor offered to \updateForkChoiceRoot raises $\Sigma_v.\key_R$ to at least $(h+1, b, s_n, -T^*.\slot, \hash(T^*))$. \Cref{lem:Rs-key-monotone} preserves the bound, giving $R_v^{\vote(k+2)}.h \geq h+1$.
+
+A subsequent cert in $v$'s view at height~$>h+1$ during $[\vote(k+1),\, \vote(k+2)]$ has height~$\leq h+2$ (no honest votes at height~$>h+2$ exist before $\vote(k+2)$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest at $\leq h+1$ and slot-$(k+1)$ honest at $\leq h+2$; dishonest alone $\leq f < 2n/3$). Such a cert at~$h+2$ has target $\preceq$ some slot-$(k+1)$ honest contributor's target at $h+2$, which equals $\getConfirmed_w^{\vote(k+1)}$ for some honest~$w$ at state-height~$h+2$ on~$D'$ (R1 unlocked, since hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest at height $>h$ and slot-$k$ R1 honest votes have $\finalizeHeight \leq h$, both strictly below $h+2$). Hence $R_v^{\vote(k+2)} \in D'$.
+
+\emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+We verify each condition of \Cref{rev:def:healed-state}.
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}.} As in Case~2.A: $\start(k+2) - \Delta \geq \start(k) + 3\Delta \geq \GST$.
+
+  \item \emph{\ref{rev:def:healed-state:R}.} Step~5 gives $R_v^{\vote(k+2)}.h \geq h+1$ for every honest~$v$.
+
+  \item \emph{\ref{rev:def:healed-state:gt-compat}.}
+  Apply \Cref{rev:prop:getConfirmed-compat} at slot~$k+1$. Preamble: $R_v^{\vote(k+1)} \in D'$ for every honest~$v$ (Step~1 if no cert at~$h+1$ has updated~$R_v$ by $\vote(k+1)$, Step~5's classification otherwise), pairwise compatible. Premise: pick $v_\ell'$ honest with $\getConfirmed_{v_\ell'}^{\vote(k+1)}$ the $\preceq$-max on~$D'$ among honest \getConfirmed{}s at $\vote(k+1)$ (well-defined since $v_*$'s $\getConfirmed^{\vote(k+1)}$ at state-height~$h+2$ lies on~$D'$). For $t \in [\vote(k+1),\, \vote(k+2)]$, every cert target reachable as $R_v^t$ is on~$D'$ at chain-position bounded by some honest's $\getConfirmed^{\vote(k)}$ or $\getConfirmed^{\vote(k+1)}$ (slot-$k$ certs by Step~2's vote inclusion + maximality, slot-$(k+1)$ certs at~$h+2$ as in Step~5, slot-$(k+1)$ certs at~$h+1$ symmetrically), and maximality of~$v_\ell'$ gives $R_v^t \preceq \getConfirmed_{v_\ell'}^{\vote(k+1)}$. The conclusion gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+2)}$.
+
+  \item \emph{\ref{rev:def:healed-state:target-cap}.}
+  Before-$\vote(k)$ honest votes at height~$\geq h+1$: ruled out by hypothesis~\ref{rev:hfj:nh}. Slot-$k$ honest votes at height~$\geq h+1$: at~$h+1$ exactly, with target $\getConfirmed_i^{\vote(k)} \in D'$ (Step~2's vote inclusion). Slot-$(k+1)$ honest votes at height~$\geq h+1$: at~$h+1$ or~$h+2$, with target $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ (R1 unlocked: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest at height $>h$ in particular finalize-bearing at~$h+1$ or~$h+2$; slot-$k$ R1 honest votes have $\finalizeHeight \leq h < h+1$). \Cref{rev:prop:target-monotonicity} (premise as in the previous bullet) gives $\getConfirmed_v^{\vote(k+2)} \succeq \getConfirmed_v^{\vote(k+1)}$ for every honest~$v$ and similarly $\getConfirmed_i^{\vote(k+2)} \succeq \getConfirmed_i^{\vote(k)}$; pairwise compatibility (previous bullet) and picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+2)}$ the $\preceq$-max give every such target~$\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$.
+\end{itemize}
+All four conditions verified, the system is in a healed state at slot~$k+2$ with height~$h+1$.
+\end{description}
+\end{description}
+\end{proof}
+
+\begin{lemma}
+Assume:
+\begin{enumerate}
+  \item $f^{\vote(k+3)} < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item syncers of slots in $[k+1]$ is honest.
+  \item the \OHM holds at slots in $[k, k+1, k+2]$;
+  \item the \AHA condition holds at slots in $[k, k+1, k+2]$;
+  \item the \HAR condition holds at slot in $[k, k+1]$;
+  \item for every honest validator~$v$, $R_v^{\vote(k)}$  a notarized block for the same height $h$ and slot $k-1$.
+  % \item $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
+  \item no honest validator has cast any vote at height $> \comm{R}^{\vote(k)}.h$ at any time strictly before $\vote(k)$.
+\end{enumerate}
+Then the system is in a healed state at some slot in  $[k+2,k+3]$ with height $h+1$ (\Cref{rev:def:healed-state}).
+\end{lemma}
+
+\begin{proof}
+Let $h \coloneqq \comm{R}^{\vote(k)}.h$. By \Cref{rev:lem:confirmed-h-range} applied per-honest, $\sigma[\getConfirmed_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$, splitting into two cases.
+
+\begin{description}
+\item[{Case 1: $\sigma[\getConfirmed_v^{\vote(k)}].h = h$ for every honest~$v$.}]\hfill
+
+\emph{Step 1: setup at $\vote(k)$.}
+By hypothesis~7, each honest's cached key is $\Sigma_v.\key_R = (h, 0, k-1, -R_v^{\vote(k)}.\slot, \hash(R_v^{\vote(k)}))$. By \Cref{rev:lem:notar-unique-per-slot} (under $f<n/3$ from hypothesis~1), the honest $R_v^{\vote(k)}$ are pairwise compatible; let~$C_R$ be the chain extending them, with each $R_v^{\vote(k)} \in C_R$ at chain-height~$h$. Hypothesis~8 excludes any before-$\vote(k)$ honest vote at height~$>h$. \Cref{lem:no-finalize-without-just} combined with \Cref{lem:Rs-key-monotone} (cached~$.h \leq h$ keeps cached at bit-$0$ at~$h$ never bit-$1$ at~$h$) excludes any honest lock at height~$h$ before $\vote(k)$. Hence every slot-$k$ honest vote at canonical state-height~$h$ is unlocked with target $T_i = \getConfirmed_i^{\vote(k)}$ on a chain extending $R_i^{\vote(k)} \in C_R$.
+
+\emph{Step 2: slot-$k$ same-slot bit-$0$ cert at $h$ slot~$k$.}
+By hypothesis~5 (\AHA at slot~$k$) and hypothesis~6 (\HAR at slot~$k$), all $\geq n-f > 2n/3$ honest cast at $\vote(k)$, and an honest proposer at some slot in $[\vote(k), \vote(k+1) - \delta_c)$ proposes a block~$B^h$ on the available chain that contains every slot-$k$ honest vote; by synchrony (hypothesis~2 + slot spacing), $B^h$ is delivered to every honest by $\vote(k+1)$. Inside $B^h$'s on-chain processing (or via virtual-block aggregation on any leaf at state-height~$\geq h$, by the extended \updateRootFromVotes{}), the prefix-notar $\arg\max_\preceq$ in \processHeight{} fires a bit-$0$ cert at $(h, 0, k, -B^\star.\slot, \hash(B^\star))$ for some $B^\star$ on a chain extending~$C_R$. \Cref{rev:lem:notar-unique-per-slot} pins all such targets across honest views to a common chain. The cert key strictly dominates the cached~$(h, 0, k-1, \ldots)$ on the $s_n$ coordinate, so $R_v$ updates within height~$h$ to a target in this common chain.
+
+\item[{Sub-case 1.A: no bit-$1$ cert at height~$h$ has fired in any honest's view by $\vote(k+1)$.}]\hfill
+
+\emph{Step 3: canonical state-height reaches~$h+1$ at $\vote(k+1)$.}
+\Cref{rev:prop:honest-vote-inclusion} (under hypothesis~6 + the discharged premise: $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$ for honest~$v_\ell$ chosen as the $\preceq$-max honest \getConfirmed{} on~$C_R$ at $\vote(k)$, and $t \in [\vote(k),\, \vote(k+1)]$ — every cert target reachable as $R_v^t$ in this interval lies on~$C_R$ at chain-height~$\leq h$ by Step~1's notar-uniqueness + Step~2) gives that the chain at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote. The slot-$k$ same-slot cert at~$h$ thus fires on canonical, advancing canonical state-height to~$h+1$. \Cref{rev:prop:getConfirmed-compat} gives pairwise compatibility of the honest $\getConfirmed_v^{\vote(k+1)}$; let~$D'$ be the chain extending them. Combined with \Cref{rev:cor:processed-height-bound} ($\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq h+1$), $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.
+
+\emph{Step 4: slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.}
+By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. Lock-check at~$h+1$ fails: hypothesis~8 excludes before-$\vote(k)$ honest votes at height~$>h$; slot-$k$ R1/R2 honest votes have $\finalizeHeight \leq h_j \leq h-1 < h+1$ (in this sub-case canonical $h_j < h$, since no bit-$1$ at~$h$ has fired). Hence $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$. By synchrony + hypothesis~5 (\AHA at $k+1$), all $\geq n-f > 2n/3$ slot-$(k+1)$ honest votes are delivered to every honest by $\vote(k+2) - \Delta$.
+
+\emph{Step 5: $R_v^{\vote(k+2)}.h = h+1$ for every honest, target on~$D'$.}
+The extended \updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into virtual blocks extending each leaf at state-height~$\geq R.h = h$, including the leaf on~$D'$ that hosts the slot-$(k+1)$ targets. The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at~$h+1$ on~$D'$ selects $B^{\star\star} \in D'$ at state-height~$h+1$, firing a bit-$0$ cert with key $(h+1, 0, k+1, -B^{\star\star}.\slot, \hash(B^{\star\star}))$. Even if a late bit-$1$ cert at~$h$ would otherwise compete (cached~$.h$ stays~$\leq h$ in this sub-case otherwise), the new key dominates on the leading coordinate, and the leaf-coverage of the extended \updateRootFromVotes{} ensures the slot-$(k+1)$ cert is offered for every leaf of state-height~$\geq h$ (so $R_v$ updates regardless of which leaf the validator's $\getConfirmed$ lands on). Hence $R_v^{\vote(k+2)} = B^{\star\star}$ uniformly with $R_v^{\vote(k+2)}.h = h+1$.
+
+\emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}}: $\start(k+2) - \Delta \geq \GST$ from hypothesis~2 + slot spacing.
+  \item \emph{\ref{rev:def:healed-state:R}}: Step~5.
+  \item \emph{\ref{rev:def:healed-state:gt-compat}}: \Cref{rev:prop:getConfirmed-compat} at slot~$k+1$, premise discharged via Step~3's pairwise compatibility on~$D'$ + Step~5's $B^{\star\star} \in D'$ at chain-height~$h+1$ bounded by the $\preceq$-max honest $\getConfirmed^{\vote(k+1)}$ on~$D'$.
+  \item \emph{\ref{rev:def:healed-state:target-cap}}: before-$\vote(k)$ honest at $\geq h+1$ ruled out by hypothesis~8; slot-$k$ honest at~$h$, not~$\geq h+1$; slot-$(k+1)$ honest at~$h+1$ with target on~$D'$, bounded by $\getConfirmed_{v_\ell}^{\vote(k+2)}$ via \Cref{rev:prop:target-monotonicity} + maximality.
+\end{itemize}
+The system is in a healed state at slot~$k+2$ with height~$h+1$.
+
+\item[{Sub-case 1.B: a bit-$1$ cert at height~$h$ has fired in some honest's view by $\vote(k+1)$.}]\hfill
+
+By view-merge under honest $\syncer(k+1)$ (hypothesis~3, \Cref{rev:ass:view-merge}), every honest's store at $\vote(k+1)$ equals the common $\comm{\Sigma}^{\vote(k+1)}$; the bit-$1$ cert at~$h$ targeting some $J^*$ is in every honest's view, with $R_v^{\vote(k+1)} = J^*$ uniformly (the bit-$1$ key $(h, 1, 0, \ldots)$ dominates any cached bit-$0$ at the same height). Hence $\comm{R}^{\vote(k+1)} = J^*$ is justified at height~$h$ in every honest's view at $\vote(k+1)$.
+
+The hypotheses of \Cref{rev:lem:healing-from-justified} apply at slot~$k+1$ with $\comm{R}^{\vote(k+1)} = J^*$:
+\begin{itemize}
+  \item \ref{rev:hfj:f}: $f^{\vote((k+1)+2)} = f^{\vote(k+3)} < n/3$ from hypothesis~1.
+  \item \ref{rev:hfj:sync}: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$ from hypothesis~2 + slot spacing.
+  \item \ref{rev:hfj:ohm}: \OHM at slots~$k+1$ and~$k+2$ from hypothesis~4.
+  \item \ref{rev:hfj:aha}: \AHA at slots~$k+1$ and~$k+2$ from hypothesis~5.
+  \item \ref{rev:hfj:har}: \HAR at slot~$k+1$ from hypothesis~6.
+  \item \ref{rev:hfj:r}: $R_v^{\vote(k+1)} = J^*$ uniformly justified at height~$h$, just established.
+  \item \ref{rev:hfj:nh}: hypothesis~8 excludes before-$\vote(k)$ honest at height~$>h$; slot-$k$ honest at~$h$ exactly (Step~1); no voting in $(\vote(k),\, \vote(k+1))$.
+\end{itemize}
+Invoking \Cref{rev:lem:healing-from-justified} at slot~$k+1$ places the system in a healed state at slot~$(k+1)+2 = k+3$ with height~$h+1$.
+
+In either sub-case, the system is in a healed state at some slot in~$\{k+2, k+3\}$ with height~$h+1$.
+
+\item[{Case 2: $\sigma[\getConfirmed_v^{\vote(k)}].h = h+1$ for some honest~$v$.}]\hfill
+
+\emph{Step 1: setup at $\vote(k)$.}
+By hypothesis~7, $\Sigma_v.\key_R = (h, 0, k-1, -R_v^{\vote(k)}.\slot, \hash(R_v^{\vote(k)}))$ at $\vote(k)$ for every honest~$v$. By \Cref{rev:lem:notar-unique-per-slot} (under $f<n/3$, hypothesis~1), the honest $R_v^{\vote(k)}$ are pairwise compatible; let~$C_R$ be the chain extending them. Since cached is bit-$0$ at height~$h$, by \Cref{lem:Rs-key-monotone} no bit-$1$ cert at height~$h$ has fired in any honest's view by $\vote(k)$ (the bit-$1$ key $(h, 1, 0, \ldots)$ would have raised the cache). Hypothesis~8 excludes any before-$\vote(k)$ honest vote at height~$>h$.
+
+\emph{Step 2: slot-$k$ honest votes are unlocked with target $\getConfirmed_v^{\vote(k)}$.}
+By \Cref{rev:lem:confirmed-h-range}, $\sigma[\getConfirmed_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$. Each honest~$v$ casts a slot-$k$ vote at canonical state-height $h_v \in \{h, h+1\}$. The lock-checks fail: hypothesis~8 excludes before-$\vote(k)$ honest finalize-bearing at height~$h+1$, ruling out a lock at~$h+1$; \Cref{lem:no-finalize-without-just} together with Step~1 (no bit-$1$ at~$h$ in any honest's view) excludes any prior $\finalizeHeight = h$ vote (which would require a justification at~$h$ to have fired), ruling out a lock at~$h$. Hence the slot-$k$ vote target is $T_v = \getConfirmed_v^{\vote(k)}$, on a chain extending $R_v^{\vote(k)} \in C_R$.
+
+\begin{description}
+\item[{Case 2.A: no bit-$1$ cert at height~$h$ has fired in any honest's view by $\vote(k+1)$.}]\hfill
+
+\emph{Step 3: cert-target compatibility throughout $[\vote(k),\, \vote(k+1)]$.}
+The case-$2.A$ assumption (no bit-$1$ at~$h$ by $\vote(k+1)$) plus Step~1 (no bit-$1$ at~$h$ before~$\vote(k)$, forced by hypothesis~7) rules out bit-$1$ at~$h$ throughout $[\vote(k),\, \vote(k+1)]$. We classify cert events whose key may dominate the cached at any honest's view in the interval:
+\begin{itemize}
+  \item \emph{Height~$h$:} only bit-$0$ same-slot certs at slot $s \in \{k-1, k\}$ (slot-$\geq k+1$ contributions don't exist before $\vote(k+1)$, slot-$\leq k-2$ would be dominated by cached's $s_n = k-1$ on the inverted-slot key when ties on $s_n$ via hash). All such cert targets are pairwise compatible (\Cref{rev:lem:notar-unique-per-slot}) and lie on the chain extending $C_R$ — call this~$D$.
+  \item \emph{Height~$h+1$:} bit-$0$ slot-$k$ same-slot at $h+1$ (from slot-$k$ honest contributions at~$h+1$, for those honest with $\sigma[\getConfirmed_v^{\vote(k)}].h = h+1$), or bit-$1$ at $h+1$ targeting some $J^{**}$. By Step~2, slot-$k$ honest contributions at~$h+1$ have target $\getConfirmed_v^{\vote(k)} \in D$, so the prefix-notar $\arg\max_\preceq$ for bit-$0$ at~$h+1$ lies on~$D$; the bit-$1$ target is also $\getConfirmed_i^{\vote(k)} \in D$ for some honest contributor~$i$ at state-height~$h+1$.
+\end{itemize}
+Hence every cert target reachable as $R_v^t$ for $t \in [\vote(k),\, \vote(k+1)]$ lies on the common chain~$D$ extending~$C_R$ at chain-height~$\leq h+1$.
+
+\emph{Step 4: pairwise compatibility, monotonicity, vote-inclusion at $\vote(k+1)$.}
+\Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} apply at slot~$k$. Preamble: $R_v^{\vote(k)} \in C_R \subseteq D$ pairwise compatible (Step~1). Premise: pick $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k)}$ the $\preceq$-max honest \getConfirmed{} on~$D$ at $\vote(k)$; by Step~3, $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ for every honest~$v$ and $t \in [\vote(k),\, \vote(k+1)]$. \HAR{} at slot~$k$ from hypothesis~6 powers \Cref{rev:prop:honest-vote-inclusion}. Conclusions:
+\begin{itemize}
+  \item Pairwise compatibility of honest $\getConfirmed_v^{\vote(k+1)}$; let~$D'$ be the chain extending them ($D \subseteq D'$ by maximality + monotonicity).
+  \item $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_v^{\vote(k)}$ for every honest~$v$.
+  \item The chain at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; in particular, every slot-$k$ honest vote target lies on~$D'$.
+\end{itemize}
+
+\emph{Step 5: state-height at $\vote(k+1)$ lies in $\{h+1, h+2\}$.}
+By hypothesis~6, \HAR{} at slot~$k$ holds, and \HAR{}'s definition guarantees an honest proposer of a block on the available chain in $[\vote(k),\, \vote(k+1) - \delta_c)$, discharging \HAP{} at slot~$k$. The case-$2$ assumption gives some honest validator at canonical state-height~$h+1$ at $\vote(k)$, so the $\preceq$-max honest $\getConfirmed_{v_\ell}^{\vote(k)}$ on~$D$ has state-height~$h+1$. \Cref{rev:prop:target-dominance} applies at slot~$k$ (preamble: $R_v^{\vote(k)} \in C_R$ pairwise compatible (Step~1); premise: discharged via Step~3 and maximality of~$v_\ell$, exactly as for the discharge of \Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} in Step~4). Its conclusion gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for every honest~$v$; hence $\sigma[\getConfirmed_v^{\vote(k+1)}].h \geq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h = h+1$ (state-height monotonicity along~$\preceq$, \Cref{lem:slotmono}). Combined with \Cref{rev:cor:processed-height-bound} ($\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq R_v^{\vote(k+1)}.h + 1 \leq h+2$), $\sigma[\getConfirmed_v^{\vote(k+1)}].h \in \{h+1, h+2\}$ for every honest~$v$. (How the slot-$k$ honest votes happen to split between heights~$h$ and~$h+1$ at $\vote(k)$ doesn't enter the argument; whether or not a slot-$k$ same-slot cert at a single height happens to form, the target-dominance step alone forces canonical state-height to~$\geq h+1$ at $\vote(k+1)$.) We sub-split on the value.
+
+\begin{description}
+\item[{Case 2.A.A: $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.}]\hfill
+
+\emph{Step 6: slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.}
+By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height $h_c = h+1$ (case-$2.A.A$). Lock-check at~$h+1$ fails: hypothesis~8 excludes before-$\vote(k)$ honest votes at height~$>h$; slot-$k$ R2 honest votes at~$h$ have $\finalizeHeight \leq h_j \leq h-1$ (in Case~$2.A$ no bit-$1$ at~$h$ has fired by $\vote(k+1)$, so canonical $h_j \leq h-1$ at $\vote(k)$); slot-$k$ R1 honest votes at~$h+1$ have $\finalizeHeight \leq h$; neither equals~$h+1$. Hence $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$. By synchrony + hypothesis~5 (\AHA at $k+1$), all $\geq n-f > 2n/3$ slot-$(k+1)$ honest votes are delivered to every honest by $\vote(k+2) - \Delta$.
+
+\emph{Step 7: $R_v^{\vote(k+2)}.h = h+1$ for every honest, target on~$D'$.}
+The extended \updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into virtual blocks extending each leaf at state-height~$\geq R.h$ (which is $h$ or $h+1$ in Case~$2.A$, since no bit-$1$ at~$h$ has fired so cached~$.h \in \{h, h+1\}$ from at most a slot-$\leq k$ same-slot bit-$0$ at~$h$ or~$h+1$). The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at~$h+1$ on~$D'$ selects $B^{\star\star} \in D'$ at state-height~$h+1$, firing a bit-$0$ cert with key $(h+1, 0, k+1, -B^{\star\star}.\slot, \hash(B^{\star\star}))$. The new key dominates any cached at height~$\leq h$ on the leading coordinate, and dominates any cached at height~$h+1$ (necessarily slot-$\leq k$ same-slot bit-$0$, since no bit-$1$ at~$h+1$ has fired with quorum from contributors at~$h+1$ before $\vote(k+1)$ in this sub-case) on the $s_n$ coordinate ($k+1 > k$). The leaf-coverage of the extended \updateRootFromVotes{} ensures the slot-$(k+1)$ cert is offered for every leaf at state-height~$\geq R.h$, so $R_v$ updates regardless of which leaf hosts $\getConfirmed_v$. Hence $R_v^{\vote(k+2)} = B^{\star\star}$ uniformly with $R_v^{\vote(k+2)}.h = h+1$, target on~$D'$ at chain-height~$h+1$.
+
+\emph{Step 8: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+Pick~$v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+1)} = \max_\preceq$ on~$D'$ among honest \getConfirmed{} at $\vote(k+1)$.
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}}: $\start(k+2) - \Delta \geq \GST$ from hypothesis~2 + slot spacing.
+  \item \emph{\ref{rev:def:healed-state:R}}: $R_v^{\vote(k+2)}.h = h+1$ uniformly by Step~7.
+  \item \emph{\ref{rev:def:healed-state:gt-compat}}: \Cref{rev:prop:getConfirmed-compat} at slot~$k+1$. Standing assumptions: hypothesis~4 (\OHM at $k+1$); Step~4 ($R$-pairwise compat on~$D'$ at $\vote(k+1)$ via the store invariant). Premise discharged via Step~7's $B^{\star\star} \in D'$ at chain-height~$h+1$ + slot-$(k+1)$ honest contributions targeting $T_v^{(k+1)} \in D'$ from Step~6 + the bound on cert events in $[\vote(k+1),\, \vote(k+2)]$ as in Step~3.
+  \item \emph{\ref{rev:def:healed-state:target-cap}}: any honest vote at height~$\geq h+1$ cast strictly before $\vote(k+2)$ has target $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$:
+  \begin{itemize}
+    \item before-$\vote(k)$ honest at $\geq h+1$: ruled out by hypothesis~8.
+    \item slot-$k$ honest at $\geq h+1$: target $\getConfirmed_v^{\vote(k)} \in D \subseteq D'$ (Step~2 + Step~4 chain extension), $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$ by maximality + \Cref{rev:prop:target-monotonicity}.
+    \item slot-$(k+1)$ honest at $\geq h+1$: target $\getConfirmed_v^{\vote(k+1)} \in D'$ by Step~6, $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$ by maximality + \Cref{rev:prop:target-monotonicity}.
+  \end{itemize}
+\end{itemize}
+The system is in a healed state at slot~$k+2$ with height~$h+1$.
+
+\item[{Case 2.A.B: $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$ for some honest~$v_*$.}]%
+\footnote{The proof here relies on \onBlock{} (\Cref{alg:store}) processing every admissible block, regardless of whether it descends from the validator's current fork-choice: an honest~$v$ folds the chain through $v_*$'s height-$(h+2)$ block via \onBlock{} on receipt, firing the cert at~$h+1$ on-chain in $v$'s view independently of $v$'s fork-choice. If \onBlock{} were restricted to blocks descending from the current fork-choice, the synchrony argument in Step~6 below would not apply, and the proof would split on whether a bit-$1$ cert at height~$h$ fires in $[\vote(k+1),\, \vote(k+2)]$. (\textbf{Case~$2.A.B.A$, no bit-$1$ at~$h$ by $\vote(k+2)$.}) Under that case-restriction, every cert event reachable as $R_v^t$ for $t \in [\vote(k+1),\, \vote(k+2)]$ has target on~$D'$ at chain-height~$\leq h+2$: bit-$1$ at~$h$ is excluded by the case assumption, and the remaining cert events (slot-$\leq k$ same-slot bit-$0$ at~$h$ on~$D'$ by \Cref{rev:lem:notar-unique-per-slot}; bit-$0$ or bit-$1$ at~$h+1$ bounded as in Step~3; slot-$(k+1)$ same-slot at~$h+1$/$h+2$ targeting $T_v^{(k+1)} \in D'$ via Step~7) are all on~$D'$. Apply \Cref{rev:prop:target-dominance,rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} at slot~$k+1$ (\HAR{} from hypothesis~6, $R$-pairwise compat from Step~4, premise from the cert-target compatibility just shown with $v_\ell'$ chosen as the $\preceq$-max honest \getConfirmed{} on~$D'$ at $\vote(k+1)$ at $\sigma$-height~$h+2$); the conclusions give $\sigma[\getConfirmed_v^{\vote(k+2)}].h \geq h+2$ uniformly, $R_v^{\vote(k+2)}.h \geq h+1$ uniformly with target on~$D'$, and pairwise compatibility of $\getConfirmed_v^{\vote(k+2)}$ on a chain~$D''$ extending~$D'$. The healed-state conditions at slot~$k+2$ with height~$h+1$ then follow as in Step~7 below. (\textbf{Case~$2.A.B.B$, bit-$1$ at~$h$ fires by $\vote(k+2)$.}) Target-dominance over $[\vote(k+1),\, \vote(k+2)]$ is unavailable: the bit-$1$ cert at~$h$ has target $J^*$ at height~$h$ possibly off~$D'$, breaking the premise discharge. An honest~$v$ at $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ with $R_v^{\vote(k+1)}.h = h$ has cached dominated on the bit coordinate by the new bit-$1$ at~$h$, updating $R_v^{\vote(k+2)}$ to $(h, 1, 0, J^*)$ at height~$h$, breaking \ref{rev:def:healed-state:R} at slot~$k+2$ with height~$h+1$. Possible routes include invoking \Cref{rev:lem:healing-from-justified} at slot~$k+2$ to reach healed at slot~$k+4$ with height~$h+1$ (under a strengthened hypothesis~$f^{\vote(k+4)} < n/3$), or sharpening the case to ensure $R_v^{\vote(k+2)}.h \geq h+1$ uniformly via the cert-at-$h+1$ from Step~6.}\hfill
+
+\emph{Step 6: synchrony lifts $R$ to height~$\geq h+1$ uniformly at $\vote(k+2)$.}
+By case-$2.A.B$, $v_*$'s canonical at $\vote(k+1)$ contains a block~$B^{(h+2)}$ with $\sigma[B^{(h+2)}].h = h+2$. The state-height advance from~$h+1$ to~$h+2$ during $B^{(h+2)}$'s on-chain processing fires a cert event at height~$h+1$ via \processHeight{}, witnessed by votes embedded in $B^{(h+2)}$'s ancestor blocks. The cert is unique on the chain through~$B^{(h+2)}$ (\Cref{rev:lem:notar-unique-per-slot} under $f<n/3$, hypothesis~1) with target on~$D'$ at chain-height~$h+1$ (since $B^{(h+2)} \preceq \getConfirmed_{v_*}^{\vote(k+1)} \in D'$, by Step~3's classification).
+
+By GST + slot spacing (hypothesis~2), $B^{(h+2)}$ and every ancestor in $v_*$'s view at $\vote(k+1)$ are delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. Each honest~$v$ folds every received block through \onBlock{} (\Cref{alg:store}, regardless of fork-choice descent), so the on-chain cert at~$h+1$ fires identically in $v$'s view (deterministic from chain history) and is offered to \updateForkChoiceRoot{}. Its key $(h+1, b, s_n, \ldots)$ strictly dominates the cached key $(h, 0, k-1, \ldots)$ from Step~1 on the leading coordinate, so $R_v$ updates to the cert's target on the chain through~$B^{(h+2)}$. Hence $R_v^{\vote(k+2)}.h \geq h+1$ uniformly across honest, with $R_v^{\vote(k+2)} \in D'$ at chain-height~$h+1$. Any bit-$1$ cert at height~$h$ that may fire in $[\vote(k+1),\, \vote(k+2)]$ has key $(h, 1, 0, \ldots)$ dominated on the leading coordinate by $R_v^{\vote(k+2)}$'s key and does not affect the final state.
+
+\emph{Step 7: setup at $\vote(k+1)$.}
+By Step~4, honest $\getConfirmed_v^{\vote(k+1)}$ are pairwise compatible on~$D'$. Some honest are at state-height~$h+1$, others at~$h+2$ (case-$2.A.B$). Slot-$(k+1)$ honest votes:
+\begin{itemize}
+  \item For $v$ at state-height~$h+1$: cast at height~$h+1$, R1 unlocked (hypothesis~8 excludes before-$\vote(k)$ honest at $>h$; slot-$k$ R1 honest votes at~$h$ have $\finalizeHeight \leq h-1$, slot-$k$ R1 honest votes at~$h+1$ have $\finalizeHeight \leq h$, neither equals~$h+1$). Target $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$.
+  \item For $v$ at state-height~$h+2$: cast at height~$h+2$, R1 unlocked (analogous: no prior vote with $\finalizeHeight = h+2$, since :nh excludes before-$\vote(k)$ at $>h$ and slot-$k$ honest~$\finalizeHeight \leq h$). Target $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+2$.
+\end{itemize}
+
+\emph{Step 8: pairwise compatibility at $\vote(k+2)$.}
+\Cref{rev:prop:getConfirmed-compat} applies at slot~$k+1$. Standing assumptions: hypothesis~4 (\OHM at $k+1$); Step~4 ($R$-pairwise compat on~$D'$ at $\vote(k+1)$ via the store invariant). Premise: pick~$v_\ell'$ honest with $\getConfirmed_{v_\ell'}^{\vote(k+1)}$ the $\preceq$-max honest \getConfirmed{} on~$D'$ at $\vote(k+1)$ ($\sigma$-height $h+2$ by case-$2.A.B$). For every honest~$v$ and $t \in [\vote(k+1),\, \vote(k+2)]$, $R_v^t$ has cert key with leading coordinate $\leq h+1$ (\Cref{lem:Rs-key-monotone} + Step~6) and target on~$D'$ at chain-height~$\leq h+1$: the cached at $\vote(k+1)$ lies on~$D'$ at $\leq h+1$ (Step~5), and once $B^{(h+2)}$ is processed in $v$'s view (within $\Delta$ of $\vote(k+1)$, well before $\vote(k+2)$) $R_v$ takes the cert at~$h+1$ from $B^{(h+2)}$'s history on~$D'$ at~$h+1$ (Step~6) and stays there for the remainder of the interval. Hence $R_v^t \preceq \getConfirmed_{v_\ell'}^{\vote(k+1)}$, discharging the premise. The conclusion gives pairwise compatibility of $\getConfirmed_v^{\vote(k+2)}$ on a chain~$D''$ extending~$D'$.
+
+\emph{Step 9: healed-state conditions at slot~$k+2$ with height~$h+1$.}
+Pick~$v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+2)} = \max_\preceq$ on~$D''$ among honest \getConfirmed{} at $\vote(k+2)$.
+\begin{itemize}
+  \item \emph{\ref{rev:def:healed-state:sync}}: $\start(k+2) - \Delta \geq \GST$ from hypothesis~2 and slot spacing.
+  \item \emph{\ref{rev:def:healed-state:R}}: $R_v^{\vote(k+2)}.h \geq h+1$ uniformly by Step~6.
+  \item \emph{\ref{rev:def:healed-state:gt-compat}}: pairwise compatibility of honest $\getConfirmed_v^{\vote(k+2)}$ on~$D''$ by Step~8.
+  \item \emph{\ref{rev:def:healed-state:target-cap}}: any honest vote at height~$\geq h+1$ cast strictly before $\vote(k+2)$ has target $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$:
+  \begin{itemize}
+    \item before-$\vote(k)$ honest at $\geq h+1$: ruled out by hypothesis~8.
+    \item slot-$k$ honest at $\geq h+1$: target $\getConfirmed_v^{\vote(k)} \in D \subseteq D''$ (Step~5 chain extension), $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$ by maximality.
+    \item slot-$(k+1)$ honest at $\geq h+1$: target $\getConfirmed_v^{\vote(k+1)} \in D' \subseteq D''$ by Step~7 and Step~8's chain extension, $\preceq \getConfirmed_{v_\ell}^{\vote(k+2)}$ by maximality.
+  \end{itemize}
+\end{itemize}
+The system is in a healed state at slot~$k+2$ with height~$h+1$.
+\end{description}
+
+\item[{Case 2.B: a bit-$1$ cert at height~$h$ has fired in some honest's view by $\vote(k+1)$.}]\hfill
+
+By view-merge under honest $\syncer(k+1)$ (hypothesis~3, \Cref{rev:ass:view-merge}), every honest's store at $\vote(k+1)$ equals the common $\comm{\Sigma}^{\vote(k+1)}$; the bit-$1$ cert at~$h$ targeting some $J^*$ is in every honest's view, with $R_v^{\vote(k+1)} = J^*$ uniformly (the bit-$1$ key $(h, 1, 0, \ldots)$ dominates the cached bit-$0$ at the same height from Step~1). Hence $\comm{R}^{\vote(k+1)} = J^*$ is justified at height~$h$ in every honest's view at $\vote(k+1)$.
+
+The hypotheses of \Cref{rev:lem:healing-from-justified} apply at slot~$k+1$ with $\comm{R}^{\vote(k+1)} = J^*$:
+\begin{itemize}
+  \item \ref{rev:hfj:f}: $f^{\vote((k+1)+2)} = f^{\vote(k+3)} < n/3$ from outer hypothesis~1.
+  \item \ref{rev:hfj:sync}: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$ from outer hypothesis~2 + slot spacing.
+  \item \ref{rev:hfj:ohm}: \OHM at slots~$k+1$ and~$k+2$ from outer hypothesis~4.
+  \item \ref{rev:hfj:aha}: \AHA at slots~$k+1$ and~$k+2$ from outer hypothesis~5.
+  \item \ref{rev:hfj:har}: \HAR at slot~$k+1$ from outer hypothesis~6.
+  \item \ref{rev:hfj:r}: $R_v^{\vote(k+1)} = J^*$ uniformly justified at height~$h$, just established.
+  \item \ref{rev:hfj:nh}: no honest validator has cast a vote at height~$> h$ strictly before $\vote(k+1)$. Outer hypothesis~8 excludes before-$\vote(k)$ honest at $>h$, and no voting event lies in $(\vote(k),\, \vote(k+1))$. \textbf{However}, Step~2 of Case~$2$ admits slot-$k$ honest votes at height~$h+1$ (those with $\sigma[\getConfirmed_v^{\vote(k)}].h = h+1$), cast at $\vote(k) < \vote(k+1)$. \emph{Flag: \ref{rev:hfj:nh} as currently stated is violated by these slot-$k$ honest votes at $h+1$, so Case~$2.B$ is not a verbatim replay of Case~$1.B$.} A clean discharge would either (a)~refine \Cref{rev:lem:healing-from-justified} so that \ref{rev:hfj:nh}'s exclusion is at heights $>\comm{R}^{\vote(k)}.h+1$ (admitting slot-$k$ honest at the next height), or (b)~separately argue that the slot-$k$ honest at $h+1$ on $\comm{\Sigma}^{\vote(k+1)}$ form a slot-$k$ same-slot cert at~$h+1$ during view-merge processing, advancing $\comm{R}^{\vote(k+1)}$ to height~$h+1$ uniformly and re-applying \Cref{rev:lem:healing-from-justified} with $\comm{h} = h+1$ (under which \ref{rev:hfj:nh} holds vacuously).
+\end{itemize}
+
+Subject to resolving the flagged hypothesis-mismatches, invoking \Cref{rev:lem:healing-from-justified} at slot~$k+1$ places the system in a healed state at slot~$(k+1)+2 = k+3$ with height~$h+1$.
+\end{description}
+\end{description}
+\end{proof}
+
+\subsection{Old Healing advances by $N$ slots}%\label{rev:sec:healing-advances}
 
 \begin{lemma}[Healing: one-slot advance]\label{rev:lem:healing-one-slot}
 Assume:
@@ -1466,7 +1757,7 @@ Hypothesis~\ref{rev:hone:nh} rules out honest votes at height $\geq \comm{h}$ be
 Hence no honest has cast a \just vote at height $> \comm{h}$ strictly before $\vote(k+1)$, proving condition~\ref{rev:def:healed-state:no-just} of the healed state.
 
 \emph{Step 7: any future justification at height $\comm{h}$ is bounded by an honest \getConfirmed{} at $\vote(k+1)$; condition~\ref{rev:def:healed-state:just-bound} of the healed state.}
-By R1 (\Cref{def:voting-rule}), each honest casts a \just vote at height~$\comm{h}$ at most once across all time. Hypothesis~\ref{rev:hone:nh} excludes pre-$\vote(k)$ honest \just at~$\comm{h}$, and Step~1 places exactly one such \just vote per honest at $\vote(k)$ with target $T_i = \getConfirmed_i^{\vote(k)}$. Hence for every honest~$i$, $i$'s sole \just contribution at height~$\comm{h}$ across all time is the slot-$k$ vote with target $T_i$.
+By R1 (\Cref{def:voting-rule}), each honest casts a \just vote at height~$\comm{h}$ at most once across all time. Hypothesis~\ref{rev:hone:nh} excludes before-$\vote(k)$ honest \just at~$\comm{h}$, and Step~1 places exactly one such \just vote per honest at $\vote(k)$ with target $T_i = \getConfirmed_i^{\vote(k)}$. Hence for every honest~$i$, $i$'s sole \just contribution at height~$\comm{h}$ across all time is the slot-$k$ vote with target $T_i$.
 
 Let $C$ be a checkpoint at height~$\comm{h}$ justified at any time, with witnessing $\geq 2n/3$ \just-quorum at target~$C$. The quorum has $\geq 2n/3 - f \geq 1$ honest contributors (under $f < n/3$); any such contributor~$i$ has $T_i = C$, i.e.\ $\getConfirmed_i^{\vote(k)} = C$. By target-monotonicity (\Cref{rev:prop:target-monotonicity}; preamble and premise discharged as in Step~10 below), $\getConfirmed_i^{\vote(k+1)} \succeq \getConfirmed_i^{\vote(k)} = C$. Condition~\ref{rev:def:healed-state:just-bound} of the healed state at slot~$k+1$ holds with $v_\ell = i$.
 
@@ -1485,51 +1776,51 @@ Condition~\ref{rev:def:healed-state:sync} (synchrony at slot~$k+1$) holds since 
 \end{proof}
 
 
-\begin{lemma}[Two-slot healing from a justified common root]\label{rev:lem:healing-from-justified}
-Assume:
-\begin{enumerate}
-  \item\label{rev:hfj:f} $f^{\vote(k+2)} < n/3$ and honest validators follow \Cref{def:voting-rule};
-  \item\label{rev:hfj:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:hfj:ohm} the \OHM holds at slots~$k$ and $k+1$;
-  \item\label{rev:hfj:aha} the \AHA condition holds at slots~$k$ and $k+1$;
-  \item\label{rev:hfj:har} the \HAR condition holds at slot~$k$;
-  \item\label{rev:hfj:r} for every honest validator~$v$, $R_v^{\vote(k)}$ is the same justified block; denote it by $\comm{R}^{\vote(k)}$;
-  \item\label{rev:hfj:gt} $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
-  \item\label{rev:hfj:nh} no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$.
-\end{enumerate}
-Then the system is in a healed state at slot $k+2$ with height $\comm{h}+1$ (\Cref{rev:def:healed-state}).
-\end{lemma}
+% \begin{lemma}[Two-slot healing from a justified common root]\label{rev:lem:healing-from-justified}
+% Assume:
+% \begin{enumerate}
+%   \item\label{rev:hfj:f} $f^{\vote(k+2)} < n/3$ and honest validators follow \Cref{def:voting-rule};
+%   \item\label{rev:hfj:sync} $\start(k) - \Delta \geq \GST$;
+%   \item\label{rev:hfj:ohm} the \OHM holds at slots~$k$ and $k+1$;
+%   \item\label{rev:hfj:aha} the \AHA condition holds at slots~$k$ and $k+1$;
+%   \item\label{rev:hfj:har} the \HAR condition holds at slot~$k$;
+%   \item\label{rev:hfj:r} for every honest validator~$v$, $R_v^{\vote(k)}$ is the same justified block; denote it by $\comm{R}^{\vote(k)}$;
+%   \item\label{rev:hfj:gt} $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
+%   \item\label{rev:hfj:nh} no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$.
+% \end{enumerate}
+% Then the system is in a healed state at slot $k+2$ with height $\comm{h}+1$ (\Cref{rev:def:healed-state}).
+% \end{lemma}
 
-\begin{proof}
-Write $h \coloneqq \comm{h}$.
+% \begin{proof}
+% Write $h \coloneqq \comm{h}$.
 
-\emph{Step 1: structural facts at $\vote(k)$ and the slot-$k$ honest votes do not advance $R$.}
-By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified in every honest's store; hence $\Sigma_v.\key_R \geq (h,\, 1,\, 0,\, \comm{R}^{\vote(k)}.\slot,\, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$ for every honest~$v$.
-By hypothesis~\ref{rev:hfj:gt}, the honest $\getConfirmed_v^{\vote(k)}$ are pairwise compatible and at state-height~$h$; let~$D$ be the chain extending them. Each $\getConfirmed_v^{\vote(k)} \in D$ at state-height~$h$ (possibly at distinct chain-heights, since state-height is monotone non-decreasing along chain ancestry).
-By \Cref{alg:store}, each $\getConfirmed_v^{\vote(k)}$ descends from $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$, so $\comm{R}^{\vote(k)} \in D$ at chain-height~$h$ and $D$ extends~$\comm{R}^{\vote(k)}$ at chain-heights~$\geq h$.
-Hypothesis~\ref{rev:hfj:nh} rules out earlier honest votes at height $>h$, so at $\vote(k)$ every honest casts an (R1) \just vote at height~$h$ with target $T_v = \getConfirmed_v^{\vote(k)} \in D$.
+% \emph{Step 1: structural facts at $\vote(k)$ and the slot-$k$ honest votes do not advance $R$.}
+% By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified in every honest's store; hence $\Sigma_v.\key_R \geq (h,\, 1,\, 0,\, \comm{R}^{\vote(k)}.\slot,\, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$ for every honest~$v$.
+% By hypothesis~\ref{rev:hfj:gt}, the honest $\getConfirmed_v^{\vote(k)}$ are pairwise compatible and at state-height~$h$; let~$D$ be the chain extending them. Each $\getConfirmed_v^{\vote(k)} \in D$ at state-height~$h$ (possibly at distinct chain-heights, since state-height is monotone non-decreasing along chain ancestry).
+% By \Cref{alg:store}, each $\getConfirmed_v^{\vote(k)}$ descends from $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$, so $\comm{R}^{\vote(k)} \in D$ at chain-height~$h$ and $D$ extends~$\comm{R}^{\vote(k)}$ at chain-heights~$\geq h$.
+% Hypothesis~\ref{rev:hfj:nh} rules out earlier honest votes at height $>h$, so at $\vote(k)$ every honest casts an (R1) \just vote at height~$h$ with target $T_v = \getConfirmed_v^{\vote(k)} \in D$.
 
-By synchrony, every slot-$k$ honest \just vote (which also constitutes a slot-$k$ \notar contribution) is delivered to every honest by $\vote(k+1)$. In each honest~$v$'s aggregation, the prefix-notar $\arg\max$-by-$\preceq$ in \processHeight{} produces a candidate $(B^\star_v, k)$ at state-height~$h$ with $B^\star_v \preceq T_i$ for $\geq 2n/3$ honest~$i$, hence $B^\star_v \in D$ at state-height~$h$; this fires a bit-$0$ cert event with key $(h,\, 0,\, k,\, B^\star_v.\slot,\, \hash(B^\star_v))$.
-The cached $\Sigma_v.\key_R \geq (h,\, 1,\, 0,\, \ldots)$ strictly dominates the new key on the bit coordinate, so \updateForkChoiceRoot{}'s guard rejects it.
-\Cref{rev:cor:no-high-cn} applied per-honest to each $\Sigma_v^{\vote(k)}$ rules out cert events at height $>h$ before $\vote(k)$; the same quorum count extends through $[\vote(k),\, \vote(k+1)]$ (slot-$k$ honest votes are at height~$h$ exactly, and dishonest alone has $\leq f < 2n/3$), and \Cref{lem:Rs-key-monotone} preserves the bit-$1$ bound through any other update.
-Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
+% By synchrony, every slot-$k$ honest \just vote (which also constitutes a slot-$k$ \notar contribution) is delivered to every honest by $\vote(k+1)$. In each honest~$v$'s aggregation, the prefix-notar $\arg\max$-by-$\preceq$ in \processHeight{} produces a candidate $(B^\star_v, k)$ at state-height~$h$ with $B^\star_v \preceq T_i$ for $\geq 2n/3$ honest~$i$, hence $B^\star_v \in D$ at state-height~$h$; this fires a bit-$0$ cert event with key $(h,\, 0,\, k,\, B^\star_v.\slot,\, \hash(B^\star_v))$.
+% The cached $\Sigma_v.\key_R \geq (h,\, 1,\, 0,\, \ldots)$ strictly dominates the new key on the bit coordinate, so \updateForkChoiceRoot{}'s guard rejects it.
+% \Cref{rev:cor:no-high-cn} applied per-honest to each $\Sigma_v^{\vote(k)}$ rules out cert events at height $>h$ before $\vote(k)$; the same quorum count extends through $[\vote(k),\, \vote(k+1)]$ (slot-$k$ honest votes are at height~$h$ exactly, and dishonest alone has $\leq f < 2n/3$), and \Cref{lem:Rs-key-monotone} preserves the bit-$1$ bound through any other update.
+% Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
 
-\emph{Step 2: the canonical state-height reaches $h+1$ by $\vote(k+1)$.}
-Pick any honest~$v_\ell$. By Step~1, $\getConfirmed_{v_\ell}^{\vote(k)} \in D$ at state-height~$h$ on the chain extending $\comm{R}^{\vote(k)}$, and $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$, so $\getConfirmed_{v_\ell}^{\vote(k)} \succeq \comm{R}^{\vote(k)} = R_v^t$, discharging the premise of \Cref{rev:prop:honest-vote-inclusion} (whose preamble's compatibility hypothesis is satisfied since all honest $R_v^{\vote(k)}$ coincide).
-Its conclusion gives that the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; the slot-$k$ bit-$0$ cert event at $B^\star \in D$ at state-height~$h$ (Step~1) therefore lies on that chain, and its height-advance pushes the state-height to $h+1$, i.e.\ $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h + 1$ for every honest~$v$.
+% \emph{Step 2: the canonical state-height reaches $h+1$ by $\vote(k+1)$.}
+% Pick any honest~$v_\ell$. By Step~1, $\getConfirmed_{v_\ell}^{\vote(k)} \in D$ at state-height~$h$ on the chain extending $\comm{R}^{\vote(k)}$, and $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$, so $\getConfirmed_{v_\ell}^{\vote(k)} \succeq \comm{R}^{\vote(k)} = R_v^t$, discharging the premise of \Cref{rev:prop:honest-vote-inclusion} (whose preamble's compatibility hypothesis is satisfied since all honest $R_v^{\vote(k)}$ coincide).
+% Its conclusion gives that the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; the slot-$k$ bit-$0$ cert event at $B^\star \in D$ at state-height~$h$ (Step~1) therefore lies on that chain, and its height-advance pushes the state-height to $h+1$, i.e.\ $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h + 1$ for every honest~$v$.
 
-\emph{Step 3: reduce to the one-slot advance at slot~$k+1$.}
-The hypotheses of \Cref{rev:lem:healing-one-slot}, applied with~$k$ replaced by~$k+1$, are all met:
-\begin{itemize}
-  \item hypotheses~\ref{rev:hone:f} and~\ref{rev:hone:sync} are inherited (synchrony at slot~$k+1$: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$);
-  \item hypothesis~\ref{rev:hone:ohm} (\OHM at slot~$k+1$): from outer's hypothesis~\ref{rev:hfj:ohm};
-  \item hypothesis~\ref{rev:hone:aha} (\AHA at slot~$k+1$): from outer's hypothesis~\ref{rev:hfj:aha};
-  \item hypothesis~\ref{rev:hone:gt} (\getConfirmed{} pairwise compatibility at $\vote(k+1)$): \Cref{rev:prop:getConfirmed-compat}, applied with the same premise as Step~2, gives $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for every honest pair;
-  \item hypothesis~\ref{rev:hone:sh} (common state-height): by Step~2, $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h + 1$ is the common value across honest validators, playing the role of \Cref{rev:lem:healing-one-slot}'s~$\comm{h}$ at slot~$k+1$;
-  \item hypothesis~\ref{rev:hone:nh} (no honest vote at height $\geq h+1$ before $\vote(k+1)$): outer's hypothesis~\ref{rev:hfj:nh} rules out pre-$\vote(k)$ honest votes at height $>h$ (a fortiori at $\geq h+1$); Step~1 places slot-$k$ honest votes at height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$.
-\end{itemize}
-Invoking \Cref{rev:lem:healing-one-slot} at slot~$k+1$ places the system in a healed state at slot~$k+2$ with height~$h+1$, as required.
-\end{proof}
+% \emph{Step 3: reduce to the one-slot advance at slot~$k+1$.}
+% The hypotheses of \Cref{rev:lem:healing-one-slot}, applied with~$k$ replaced by~$k+1$, are all met:
+% \begin{itemize}
+%   \item hypotheses~\ref{rev:hone:f} and~\ref{rev:hone:sync} are inherited (synchrony at slot~$k+1$: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$);
+%   \item hypothesis~\ref{rev:hone:ohm} (\OHM at slot~$k+1$): from outer's hypothesis~\ref{rev:hfj:ohm};
+%   \item hypothesis~\ref{rev:hone:aha} (\AHA at slot~$k+1$): from outer's hypothesis~\ref{rev:hfj:aha};
+%   \item hypothesis~\ref{rev:hone:gt} (\getConfirmed{} pairwise compatibility at $\vote(k+1)$): \Cref{rev:prop:getConfirmed-compat}, applied with the same premise as Step~2, gives $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for every honest pair;
+%   \item hypothesis~\ref{rev:hone:sh} (common state-height): by Step~2, $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h + 1$ is the common value across honest validators, playing the role of \Cref{rev:lem:healing-one-slot}'s~$\comm{h}$ at slot~$k+1$;
+%   \item hypothesis~\ref{rev:hone:nh} (no honest vote at height $\geq h+1$ before $\vote(k+1)$): outer's hypothesis~\ref{rev:hfj:nh} rules out before-$\vote(k)$ honest votes at height $>h$ (a fortiori at $\geq h+1$); Step~1 places slot-$k$ honest votes at height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$.
+% \end{itemize}
+% Invoking \Cref{rev:lem:healing-one-slot} at slot~$k+1$ places the system in a healed state at slot~$k+2$ with height~$h+1$, as required.
+% \end{proof}
 
 \begin{lemma}
 Assume:
@@ -1615,7 +1906,7 @@ The hypotheses of \Cref{rev:lem:healing-one-slot}, applied with~$k$ replaced by~
   \item hypothesis~\ref{rev:hone:aha} (\AHA at slot~$k+1$): from outer's hypothesis~\ref{rev:hfnnj:aha};
   \item hypothesis~\ref{rev:hone:gt} (\getConfirmed{} pairwise compatibility at $\vote(k+1)$): \Cref{rev:prop:getConfirmed-compat}, with premise discharged as in Step~4, gives $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for every honest pair;
   \item hypothesis~\ref{rev:hone:sh} (common state-height): $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h + 1$ is the common value across honest validators (Step~4);
-  \item hypothesis~\ref{rev:hone:nh} (no honest vote at height $\geq h+1$ before $\vote(k+1)$): outer's hypothesis~\ref{rev:hfnnj:nh} rules out pre-$\vote(k)$ honest votes at height $>h$ (a fortiori at $\geq h+1$); Step~1 places slot-$k$ honest votes at height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$.
+  \item hypothesis~\ref{rev:hone:nh} (no honest vote at height $\geq h+1$ before $\vote(k+1)$): outer's hypothesis~\ref{rev:hfnnj:nh} rules out before-$\vote(k)$ honest votes at height $>h$ (a fortiori at $\geq h+1$); Step~1 places slot-$k$ honest votes at height~$h$ exactly; no voting event lies in $(\vote(k),\, \vote(k+1))$.
 \end{itemize}
 Invoking \Cref{rev:lem:healing-one-slot} at slot~$k+1$ places the system in a healed state at slot~$k+2$ with height~$h+1$, as required.
 \end{proof}
@@ -1868,7 +2159,7 @@ By hypothesis~\ref{rev:h4sfn:r}, each honest~$v$ has cached $\Sigma_v.\key_R = (
 \emph{Step A.1: no cert at height $> h$ fires in $[\vote(k), \vote(k+1)]$.}
 By outer~\ref{rev:h4sfn:r} ($R_v^{\vote(k)}.h = h$) and \Cref{lem:Rs-key-monotone}, $\Sigma_v.\key_R.h \leq h$ at all $t \leq \vote(k)$. By \Cref{rev:cor:processed-height-bound}, every block processed in $\Sigma_v$ at any $t \leq \vote(k)$ has state-height $\leq h+1$, so honest votes before $\vote(k)$ are all at heights $\leq h+1$. The slot-$k$ honest cast at $h$ exactly (Case~A); no voting event lies in $(\vote(k), \vote(k+1))$. We rule out cert events at heights $> h$ in $[\vote(k), \vote(k+1)]$ as follows:
 \begin{itemize}
-  \item \emph{Heights $> h+1$:} honest contributions at heights $> h+1$ before $\vote(k+1)$ are zero (the height-bound rules out pre-$\vote(k)$, and slot-$k$ honest are at $h$). Dishonest alone $\leq f < 2n/3$ (under outer~\ref{rev:h4sfn:f}) cannot form a $\geq 2n/3$ quorum.
+  \item \emph{Heights $> h+1$:} honest contributions at heights $> h+1$ before $\vote(k+1)$ are zero (the height-bound rules out before-$\vote(k)$, and slot-$k$ honest are at $h$). Dishonest alone $\leq f < 2n/3$ (under outer~\ref{rev:h4sfn:f}) cannot form a $\geq 2n/3$ quorum.
   \item \emph{Same-slot cert at $h+1$ for some slot $s$:} for $s < k$, honest contributions at $h+1$ for slot $s$ are $< 2n/3 - f$ (else a slot-$s$ same-slot cert at $h+1$ would have fired, advancing $\Sigma_v.\key_R$ above~$h$, contradiction); slot-$k$ honest at $h+1$ is zero. Hence per-slot contributions at $h+1$ stay $< (2n/3 - f) + f = 2n/3$.
   \item \emph{Bit-$1$ justification cert at $h+1$ for any target $T$:} honest \just contributions at $h+1$ for $T$ (cumulated across all slots, with each honest contributing at most one by R1) are $< 2n/3 - f$ (else such a cert would have fired earlier, advancing $\Sigma_v.\key_R$). Plus dishonest \just for $T$ at $h+1$ $\leq f$. Total $< 2n/3$.
 \end{itemize}
@@ -1897,7 +2188,7 @@ Apply \Cref{rev:lem:healing-one-slot} at slot~$k+2$ with $\comm{h}_{\text{inner}
   \item \ref{rev:hone:aha}: from outer~\ref{rev:h4sfn:aha}.
   \item \ref{rev:hone:gt}: honest $\getConfirmed_v^{\vote(k+2)}$ on common chain $D'$, hence pairwise compatible.
   \item \ref{rev:hone:sh}: state-height $h+2$ uniform (just established).
-  \item \ref{rev:hone:nh}: pre-$\vote(k)$ honest votes at $\leq h+1$ (Step~A.1); slot-$k$ at $h$; slot-$(k+1)$ at $h+1$; no voting in $(\vote(k+1), \vote(k+2))$. All heights $< h+2$.
+  \item \ref{rev:hone:nh}: before-$\vote(k)$ honest votes at $\leq h+1$ (Step~A.1); slot-$k$ at $h$; slot-$(k+1)$ at $h+1$; no voting in $(\vote(k+1), \vote(k+2))$. All heights $< h+2$.
 \end{itemize}
 Output: healed at slot~$k+3$ with height~$h+2$.
 
@@ -1917,7 +2208,7 @@ Apply \Cref{rev:lem:healing-one-slot} at slot~$k+3$ with $\comm{h}_{\text{inner}
   \item \ref{rev:hone:ohm}, \ref{rev:hone:aha}: from outer~\ref{rev:h4sfn:ohm}, \ref{rev:h4sfn:aha}.
   \item \ref{rev:hone:gt}: honest $\getConfirmed_v^{\vote(k+3)}$ on common chain $D''$, hence pairwise compatible.
   \item \ref{rev:hone:sh}: state-height $h+2$ uniform.
-  \item \ref{rev:hone:nh}: pre-$\vote(k)$ at $\leq h+1$; slot-$k$ at $h$; slot-$(k+1)$ at $h$; slot-$(k+2)$ at $h+1$; no voting in gaps. All $< h+2$.
+  \item \ref{rev:hone:nh}: before-$\vote(k)$ at $\leq h+1$; slot-$k$ at $h$; slot-$(k+1)$ at $h$; slot-$(k+2)$ at $h+1$; no voting in gaps. All $< h+2$.
 \end{itemize}
 Output: healed at slot~$k+4$ with height~$h+2$.
 
