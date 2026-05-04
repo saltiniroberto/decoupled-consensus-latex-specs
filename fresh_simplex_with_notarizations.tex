@@ -1548,7 +1548,7 @@ Assume:
   % \item\label{rev:hfjm:gt} $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
   % \item\label{rev:hfjm:nh} any vote for height $\comm{R}^{\vote(k)}.h+1$ cast by an honest validator at any time strictly before $\vote(k)$ is for a block conflicting with $R_v^{\vote(k)}$ and from slot $k-1$.
 \end{enumerate}
-Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref{rev:def:healed-state}).
+Then the system is in a healed state for some slot $k_h \leq k+4$ and some height $h_h$ (\Cref{rev:def:healed-state}).
 \end{lemma}
 
 \begin{proof}
@@ -1738,7 +1738,7 @@ Assume:
   % \item\label{rev:hfnm:gt} $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every pair of honest validators~$v, v'$, and $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest~$v$; denote this common value by $\comm{h}$;
   \item\label{rev:hfnm:nh} no honest validator has cast any vote at height $> \comm{R}^{\vote(k)}.h$ at any time strictly before $\vote(k)$.
 \end{enumerate}
-Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref{rev:def:healed-state}).
+Then the system is in a healed state for some slot $k_h \leq k+5$ and some height $h_h$ (\Cref{rev:def:healed-state}).
 \end{lemma}
 
 
@@ -1879,7 +1879,7 @@ Assume:
   \item\label{rev:hfnmnn:har} the \HAR condition holds at slots in $[k, k+6]$;
   \item\label{rev:hfnmnn:r} for every honest validator~$v$, $R_v^{\vote(k)}$ is the same notarized block at height $h$; denote it by $\comm{R}^{\vote(k)}$.
 \end{enumerate}
-Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref{rev:def:healed-state}).
+Then the system is in a healed state for some slot $k_h \leq k+8$ and some height $h_h$ (\Cref{rev:def:healed-state}).
 \end{lemma}
 
 \begin{proof}
@@ -2061,28 +2061,34 @@ In every case, the system reaches a healed state at some slot $k_h$ with height 
 \begin{theorem}
 Assume:
 \begin{enumerate}
-  \item\label{rev:mt:f} $f^{\vote(k+5)} < n/3$ and honest validators follow \Cref{def:voting-rule};
-  \item\label{rev:mt:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:mt:syncers} $\syncer(k)$, $\syncer(k+1)$, $\syncer(k+2)$, $\syncer(k+3)$ and $\syncer(k+4)$ are honest;
-  \item\label{rev:mt:ohm} the \OHM holds at every slot $k' \geq k+1$;
-  \item\label{rev:mt:aha} the \AHA condition holds at slots $k$, $k+1$, $k+2$, $k+3$, $k+4$, and $k+5$;
-  \item\label{rev:mt:har} the \HAR condition holds at slots $k+1$, $k+2$, $k+3$, and $k+4$;
-  \item\label{rev:mt:gt} $\sigma[\getConfirmed_v^{\vote(k)}].h = \comm{R}^{\vote(k)}.h$ is the same for every honest validator~$v$; denote this common value by $\comm{h}$;
-  \item\label{rev:mt:nh} no honest validator has cast any vote at height $> \comm{h}+1$ at any time strictly before $\vote(k)$.
+  \item $f^{\vote(k+8)} < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item the syncers of slots in $[k, k+6]$ are honest;
+  \item the \OHM holds at every slot $k' \geq k$;
+  \item the \AHA condition holds at slots in $[k, k+7]$;
+  \item the \HAR condition holds at slots in $[k, k+6]$;
 \end{enumerate}
 then,
 \begin{enumerate}
-  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k+5)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
-  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k+5)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k+8)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k+8)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
 \end{enumerate}
 \end{theorem}
 
 \begin{proof}
-Outer hypotheses~\ref{rev:mt:f}--\ref{rev:mt:nh} discharge the corresponding hypotheses \ref{rev:h5s:f}--\ref{rev:h5s:nh} of \Cref{rev:lem:healing-five-slot} (with outer's slot-$\geq k+1$ \OHM coverage from~\ref{rev:mt:ohm} subsuming the slot-$\{k+1, \ldots, k+5\}$ requirement of~\ref{rev:h5s:ohm}), which yields $k' \in \{k+3, k+4, k+5\}$ such that the system is in a healed state at slot~$k'$ with height~$\comm{h}+2$.
+\emph{Uniform $R$ at $\vote(k)$.}
+By view-merge under honest $\syncer(k)$ (\Cref{rev:ass:view-merge}), every honest's $\Sigma_v$ at $\vote(k)$ post-merge equals the common $\comm{\Sigma}^{\vote(k)}$; the pending-commit at the start of \constructVote{} therefore makes $R_v^{\vote(k)}$ uniform across honest. Denote this common value by $\comm{R}^{\vote(k)}$ and write $h \coloneqq \comm{R}^{\vote(k)}.h$.
 
-\Cref{rev:lem:healing-unbounded} applies at slot~$k'$: the voting rule clause of outer's hypothesis~\ref{rev:mt:f} discharges its hypothesis~\ref{rev:hu:f}, outer's hypothesis~\ref{rev:mt:ohm} discharges its hypothesis~\ref{rev:hu:ohm} (since $k' \geq k+1$), and the healed state just established is its hypothesis~\ref{rev:hu:hs}. Its conclusions give, for every pair of honest validators~$v, v'$ and every pair of times $t, t' \geq \vote(k')$, $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$ and (when $t \leq t'$) $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\emph{Healing by $\vote(k+8)$.}
+We split on $\key_R^{\vote(k)}.b$:
+\begin{itemize}
+  \item \emph{$\comm{R}^{\vote(k)}$ justified at height $h$.} Apply \Cref{rev:lem:healing-from-justified-multi}: hypotheses~\ref{rev:hfjm:f}--\ref{rev:hfjm:har} discharge directly from the theorem's hypotheses ($f^{\vote(k+4)} < n/3$ by monotonicity of $f^t$ from hypothesis~1; OHM, AHA, HAR ranges contained in the theorem's), and \ref{rev:hfjm:r} from the previous paragraph. The conclusion places the system in a healed state at some slot $k_h \leq k+4$.
+  \item \emph{$\comm{R}^{\vote(k)}$ notarized at height $h$.} Apply \Cref{rev:lem:healing-from-notarized-multi-no-nh}: hypotheses~\ref{rev:hfnmnn:f}--\ref{rev:hfnmnn:har} discharge directly from the theorem's hypotheses, and \ref{rev:hfnmnn:r} from the previous paragraph. The conclusion places the system in a healed state at some slot $k_h \leq k+8$.
+\end{itemize}
+In both cases, $k_h \leq k+8$.
 
-Since $k' \leq k+5$, every $t \geq \vote(k+5)$ also satisfies $t \geq \vote(k')$, so the two stated conclusions hold.
+\emph{Persistence beyond $\vote(k+8)$.}
+Apply \Cref{rev:lem:healing-unbounded} at slot~$k_h$: hypothesis~\ref{rev:hu:f} is hypothesis~1; \ref{rev:hu:ohm} is the theorem's strengthened \OHM hypothesis (every slot $\geq k$, hence $\geq k_h$); \ref{rev:hu:hs} is the conclusion of the previous paragraph. The lemma's conclusions hold for all $t, t' \geq \vote(k_h)$, hence in particular for $t, t' \geq \vote(k+8) \geq \vote(k_h)$.
 \end{proof}
 
 \RSfn{I haven't checked the proof of the following Lemma at all}
