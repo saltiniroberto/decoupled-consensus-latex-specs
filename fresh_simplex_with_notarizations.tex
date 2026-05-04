@@ -449,12 +449,13 @@ A given block may therefore fire a bit-$0$ cert event on one chain and a bit-$1$
 \begin{definition}[Store]\label{def:store}
 A node maintains a \emph{store}
 \[
-  \Sigma \;=\; (\sigma,\; \T,\; F,\; R,\; \key_R),
+  \Sigma \;=\; (\sigma,\; \T,\; V,\; F,\; R,\; \key_R),
 \]
 where:
 \begin{itemize}
   \item $\sigma$ is the \emph{state map}, assigning each accepted block its per-chain post-state (Section~1);
   \item $\T$ is the \emph{block tree}, the set of accepted blocks;
+  \item $V$ is the set of votes the owning validator has cast so far;
   \item $F$ is the \emph{store-finalized block};
   \item $R$ is the \emph{store root}: the block of the highest-key cert event ever observed;
   \item $\key_R$ is the cert key of the event that set $R$.
@@ -463,7 +464,7 @@ The genesis store has $\T = \{\genesis\}$, $F = R = \genesis$, and $\key_R = (0,
 \end{definition}
 
 The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$.
-We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F$, $\Sigma.R$, $\key_R$, $\Sigma.\hat{R}$, $\hat{\key}_R$ for field access, and $\key_R.h$, $\key_R.b$ for the height and justification-bit components of $\key_R$.
+We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.V$, $\Sigma.F$, $\Sigma.R$, $\key_R$, $\Sigma.\hat{R}$, $\hat{\key}_R$ for field access, and $\key_R.h$, $\key_R.b$ for the height and justification-bit components of $\key_R$.
 $\Sigma.\hat{R}$ and $\hat{\key}_R$ are the \emph{pending} cert target and key: cert events between voting opportunities update these fields rather than $\Sigma.R, \key_R$ directly; $\Sigma.R$ and $\key_R$ are refreshed from $\Sigma.\hat{R}$ and $\hat{\key}_R$ at the start of each \constructVote{} (Definition~\ref{def:voting-rule}), so the voting rule sees a value of $\Sigma.R$ that is frozen between voting opportunities.
 
 The acceptance routine \onBlock (Figure~\ref{alg:store}) admits $B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F \preceq B$.
@@ -480,7 +481,7 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F \gets \genesis,\ \Sigma.R \gets \genesis,\ \Sigma.\key_R \gets (0,\, 1,\, 0,\, \genesis.\slot,\, \hash(\genesis)),$
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.V \gets \emptyset,\ \Sigma.F \gets \genesis,\ \Sigma.R \gets \genesis,\ \Sigma.\key_R \gets (0,\, 1,\, 0,\, \genesis.\slot,\, \hash(\genesis)),$
 \State \hspace{8.1em}$\Sigma.\hat{R} \gets \genesis,\ \Sigma.\hat{\key}_R \gets \Sigma.\key_R,$
 \State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
 \vspace{3pt}
@@ -831,9 +832,8 @@ Summing gives total increment $\geq (T-1) \cdot n/3$.
 We state the honest rule explicitly, as it underpins the leak fairness proof.
 
 \begin{definition}[Honest voting rule]\label{def:voting-rule}
-Let $V$ be the set of votes $i$ has previously cast, and write $\currentSlot$ for the node's protocol time (a slot counter shared across chains).
-At each voting opportunity, $i$ constructs its vote by $\constructVote(V,\, \Sigma,\, \Omega)$, defined in Figure~\ref{alg:voting-rule}.
-The first-vote check in the (R1) branch ensures at most one \just vote per height~$h_c$, the target-selection clause preserves E1-safety under view shifts, and the $R$-shift clause aligns the vote with $\Sigma.R$ when the fork-choice root has moved incompatibly since $i$'s last vote.
+At each voting opportunity, $i$ constructs its vote by $\constructVote(\Sigma,\, \Omega,\, k)$ where $k$ is the current slot, defined in Figure~\ref{alg:voting-rule}.
+The first-vote check in the (R1) branch ensures at most one \just vote per height~$h_c$, and the target-selection clause preserves E1-safety under view shifts.
 \end{definition}
 
 \begin{figure}[H]
@@ -842,25 +842,21 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\Function{\constructVote}{$V,\; \Sigma,\; \Omega,\; k$} \Comment{$k$ is the current slot}
+\Function{\constructVote}{$\Sigma,\; \Omega,\; k$} \Comment{$k$ is the current slot}
   \State $\Sigma.R \gets \Sigma.\hat{R}$; \;\; $\Sigma.\key_R \gets \Sigma.\hat{\key}_R$ \Comment{commit pending cert-root updates from the previous inter-vote interval}
   \State $T \gets \getConfirmed(\Sigma,\; \Omega)$
-  \State $h_R \gets \Sigma.\key_R.h$
-  \If{$\Sigma.\key_R.b = 0 \;\wedge\; \Sigma.\key_R.s_n < k - 1$} \label{line:r-shift-target}
-    \State $T \gets \arg\max_{\preceq}\, \{B : B \preceq T \;\wedge\; \sigma[B].h = h_R\}$ \Comment{$R$-shift: anchor effective canonical at state-height $h_R$}
-  \EndIf
   \State $h_c \gets \sigma[T].h$; \;\; $h_j \gets \sigma[T].h_j$; \;\; $J \gets \sigma[T].J$
   \vspace{3pt}
   \State \textbf{-- Target selection --}
-  \If{$\exists\, v \in V$ with $v.\finalizeHeight = h_c$ and $v.\finalizeTarget \neq \bot$}
+  \If{$\exists\, v \in \Sigma.V$ with $v.\finalizeHeight = h_c$ and $v.\finalizeTarget \neq \bot$}
     \State $T_c \gets v.\finalizeTarget$ \Comment{$i$ is locked at $h_c$}
   \Else
     \State $T_c \gets T$ \label{line:unlocked-target}
   \EndIf
   \vspace{3pt}
   \State \textbf{-- Vote kind and finalize fields --}
-  \If{$\not \exists v \in V$ s.t. $v.\height = h_c$} \Comment{first vote at $h_c$: cast \just (R1)}
-    \If{every $v \in V$ with $v.\height = h_j$ has $v.\target = J$}
+  \If{$\not \exists v \in \Sigma.V$ s.t. $v.\height = h_c$} \Comment{first vote at $h_c$: cast \just (R1)}
+    \If{every $v \in \Sigma.V$ with $v.\height = h_j$ has $v.\target = J$}
       \State $(f_h,\, f_t) \gets (h_j,\, J)$
     \Else
       \State $(f_h,\, f_t) \gets (\bot,\, \bot)$
@@ -878,9 +874,6 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 
 Only the (R1) branch produces a \just vote and, gated by the first-vote check, fires at most once per~$h_c$, ensuring per-height \just-uniqueness.
 The (R2) branch is the \emph{resubmission} fallback: fired at every subsequent voting opportunity while canonical stays at~$h_c$, so when the (R1) \just quorum did not form on canonical (heterogeneous targets across views), the \notar vote's prefix counting may still notarize a common ancestor.
-
-The $R$-shift clause (line~\ref{line:r-shift-target}) fires when $\Sigma.\key_R$ records a notarization (bit-$0$) whose slot is more than one before the current slot, i.e., $\Sigma.\key_R.s_n < k - 1$. In that case $i$ replaces its effective canonical $T$ with the deepest ancestor of $\getConfirmed(\Sigma, \Omega)$ at state-height $\key_R.h$ \emph{before} computing $h_c, h_j, J$, so $v.\height = h_c$ and $v.\target = T_c$ both anchor at state-height $\key_R.h$.
-This anchoring prevents the validator from committing to extensions of the previous canonical chain across an $R$-shift onto a different chain, which the healing analysis relies on to keep slot-$k$ honest votes confined to chains compatible with $\comm{R}^{\vote(k+1)}$.
 
 Checking \emph{every} prior vote of~$i$ at~$h_j$ (not just the (R1) one) is required because a (R2) at~$h_j$ may have chosen a target differing from the (R1) target if~$i$'s view shifted; committing $f_t = J$ at height~$h_j$ requires (by E1) that every $h_j$-vote of~$i$ have target~$J$, so in case of a split the conditional fires $(\bot, \bot)$: $i$ misses the finalization at~$h_j$ but remains E1-safe.
 
@@ -1143,8 +1136,7 @@ The view-merge mechanism is detailed in \Cref{app:view-merge}; in this section w
 
 
 \paragraph{Modified \constructVote.}
-We assume that each store $\Sigma$ carries an additional field $\Sigma.V$, the set of votes the owning validator has cast so far.
-The voting rule is correspondingly rewritten to drop its $V$ parameter and to delegate unlocked target selection to \getConfirmed{}:
+The voting rule is augmented with an $R$-shift branch that anchors the vote at state-height $\key_R.h$ when $\Sigma.\key_R$ records a notarization (bit-$0$) whose slot is more than one before the current slot:
 \begin{center}
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
