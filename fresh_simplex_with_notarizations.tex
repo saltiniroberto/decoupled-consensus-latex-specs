@@ -2091,57 +2091,6 @@ In both cases, $k_h \leq k+8$.
 Apply \Cref{rev:lem:healing-unbounded} at slot~$k_h$: hypothesis~\ref{rev:hu:f} is hypothesis~1; \ref{rev:hu:ohm} is the theorem's strengthened \OHM hypothesis (every slot $\geq k$, hence $\geq k_h$); \ref{rev:hu:hs} is the conclusion of the previous paragraph. The lemma's conclusions hold for all $t, t' \geq \vote(k_h)$, hence in particular for $t, t' \geq \vote(k+8) \geq \vote(k_h)$.
 \end{proof}
 
-\RSfn{I haven't checked the proof of the following Lemma at all}
-\begin{lemma}[Three-slot healing under slot-$k$ dual-height voting]\label{rev:lem:healing-three-slot-dual-vote}
-Assume:
-\begin{enumerate}
-  \item\label{rev:h3sdv:f} $f^{\vote(k+3)} < n/3$ and honest validators follow \Cref{def:voting-rule};
-  \item\label{rev:h3sdv:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:h3sdv:syncers} $\syncer(k), \syncer(k+1), \syncer(k+2)$ are honest;
-  \item\label{rev:h3sdv:ohm} the \OHM holds at every slot $k' \in \{k, k+1, k+2, k+3\}$;
-  \item\label{rev:h3sdv:aha} the \AHA condition holds at every slot $k' \in \{k, k+1, k+2, k+3\}$;
-  \item\label{rev:h3sdv:har} the \HAR condition holds at slots~$k+1$ and $k+2$;
-  \item\label{rev:h3sdv:dual} (\emph{slot-$k$ dual-height voting}) at $\vote(k)$, every honest validator casts \emph{two} votes: one at height $R^{\vote(k)}.h$ and one at height $R^{\vote(k)}.h + 1$ (the latter conditional on a block at state-height $R^{\vote(k)}.h + 1$ existing in its store). Each is of whatever type \Cref{def:voting-rule} would normally produce at the height in question (\just on the first vote at the height, \notar otherwise; with the appropriate $(\finalizeHeight, \finalizeTarget)$ for the (R1) clause). At every voting time other than $\vote(k)$, validators follow \Cref{def:voting-rule} unchanged.
-\end{enumerate}
-Write $\comm{h} \coloneqq \comm{R}^{\vote(k)}.h$. Then the system is in a healed state at slot $k+3$ with height $\comm{h}+2$ (\Cref{rev:def:healed-state}).
-\end{lemma}
-
-\begin{proof}
-Write $h \coloneqq \comm{h}$.
-
-\emph{Step 1: structural facts.}
-By \Cref{rev:ass:view-merge} and honest $\syncer(k)$, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ and $\Sigma_v^{\vote(k)} = \comm{\Sigma}^{\vote(k)}$ for every honest~$v$. By \Cref{rev:cor:processed-height-bound}, $\sigma[\getConfirmed_v^{\vote(k)}].h \in \{h, h+1\}$ for every honest~$v$. By \Cref{lem:Rs-key-monotone} and \Cref{rev:cor:processed-height-bound} applied at every earlier time, no honest validator has cast at height $>h+1$ before $\vote(k)$. By \Cref{rev:prop:getConfirmed-compat} (premise discharged by view-merge), honest \getConfirmed{}s at $\vote(k)$ are pairwise $\preceq$-compatible; hence both the height-$h$ and height-$(h+1)$ honest targets at $\vote(k)$ lie on a single chain~$C$ through $\comm{R}^{\vote(k)}$.
-
-\emph{Step 2: a same-slot cert at height $h+1$ fires by $\vote(k+1)$ in every honest's view.}
-Under the slot-$k$ dual-height extension every honest casts a slot-$k$ vote at height~$h$ \emph{and} a slot-$k$ vote at height $h+1$, both targeting blocks on~$C$. The slot-$k$ contributions at height $h+1$ thus include $\geq n - f > 2n/3$ honest~$\ntargets$ entries with $\nslots = k$ and target on~$C$. In each honest~$v$'s virtual-block aggregation by $\vote(k+1)$, the same-slot $\arg\max$ (\Cref{alg:state-machine}) admits a candidate $(B^\star, k)$ at height $h+1$ on~$C$, firing a cert event with key $(h+1,\, b,\, k,\, \ldots)$. This key strictly dominates $\key_R = (h, *, *, \ldots)$ on the leading coordinate, so $R_v$ advances to $B^\star$. By view-merge + honest $\syncer(k+1)$, $\comm{R}^{\vote(k+1)}$ is the resulting cert event at height $h+1$, common across honest.
-
-\emph{Step 3: reduce to a two-slot lemma at slot $k+1$.}
-The setup at $\vote(k+1)$ matches the hypotheses of \Cref{rev:lem:healing-from-justified} (if $\comm{R}^{\vote(k+1)}$ is a bit-$1$ justification at $h+1$) or of \Cref{rev:lem:healing-from-notarized} (if $\comm{R}^{\vote(k+1)}$ is a bit-$0$ notarization at $h+1$ with notarization slot~$k$):
-\begin{itemize}
-  \item synchrony at slot $k+1$: $\start(k+1) - \Delta \geq \start(k) + \Delta \geq \GST$;
-  \item by view-merge + honest $\syncer(k+1)$ (outer~(3)), $R_v^{\vote(k+1)} = \comm{R}^{\vote(k+1)}$ is the appropriate justified or notarized block in every honest's view; for the notarized branch, $\syncer(k+2)$ honest is also inherited from outer~(3);
-  \item $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ common across honest, by view-merge + \Cref{rev:cor:processed-height-bound} bounding state-height by $\comm{R}^{\vote(k+1)}.h + 1 = h+2$ and the $\geq h+1$ direction following from $\getConfirmed$ descending from $\comm{R}^{\vote(k+1)}$;
-  \item no honest at height $>h+1$ before $\vote(k+1)$, by Step~1 plus the slot-$k$ honest contributions lying at heights in $\{h, h+1\}$.
-\end{itemize}
-Invoking the appropriate sub-lemma at slot~$k+1$ places the system in a healed state at slot~$(k+1)+2 = k+3$ with height~$(h+1)+1 = h+2$, as required.
-\end{proof}
-
-\begin{remark}[Why the dual-height extension is needed]\label{rev:rem:dual-vote-needed}
-Without the slot-$k$ dual-height extension, the \Cref{rev:cor:processed-height-bound} bound only constrains canonical state-heights to $\{h, h+1\}$, but does not force them to agree across honest. The adversary can split honest \getConfirmed{}s between the two heights via the per-validator $\Omega$ component of $\getConfirmed(\Sigma, \Omega)$, so the slot-$k$ honest contributions split between two heights:
-\[
-  h^*_h + h^*_{h+1} \;=\; n - f, \qquad h^*_h, h^*_{h+1} \;\geq\; 0.
-\]
-A same-slot cert at height $h^* \in \{h, h+1\}$ requires $\geq 2n/3$ contributors at $h^*$. Together with at most $f$ adversarial contributions, the threshold becomes $h^*_{h^*} \geq 2n/3 - f$. Both thresholds met simultaneously requires $h^*_h + h^*_{h+1} \geq 4n/3 - 2f$, i.e., $f \geq n/3$, contradicting $f < n/3$; so at most one height can carry a cert. The adversary can in fact split so that \emph{neither} reaches the threshold (e.g., $h^*_h = h^*_{h+1} = (n-f)/2$, giving honest mass $(n-f)/2 + f = (n+f)/2 < 2n/3$), blocking progress entirely. The split survives view-merge unchanged --- view-merge fixes $\Sigma$ but not the $\Omega$ argument of $\getConfirmed$ --- so neither extra honest syncers nor extra slots resolve it.
-
-The dual-height extension forces every honest to contribute at \emph{both} heights, raising each height's honest count to $n - f > 2n/3$ and guaranteeing a cert at height $h+1$. The extension is restricted to slot~$k$ because exactly one ``alignment slot'' is enough: post-slot-$k$, the cert at $h+1$ has fired, $R$ has advanced, and standard view-merge dynamics realign honest \getConfirmed{}s for slots $k+1, k+2, \ldots$ without further dual-voting.
-\end{remark}
-
-\begin{remark}[A natural-looking fix that does not work]\label{rev:rem:conditional-dual-vote-fails}
-A tempting refinement of \Cref{def:voting-rule} is the following ``conditional dual-vote'' rule: an honest validator with $\getConfirmed = T$ at state-height $h$ casts a vote at height~$h$ on $T$ as usual, and \emph{additionally} casts a vote at height~$h+1$ whenever its store contains some $T' \succeq T$ with $\sigma[T'].h = h+1$. Universally adopted, this would seem to overcome the split: validators whose $\getConfirmed$ already sits at $h+1$ vote at $h+1$ via \Cref{def:voting-rule}, and validators whose $\getConfirmed$ sits at $h$ but who can see an extension also vote at $h+1$, raising the height-$(h+1)$ honest count.
-
-The rule fails at its premise: if $\getConfirmed_i = T$ has state-height $h$, no chain in $\Sigma_i.\T$ extends $T$ to a block at state-height $h+1$. By construction, $\getConfirmed$ is the deepest target on the canonical chain $\sigma_i.L \succeq T$, and $\sigma[\getConfirmed].h$ is the canonical state-height; if some $T' \succeq T$ on a chain in $\Sigma_i.\T$ had $\sigma[T'].h = h+1$, then $\getConfirmed$ would itself sit at state-height $\geq h+1$, contradicting $\sigma[\getConfirmed].h = h$. So the ``additionally vote at $h+1$'' branch never fires for the validators it was meant to recruit, and the rule reduces to \Cref{def:voting-rule} on those validators --- leaving the split untouched.
-\end{remark}
-
 \appendix
 
 \section{View-merge mechanism}\label{app:view-merge}
