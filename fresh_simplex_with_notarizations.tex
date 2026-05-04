@@ -843,11 +843,10 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 \begin{algorithmic}[1]
 
 \Function{\constructVote}{$V,\; \Sigma,\; \Omega,\; k$} \Comment{$k$ is the current slot}
-  \State $T_{\mathrm{prev}} \gets \getConfirmed(\Sigma,\; \Omega)$ \Comment{$\getConfirmed$ under the pre-vote $\Sigma.R$}
   \State $\Sigma.R \gets \Sigma.\hat{R}$; \;\; $\Sigma.\key_R \gets \Sigma.\hat{\key}_R$ \Comment{commit pending cert-root updates from the previous inter-vote interval}
-  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$ \Comment{$\getConfirmed$ under the post-vote $\Sigma.R$}
+  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$
   \State $h_R \gets \Sigma.\key_R.h$
-  \If{$\Sigma.R \not\sim T_{\mathrm{prev}}$ \textbf{ or } $(\Sigma.\key_R.b = 0 \;\wedge\; \Sigma.\key_R.s_n < k - 1)$} \label{line:r-shift-target}
+  \If{$\Sigma.\key_R.b = 0 \;\wedge\; \Sigma.\key_R.s_n < k - 1$} \label{line:r-shift-target}
     \State $T \gets \arg\max_{\preceq}\, \{B : B \preceq T \;\wedge\; \sigma[B].h = h_R\}$ \Comment{$R$-shift: anchor effective canonical at state-height $h_R$}
   \EndIf
   \State $h_c \gets \sigma[T].h$; \;\; $h_j \gets \sigma[T].h_j$; \;\; $J \gets \sigma[T].J$
@@ -880,7 +879,7 @@ The first-vote check in the (R1) branch ensures at most one \just vote per heigh
 Only the (R1) branch produces a \just vote and, gated by the first-vote check, fires at most once per~$h_c$, ensuring per-height \just-uniqueness.
 The (R2) branch is the \emph{resubmission} fallback: fired at every subsequent voting opportunity while canonical stays at~$h_c$, so when the (R1) \just quorum did not form on canonical (heterogeneous targets across views), the \notar vote's prefix counting may still notarize a common ancestor.
 
-The $R$-shift clause (line~\ref{line:r-shift-target}) fires when the post-vote $\Sigma.R$ is incompatible with $T_{\mathrm{prev}}$, the value of $\getConfirmed(\Sigma, \Omega)$ computed at the current voting opportunity \emph{before} the pending-commit $\Sigma.R \gets \Sigma.\hat{R}$ — i.e., when committing the cert events accumulated in the inter-vote interval shifts $\Sigma.R$ off the chain $i$ would otherwise have voted on. In that case $i$ replaces its effective canonical $T$ with the deepest ancestor of $\getConfirmed(\Sigma, \Omega)$ at state-height $\key_R.h$ \emph{before} computing $h_c, h_j, J$, so $v.\height = h_c$ and $v.\target = T_c$ both anchor at state-height $\key_R.h$.
+The $R$-shift clause (line~\ref{line:r-shift-target}) fires when $\Sigma.\key_R$ records a notarization (bit-$0$) whose slot is more than one before the current slot, i.e., $\Sigma.\key_R.s_n < k - 1$. In that case $i$ replaces its effective canonical $T$ with the deepest ancestor of $\getConfirmed(\Sigma, \Omega)$ at state-height $\key_R.h$ \emph{before} computing $h_c, h_j, J$, so $v.\height = h_c$ and $v.\target = T_c$ both anchor at state-height $\key_R.h$.
 This anchoring prevents the validator from committing to extensions of the previous canonical chain across an $R$-shift onto a different chain, which the healing analysis relies on to keep slot-$k$ honest votes confined to chains compatible with $\comm{R}^{\vote(k+1)}$.
 
 Checking \emph{every} prior vote of~$i$ at~$h_j$ (not just the (R1) one) is required because a (R2) at~$h_j$ may have chosen a target differing from the (R1) target if~$i$'s view shifted; committing $f_t = J$ at height~$h_j$ requires (by E1) that every $h_j$-vote of~$i$ have target~$J$, so in case of a split the conditional fires $(\bot, \bot)$: $i$ misses the finalization at~$h_j$ but remains E1-safe.
@@ -1150,11 +1149,10 @@ The voting rule is correspondingly rewritten to drop its $V$ parameter and to de
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 \Function{\constructVote}{$\Sigma,\; \Omega,\; k$} \Comment{$k$ is the current slot}
-  \State $T_{\mathrm{prev}} \gets \getConfirmed(\Sigma,\; \Omega)$ \Comment{$\getConfirmed$ under the pre-vote $\Sigma.R$}
   \State $\Sigma.R \gets \Sigma.\hat{R}$; \;\; $\Sigma.\key_R \gets \Sigma.\hat{\key}_R$ \Comment{commit pending cert-root updates from the previous inter-vote interval}
-  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$ \Comment{$\getConfirmed$ under the post-vote $\Sigma.R$}
+  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$
   \State $h_R \gets \Sigma.\key_R.h$
-  \If{$\Sigma.R \not\sim T_{\mathrm{prev}}$ \textbf{ or } $(\Sigma.\key_R.b = 0 \;\wedge\; \Sigma.\key_R.s_n < k - 1)$}
+  \If{$\Sigma.\key_R.b = 0 \;\wedge\; \Sigma.\key_R.s_n < k - 1$}
     \State $T \gets \arg\max_{\preceq}\, \{B : B \preceq T \;\wedge\; \sigma[B].h = h_R\}$ \Comment{$R$-shift: anchor effective canonical at state-height $h_R$}
   \EndIf
   \State $h_c \gets \sigma[T].h$; \;\; $h_j \gets \sigma[T].h_j$; \;\; $J \gets \sigma[T].J$
@@ -1563,7 +1561,7 @@ Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref
 
 \begin{proof}
 \emph{Notation.}
-Let $h \coloneqq \comm{R}^{\vote(k)}.h$, write $a^k_v$ for honest~$v$'s slot-$k$ vote, and $T_{\mathrm{prev},v}^{\vote(t)}$ for the pre-vote value of $\getConfirmed(\Sigma_v, \Omega)$ at $\vote(t)$ (computed under $\Sigma_v.R$ frozen from the previous voting time).
+Let $h \coloneqq \comm{R}^{\vote(k)}.h$ and write $a^k_v$ for honest~$v$'s slot-$k$ vote.
 
 \emph{Global bound: no honest vote at height $> h+1$.}
 Root-key monotonicity (\Cref{lem:Rs-key-monotone}) plus hypothesis~\ref{rev:hfjm:r} ($\key_R^{\vote(k)}$ has $.h = h$) give $\key_R.h \leq h$ at every $t \leq \vote(k)$. By \Cref{rev:cor:processed-height-bound} every pre-$\vote(k)$ honest vote is at height~$\leq h+1$ (the default branch's $h_c = \sigma[\getConfirmed].h \leq \key_R.h + 1 \leq h+1$, and the $R$-shift branch's $h_c = h_R = \key_R.h \leq h$). Slots are a monotonic function of time, so no honest validator has cast any vote for slot $\geq k$ before $\vote(k)$; the slot-$k$ vote at $\vote(k)$ itself satisfies $a^k_v.\height \in \{h, h+1\}$ by the same bound. Hence no honest has cast any vote at height~$> h+1$ at any time pre-$\vote(k+1)$.
@@ -1597,7 +1595,7 @@ The conclusion places the system in a healed state at slot~$k+3$ with height~$h+
 \item[{Case (II): $\key_R$ is bit-$0$ at $h+1$ slot $s < k$.}]\hfill
 
 \emph{$R$-shift fires at $\vote(k+1)$ with target $B^\star$.}
-The new disjunct of the $R$-shift trigger fires: $\key_R^{\vote(k+1)}.b = 0$ and $s < k = (k+1) - 1$. The $R$-shift branch sets $a^{k+1}_v.\target$ to the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h+1$. Since $\getConfirmed_v^{\vote(k+1)} \succeq R_v^{\vote(k+1)} = B^\star$ (store invariant) and $\sigma[B^\star].h = h+1$ (the slot-$s$ same-slot bit-$0$ cert at $B^\star$ advances state-height from~$h$ to~$h+1$ at $B^\star$), the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height~$h+1$ is $B^\star$. The lock branch fails: $\key_R$ has bit-$0$ at $h+1$, so no bit-$1$ at $h+1$ has fired and canonical $h_j \leq h$ throughout $[\vote(k), \vote(k+1)]$, ruling out any honest R1 vote with $\finalizeHeight = h+1$. Hence $a^{k+1}_v.\height = h+1$ with target $B^\star$ uniformly.
+The $R$-shift trigger fires: $\key_R^{\vote(k+1)}.b = 0$ and $s < k = (k+1) - 1$. The $R$-shift branch sets $a^{k+1}_v.\target$ to the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h+1$. Since $\getConfirmed_v^{\vote(k+1)} \succeq R_v^{\vote(k+1)} = B^\star$ (store invariant) and $\sigma[B^\star].h = h+1$ (the slot-$s$ same-slot bit-$0$ cert at $B^\star$ advances state-height from~$h$ to~$h+1$ at $B^\star$), the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height~$h+1$ is $B^\star$. The lock branch fails: $\key_R$ has bit-$0$ at $h+1$, so no bit-$1$ at $h+1$ has fired and canonical $h_j \leq h$ throughout $[\vote(k), \vote(k+1)]$, ruling out any honest R1 vote with $\finalizeHeight = h+1$. Hence $a^{k+1}_v.\height = h+1$ with target $B^\star$ uniformly.
 
 \emph{Slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ slot $k+1$ forms by $\vote(k+2)$.}
 By hypothesis~\ref{rev:hfjm:aha} (\AHA at $k+1$) and synchrony, all $\geq n - f > 2n/3$ slot-$(k+1)$ honest votes targeting $B^\star$ are delivered to every honest by $\vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfjm:har} (\HAR at $k+1$), an honest proposer in $[\vote(k+1), \vote(k+2) - \delta_c)$ proposes a block on the chain through $B^\star$ containing these votes; the extended \updateRootFromVotes{} fires a slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ on the chain through $B^\star$, target $B^{\star\star}$, key $(h+1, 0, k+1, \ldots)$, dominating $\key_R$ on $s_n$ ($k+1 > s$). $\Sigma_v.\hat{R}, \hat{\key}_R$ update to $(B^{\star\star}, (h+1, 0, k+1, \ldots))$ uniformly.
@@ -1612,7 +1610,7 @@ The unique $J^{\star\star}$ justified at $h+1$ has key $(h+1, 1, 0, \ldots)$ dom
 
 \item[{(II.B): no bit-$1$ at $h+1$ has fired by $\vote(k+2)$.}]\hfill
 
-$\Sigma_v.R^{\vote(k+2)} = B^{\star\star}$ uniformly bit-$0$ at $h+1$ slot $k+1$. The new disjunct\RSfn{don't use ``new disjunct'' as it means nothing to someone who doesn't know the sequence of modifications to the algorithm} doesn't\RSfn{Don't user short forms} fire ($s_n = k+1 \not< k+1$); the chain through $B^{\star\star}$ extends $B^\star$, and $T_{\mathrm{prev},v}^{\vote(k+2)}$ extends pre-vote $\Sigma_v.R = B^\star$ on the same chain, so the old condition doesn't fire either. Default branch.
+$\Sigma_v.R^{\vote(k+2)} = B^{\star\star}$ uniformly bit-$0$ at $h+1$ slot $k+1$. The $R$-shift trigger does not fire ($\key_R.s_n = k+1 \not< k+1$). Default branch.
 
 \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (standing assumptions from outer hypotheses; $R$ uniformly $B^\star$ trivially pairwise compatible; premise: $R_v^t = B^\star$ for $t \in [\vote(k+1), \vote(k+2)]$ by the pending-cache rule, so $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq B^\star = R_v^t$ for $v_\ell$ the $\preceq$-max honest \getConfirmed{} on the chain through $B^\star$) places every slot-$(k+1)$ honest vote on the chain at $\getConfirmed_v^{\vote(k+2)}$. Processing fires the slot-$(k+1)$ cert at $h+1$ on canonical, advancing canonical state-height to $h+2$; with \Cref{rev:cor:processed-height-bound}, $\sigma[\getConfirmed_v^{\vote(k+2)}].h = h+2$ uniformly.
 
@@ -1626,7 +1624,7 @@ By the voting rule (default branch), every honest casts $a^{k+2}_v$ at $h_c = h+
 Case~(IV) is trivial: $R_v^{\vote(k+1)} = \comm{R}^{\vote(k)}$. For Case~(III): the slot-$k$ honest contributions at height $h+1$ that witness the cert use the default branch of \Cref{def:voting-rule} at $\vote(k)$ (the $R$-shift branch would force $h_c = h_R = h$ since $\key_R^{\vote(k)}$ has $.h = h$ from hypothesis~\ref{rev:hfjm:r}, contradicting the contributor's vote-height $h+1$); their default-branch target is $\getConfirmed_v^{\vote(k)} \succeq R_v^{\vote(k)} = \comm{R}^{\vote(k)}$, lying on the chain through $\comm{R}^{\vote(k)}$. The prefix-notar $\arg\max_\preceq$ that selects $B^\star$ is therefore on this chain at chain-height~$h+1$.
 
 \emph{$R$-shift does not fire at $\vote(k+1)$.}
-The new disjunct doesn't fire ((III): $s_n = k \not< k = (k+1)-1$; (IV): $.b = 1$). For the old condition: $T_{\mathrm{prev},v}^{\vote(k+1)}$ is computed under pre-vote $\Sigma_v.R = \comm{R}^{\vote(k)}$ (frozen from $\vote(k)$), hence extends $\comm{R}^{\vote(k)}$; the post-vote $R^{\vote(k+1)}$ also lies on the chain through $\comm{R}^{\vote(k)}$ (above), so the two are $\sim$-comparable. Default branch fires.
+The $R$-shift trigger does not fire ((III): $\key_R.s_n = k \not< k = (k+1)-1$; (IV): $\key_R.b = 1$). Default branch fires.
 
 \emph{Slot-$(k+1)$ honest votes target the chain through $\comm{R}^{\vote(k)}$ at height $h_c$.}
 Each honest casts $a^{k+1}_v$ at $h_c = \sigma[\getConfirmed_v^{\vote(k+1)}].h$ (uniform across honest by view-merge), targeting $\getConfirmed_v^{\vote(k+1)} \succeq R_v^{\vote(k+1)}$ on the chain through $\comm{R}^{\vote(k)}$. By \Cref{rev:cor:processed-height-bound}, $h_c \leq R_v^{\vote(k+1)}.h + 1$, so $h_c = h+1$ in Case~(IV) and $h_c \in \{h+1, h+2\}$ in Case~(III). The lock branch fails: canonical $h_j \leq h$ (since no bit-$1$ at $h+1$ has fired in either case), so slot-$\leq k$ R1 honest votes have $\finalizeHeight \leq h < h_c$.
@@ -1643,7 +1641,7 @@ $\Sigma_v.R^{\vote(k+2)} = J^{\star\star}$ for the unique $J^{\star\star}$ justi
 
 \item[{(III/IV.B): no bit-$1$ cert at height $h_c$ has fired by $\vote(k+2)$.}]\hfill
 
-$\Sigma_v.R^{\vote(k+2)} = B^{\star\star}$ uniformly bit-$0$ at $h_c$ slot $k+1$. The new disjunct doesn't fire ($s_n = k+1 \not< k+1$); the old condition doesn't fire (chain through $B^{\star\star}$ extends the chain through $\comm{R}^{\vote(k)}$, and $T_{\mathrm{prev},v}^{\vote(k+2)}$ likewise extends pre-vote $\Sigma_v.R$ on the same chain). Default branch.
+$\Sigma_v.R^{\vote(k+2)} = B^{\star\star}$ uniformly bit-$0$ at $h_c$ slot $k+1$. The $R$-shift trigger does not fire ($\key_R.s_n = k+1 \not< k+1$). Default branch.
 
 By \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (premise: $R_v^t \in \{R_v^{\vote(k+1)}, B^{\star\star}\}$ on the chain through $\comm{R}^{\vote(k)}$, bounded above by the $\preceq$-max honest \getConfirmed{} on that chain at $\vote(k+1)$), every slot-$(k+1)$ honest vote lies on the chain at $\getConfirmed_v^{\vote(k+2)}$; processing fires the slot-$(k+1)$ cert at $h_c$ on canonical, advancing state-height to $h_c + 1$. With \Cref{rev:cor:processed-height-bound}, $\sigma[\getConfirmed_v^{\vote(k+2)}].h = h_c + 1$ uniformly. Slot-$(k+2)$ honest votes target $\getConfirmed_v^{\vote(k+2)}$ at $h_c + 1$, and (by \AHA at $k+2$ + synchrony) form a slot-$(k+2)$ same-slot bit-$0$ cert at $h_c + 1$ slot $k+2$, target $B^{\star\star\star}$, key $(h_c+1, 0, k+2, \ldots)$, dominating $\key_R$ on the leading coordinate.
 
@@ -1754,7 +1752,7 @@ Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref
 
 \begin{proof}
 \emph{Notation.}
-Let $h \coloneqq \comm{R}^{\vote(k)}.h$, write $a^k_v$ for honest~$v$'s slot-$k$ vote, and $T_{\mathrm{prev},v}^{\vote(t)}$ for the pre-vote value of $\getConfirmed(\Sigma_v, \Omega)$ at $\vote(t)$ (computed under $\Sigma_v.R$ frozen from the previous voting time).
+Let $h \coloneqq \comm{R}^{\vote(k)}.h$ and write $a^k_v$ for honest~$v$'s slot-$k$ vote.
 
 \emph{Global bound: no honest vote at height $> h+1$ at any time pre-$\vote(k+1)$.}
 By hypothesis~\ref{rev:hfnm:r}, $\key_R^{\vote(k)} = (h, 0, s_v, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ with $s_v \leq k-1$. Root-key monotonicity (\Cref{lem:Rs-key-monotone}) gives $\key_R.h \leq h$ at every $t \leq \vote(k)$, so by \Cref{rev:cor:processed-height-bound} every pre-$\vote(k)$ honest vote is at height~$\leq h+1$. Hypothesis~\ref{rev:hfnm:nh} strengthens this to height~$\leq h$ before $\vote(k)$. The slot-$k$ vote at $\vote(k)$ satisfies $a^k_v.\height \in \{h, h+1\}$ by the same height bound. Hence no honest has cast any vote at height~$> h+1$ at any time pre-$\vote(k+1)$.
@@ -1798,7 +1796,7 @@ $R_v^{\vote(k+1)} = B^{\star\star}$ uniformly notarized at $h+1$, slot~$k$. We a
 Slot-$k$ honest contributions at height~$h+1$ that witness the cert use the default branch of \Cref{def:voting-rule} at $\vote(k)$ (the $R$-shift branch would force $h_c = h_R = h$ since $\key_R^{\vote(k)}.h = h$, contradicting vote-height $h+1$); their target is $\getConfirmed_v^{\vote(k)} \succeq R_v^{\vote(k)} = \comm{R}^{\vote(k)}$, on the chain through $\comm{R}^{\vote(k)}$ at chain-height $h+1$ (by chain-uniqueness, this is the same block for all such honest contributors). The prefix-notar $\arg\max_\preceq$ that selects $B^{\star\star}$ is therefore on this chain at chain-height~$h+1$.
 
 \emph{$R$-shift does not fire at $\vote(k+1)$.}
-The new disjunct: $\key_R^{\vote(k+1)}.s_n = k \not< k = (k+1) - 1$. The old condition: $T_{\mathrm{prev},v}^{\vote(k+1)}$ is computed under pre-vote $\Sigma_v.R = \comm{R}^{\vote(k)}$ (frozen from $\vote(k)$), hence extends $\comm{R}^{\vote(k)}$; post-vote $R^{\vote(k+1)} = B^{\star\star}$ also lies on the chain through $\comm{R}^{\vote(k)}$ (above), so the two are $\sim$-comparable. Default branch fires.
+The $R$-shift trigger does not fire ($\key_R^{\vote(k+1)}.s_n = k \not< k = (k+1) - 1$). Default branch fires.
 
 \emph{Slot-$(k+1)$ same-slot bit-$0$ cert at $h_c \in \{h+1, h+2\}$ slot $k+1$ forms.}
 Each honest casts $a^{k+1}_v$ at $h_c = \sigma[\getConfirmed_v^{\vote(k+1)}].h$ (uniform across honest by view-merge) targeting $\getConfirmed_v^{\vote(k+1)} \succeq B^{\star\star}$ on the chain through $\comm{R}^{\vote(k)}$. By \Cref{rev:cor:processed-height-bound}, $h_c \leq R_v^{\vote(k+1)}.h + 1 = h+2$, and \Cref{rev:prop:target-dominance} at slot~$k$ (premise discharged via the chain restriction above and pick $v_\ell$ honest with $\sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h = h+1$) gives $h_c \geq h+1$. The lock branch fails: hypothesis~\ref{rev:hfnm:nh} excludes pre-$\vote(k)$ honest finalize-bearing votes at $> h$; slot-$k$ R1 votes at heights $\leq h+1$ have $\finalizeHeight \leq h_j \leq h < h_c$. By hypothesis~\ref{rev:hfnm:aha} (\AHA at $k+1$) and synchrony, all $\geq n - f > 2n/3$ slot-$(k+1)$ honest votes are delivered by $\vote(k+2) - \Delta$; the extended \updateRootFromVotes{} fires a slot-$(k+1)$ same-slot bit-$0$ cert at $h_c$ on the chain through $\comm{R}^{\vote(k)}$, target $B^{\star\star\star}$, key $(h_c, 0, k+1, \ldots)$, dominating $\key_R$ on the leading coordinate (if $h_c = h+2$) or the $s_n$ coordinate (if $h_c = h+1$: $k+1 > k$).
@@ -1820,7 +1818,7 @@ The conclusion places the system in a healed state at slot~$k+4$ with height~$h_
 
 \item[{(III.B): no bit-$1$ at $h_c$ by $\vote(k+2)$.}]\hfill
 
-$\Sigma_v.R^{\vote(k+2)} = B^{\star\star\star}$ uniformly bit-$0$ at $h_c$, slot $k+1$. The new disjunct doesn't fire ($s_n = k+1 \not< k+1$); the old condition doesn't fire (chain through $B^{\star\star\star}$ extends the chain through $\comm{R}^{\vote(k)}$, and $T_{\mathrm{prev},v}^{\vote(k+2)}$ likewise extends pre-vote $\Sigma_v.R = B^{\star\star}$ on the same chain). Default branch.
+$\Sigma_v.R^{\vote(k+2)} = B^{\star\star\star}$ uniformly bit-$0$ at $h_c$, slot $k+1$. The $R$-shift trigger does not fire ($\key_R.s_n = k+1 \not< k+1$). Default branch.
 
 By \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (premise: $R_v^t \in \{B^{\star\star}, B^{\star\star\star}\}$ on the chain through $\comm{R}^{\vote(k)}$, bounded above by the $\preceq$-max honest \getConfirmed{} on that chain at $\vote(k+1)$), every slot-$(k+1)$ honest vote lies on the chain at $\getConfirmed_v^{\vote(k+2)}$; processing fires the slot-$(k+1)$ cert at $h_c$ on canonical, advancing canonical state-height to $h_c + 1$. Slot-$(k+2)$ honest votes target $\getConfirmed_v^{\vote(k+2)}$ at $h_c + 1$, and (by \AHA at $k+2$ + synchrony) form a slot-$(k+2)$ same-slot bit-$0$ cert at $h_c + 1$ slot~$k+2$, target $B^{\star\star\star\star}$, key $(h_c+1, 0, k+2, \ldots)$, dominating $\key_R$ on the leading coordinate. At $\vote(k+3)$, the pending-commit gives $\Sigma_v.R^{\vote(k+3)}.h = h_c + 1 \in \{h+2, h+3\}$ uniformly. The healed-state conditions verify at slot~$k+3$ with height~$h_c + 1$.
 \end{description}
@@ -1830,7 +1828,7 @@ By \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (premise: $R_v^t \in \{B^
 $R_v^{\vote(k+1)} = \comm{R}^{\vote(k)}$ uniformly notarized at $h$.
 
 \emph{$R$-shift trigger at $\vote(k+1)$.}
-The new disjunct fires iff $s < k$. The old condition: $T_{\mathrm{prev},v}^{\vote(k+1)}$ extends pre-vote $\Sigma_v.R = \comm{R}^{\vote(k)}$, and post-vote $R = \comm{R}^{\vote(k)}$ also lies on the chain through $\comm{R}^{\vote(k)}$, $\sim$-comparable, so the old condition doesn't fire.
+The $R$-shift trigger fires iff $s < k$.
 
 \begin{description}
 \item[{(IV.a): $s = k$ — $R$-shift doesn't fire.}]\hfill
@@ -1845,7 +1843,7 @@ At $\vote(k+2)$ post-vote, $\Sigma_v.R^{\vote(k+2)}$ is uniformly bit-$1$ at $h+
 
 The $R$-shift target is the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h$, which on the chain through $\comm{R}^{\vote(k)}$ is $\comm{R}^{\vote(k)}$ itself. Hence $a^{k+1}_v.\height = h$ with target $\comm{R}^{\vote(k)}$ uniformly. By hypothesis~\ref{rev:hfnm:aha} (\AHA at $k+1$) and synchrony, slot-$(k+1)$ honest votes form a slot-$(k+1)$ same-slot bit-$0$ cert at $h$ slot~$k+1$, target $\comm{R}^{\vote(k)}$, key $(h, 0, k+1, \ldots)$, dominating $\key_R$ on the $s_n$ coordinate ($k+1 > s$).
 
-At $\vote(k+2)$ post-vote, $\key_R^{\vote(k+2)}.s_n = k+1 \not< k+1 = (k+2) - 1$, so the new $R$-shift disjunct no longer fires. We are now in (an analog of) Case~(IV.a) shifted by one slot: the slot-$(k+1)$ same-slot bit-$0$ cert at $h$ slot $k+1$ plays the role of $\key_R$ at the new starting point. Repeating the (IV.a) argument with slot indices shifted by $1$: slot-$(k+2)$ honest cast at $h+1$, slot-$(k+2)$ cert at $h+1$ slot~$k+2$ forms, sub-cases at $\vote(k+3)$, healed at slot~$k+4$ or $k+5$ with height~$h+2$.
+At $\vote(k+2)$ post-vote, $\key_R^{\vote(k+2)}.s_n = k+1 \not< k+1 = (k+2) - 1$, so the $R$-shift trigger no longer fires. We are now in (an analog of) Case~(IV.a) shifted by one slot: the slot-$(k+1)$ same-slot bit-$0$ cert at $h$ slot $k+1$ plays the role of $\key_R$ at the new starting point. Repeating the (IV.a) argument with slot indices shifted by $1$: slot-$(k+2)$ honest cast at $h+1$, slot-$(k+2)$ cert at $h+1$ slot~$k+2$ forms, sub-cases at $\vote(k+3)$, healed at slot~$k+4$ or $k+5$ with height~$h+2$.
 \end{description}
 \end{description}
 
@@ -1894,7 +1892,7 @@ Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref
 
 \begin{proof}
 \emph{Notation and global bound.}
-Let $h \coloneqq \comm{R}^{\vote(k)}.h$, write $a^k_v$ for honest~$v$'s slot-$k$ vote, and $T_{\mathrm{prev},v}^{\vote(t)}$ for the pre-vote value of $\getConfirmed(\Sigma_v, \Omega)$ at $\vote(t)$. By hypothesis~\ref{rev:hfnmnn:r}, $\key_R^{\vote(k)}.h = h$. Root-key monotonicity (\Cref{lem:Rs-key-monotone}) gives $\key_R.h \leq h$ at every $t \leq \vote(k)$, so by \Cref{rev:cor:processed-height-bound} every pre-$\vote(k+1)$ honest vote is at height $\leq h+1$.
+Let $h \coloneqq \comm{R}^{\vote(k)}.h$ and write $a^k_v$ for honest~$v$'s slot-$k$ vote. By hypothesis~\ref{rev:hfnmnn:r}, $\key_R^{\vote(k)}.h = h$. Root-key monotonicity (\Cref{lem:Rs-key-monotone}) gives $\key_R.h \leq h$ at every $t \leq \vote(k)$, so by \Cref{rev:cor:processed-height-bound} every pre-$\vote(k+1)$ honest vote is at height $\leq h+1$.
 
 \emph{View-merge at $\vote(k+1)$.}
 By view-merge under honest $\syncer(k+1)$ (hypothesis~\ref{rev:hfnmnn:syncers}), every honest's $\Sigma_v$ at $\vote(k+1)$ post-merge equals the common $\comm{\Sigma}^{\vote(k+1)}$. The pending-commit at the start of \constructVote{} therefore makes $\Sigma_v.R^{\vote(k+1)}$ and $\key_R^{\vote(k+1)}$ uniform across honest post-vote.
@@ -1952,7 +1950,7 @@ Healed at some slot in $[k+4, k+6]$ with height~$\geq h+2$.
 
 \item[{Case (IV): $\key_R$ is bit-$0$ at $h$, slot $s < k$.}]\hfill
 
-$R_v^{\vote(k+1)} = B^\sharp$ uniformly notarized at height~$h$, slot~$s < k$. The new $R$-shift disjunct fires at $\vote(k+1)$: $\key_R^{\vote(k+1)}.b = 0$ and $s < k = (k+1) - 1$. The $R$-shift target is the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h$, on the chain through $R = B^\sharp$. Hence $a^{k+1}_v.\height = h$ uniformly with target on the chain through $B^\sharp$.
+$R_v^{\vote(k+1)} = B^\sharp$ uniformly notarized at height~$h$, slot~$s < k$. The $R$-shift trigger fires at $\vote(k+1)$: $\key_R^{\vote(k+1)}.b = 0$ and $s < k = (k+1) - 1$. The $R$-shift target is the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h$, on the chain through $R = B^\sharp$. Hence $a^{k+1}_v.\height = h$ uniformly with target on the chain through $B^\sharp$.
 
 By hypothesis~\ref{rev:hfnmnn:aha} (\AHA at $k+1$) and synchrony, all $\geq n - f > 2n/3$ slot-$(k+1)$ honest votes are delivered to every honest by $\vote(k+2) - \Delta$. The extended \updateRootFromVotes{} fires a slot-$(k+1)$ same-slot bit-$0$ cert at $h$ on the chain through $B^\sharp$, target $B^{\sharp\sharp}$, key $(h, 0, k+1, \ldots)$, dominating $\key_R$ on the $s_n$ coordinate ($k+1 > s$). $\Sigma_v.\hat{R}, \hat{\key}_R$ update to $(B^{\sharp\sharp}, (h, 0, k+1, \ldots))$ uniformly.
 
@@ -1976,7 +1974,7 @@ $f^{\vote(k+6)} < n/3$, syncers $[k+3, k+4]$, OHM/AHA $[k+2, k+5]$, HAR $[k+2, k
 $f^{\vote(k+7)} < n/3$, syncers $[k+3, k+5]$, OHM/AHA $[k+2, k+6]$, HAR $[k+2, k+5]$, all from outer. Healed at some slot in $[k+5, k+7]$ with height~$\geq h+2$.
 
 \item[{(IV.D): $\key_R$ $(h, 0, k+1, \ldots)$ at $\vote(k+2)$.}]\hfill
-The new $R$-shift disjunct doesn't fire at $\vote(k+2)$ ($s_n = k+1 \not< k+1$); the old condition doesn't fire (chain compatibility on the chain through $B^\sharp$). Default branch. \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (premise: $R_v^t = B^{\sharp\sharp}$ on the chain through $B^\sharp$ for $t \in [\vote(k+1), \vote(k+2)]$, picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+1)}$ the $\preceq$-max on this chain) places every slot-$(k+1)$ honest vote on the chain at $\getConfirmed_v^{\vote(k+2)}$; processing fires the slot-$(k+1)$ cert at $h$ on canonical, advancing canonical state-height from~$h$ to~$h+1$. Hence slot-$(k+2)$ honest cast at $h+1$, forming a slot-$(k+2)$ same-slot bit-$0$ cert at $h+1$ slot~$k+2$, target $B^{\sharp\sharp\sharp}$, key $(h+1, 0, k+2, \ldots)$, dominating $\key_R$ on the leading coordinate.
+The $R$-shift trigger does not fire at $\vote(k+2)$ ($\key_R.s_n = k+1 \not< k+1$). Default branch. \Cref{rev:prop:honest-vote-inclusion} at slot~$k+1$ (premise: $R_v^t = B^{\sharp\sharp}$ on the chain through $B^\sharp$ for $t \in [\vote(k+1), \vote(k+2)]$, picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k+1)}$ the $\preceq$-max on this chain) places every slot-$(k+1)$ honest vote on the chain at $\getConfirmed_v^{\vote(k+2)}$; processing fires the slot-$(k+1)$ cert at $h$ on canonical, advancing canonical state-height from~$h$ to~$h+1$. Hence slot-$(k+2)$ honest cast at $h+1$, forming a slot-$(k+2)$ same-slot bit-$0$ cert at $h+1$ slot~$k+2$, target $B^{\sharp\sharp\sharp}$, key $(h+1, 0, k+2, \ldots)$, dominating $\key_R$ on the leading coordinate.
 
 At $\vote(k+3)$ post-vote:
 \begin{description}
@@ -1987,7 +1985,7 @@ At $\vote(k+3)$ post-vote:
 
 \item[{Case (V): $\key_R$ is bit-$0$ at $h$, slot $k$.}]\hfill
 
-$R_v^{\vote(k+1)} = B^\sharp$ uniformly notarized at height~$h$, slot~$k$, target on the chain through $\comm{R}^{\vote(k)}$ (slot-$k$ same-slot cert at $h$ has its honest contributors voting on $\comm{R}^{\vote(k)}$'s chain — by chain-uniqueness at chain-height $h$, the target equals $\comm{R}^{\vote(k)}$). The new $R$-shift disjunct doesn't fire at $\vote(k+1)$ ($s_n = k \not< k$); the old condition doesn't fire (chain compatibility). Default branch.
+$R_v^{\vote(k+1)} = B^\sharp$ uniformly notarized at height~$h$, slot~$k$, target on the chain through $\comm{R}^{\vote(k)}$ (slot-$k$ same-slot cert at $h$ has its honest contributors voting on $\comm{R}^{\vote(k)}$'s chain — by chain-uniqueness at chain-height $h$, the target equals $\comm{R}^{\vote(k)}$). The $R$-shift trigger does not fire at $\vote(k+1)$ ($\key_R.s_n = k \not< k$). Default branch.
 
 By \Cref{rev:prop:honest-vote-inclusion} at slot~$k$ (premise: $R_v^t = \comm{R}^{\vote(k)}$ throughout $[\vote(k), \vote(k+1)]$ — pre-vote frozen, post-vote $B^\sharp = \comm{R}^{\vote(k)}$ by chain-uniqueness — picking $v_\ell$ honest with $\getConfirmed_{v_\ell}^{\vote(k)}$ the $\preceq$-max on the chain through $\comm{R}^{\vote(k)}$), the chain at $\getConfirmed_v^{\vote(k+1)}$ contains every slot-$k$ honest vote; the slot-$k$ same-slot cert at $h$ fires on canonical, advancing canonical state-height to~$h+1$. Hence slot-$(k+1)$ honest cast at $h_c = h+1$ targeting $\getConfirmed_v^{\vote(k+1)}$ on the chain through $\comm{R}^{\vote(k)}$. By hypothesis~\ref{rev:hfnmnn:aha} (\AHA at $k+1$) and synchrony, slot-$(k+1)$ honest votes form a slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ slot~$k+1$, target $B^{\flat\flat}$, key $(h+1, 0, k+1, \ldots)$, dominating $\key_R$ on the leading coordinate.
 
