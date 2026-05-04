@@ -439,7 +439,7 @@ When \processHeight fires a height advance on a chain (Figure~\ref{alg:state-mac
 \end{itemize}
 The associated \emph{cert key} is the lexicographic tuple
 \[
-  \key(X, h, b, s_n) \;\coloneqq\; \bigl(h,\; b,\; s_n,\; -X.\slot,\; \hash(X)\bigr).
+  \key(X, h, b, s_n) \;\coloneqq\; \bigl(h,\; b,\; s_n,\; X.\slot,\; \hash(X)\bigr).
 \]
 \end{definition}
 
@@ -503,7 +503,7 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
 \vspace{3pt}
 
 \Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, b,\, C,\, s_n)$} \Comment{Filter by $\Sigma.F \preceq C$, then running max on the pending key}
-  \State $\newKey \gets (h,\; b,\; s_n,\; -C.\slot,\; \hash(C))$
+  \State $\newKey \gets (h,\; b,\; s_n,\; C.\slot,\; \hash(C))$
   \If{$\newKey > \Sigma.\hat{\key}_R$ and $\Sigma.F \preceq C$}
     \State $\Sigma.\hat{R} \gets C$; \;\; $\Sigma.\hat{\key}_R \gets \newKey$
   \EndIf
@@ -1423,7 +1423,7 @@ Let $h \coloneqq \comm{R}^{\vote(k)}.h$, and write $a^k_v$ for honest~$v$'s slot
 \item[{Case 1: $a^k_v.\height = h$ for every honest~$v$.}]\hfill
 
 \emph{Step 1: $R_v^t = \comm{R}^{\vote(k)}$ throughout $[\vote(k),\, \vote(k+1)]$.}
-By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified at height~$h$ in every honest's view, so $\key_R \geq (h, 1, 0, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; the case assumption $a^k_v.\height = h$ excludes slot-$k$ honest votes at height~$>h$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Hence honest contributions at height~$>h$ in $[\vote(k),\, \vote(k+1)]$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h$ fires. \Cref{lem:Rs-key-monotone} keeps $\key_R.h \leq h$, and the bit-$1$ $\key_R$ dominates any bit-$0$ candidate at the same height. \Cref{lem:just-unique-height} (under $f < n/3$ from hypothesis~\ref{rev:hfj:f}) makes $\comm{R}^{\vote(k)}$ the unique justified block at height~$h$. Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
+By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified at height~$h$ in every honest's view, so $\key_R \geq (h, 1, 0, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; the case assumption $a^k_v.\height = h$ excludes slot-$k$ honest votes at height~$>h$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Hence honest contributions at height~$>h$ in $[\vote(k),\, \vote(k+1)]$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h$ fires. \Cref{lem:Rs-key-monotone} keeps $\key_R.h \leq h$, and the bit-$1$ $\key_R$ dominates any bit-$0$ candidate at the same height. \Cref{lem:just-unique-height} (under $f < n/3$ from hypothesis~\ref{rev:hfj:f}) makes $\comm{R}^{\vote(k)}$ the unique justified block at height~$h$. Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
 
 \emph{Step 2: pairwise compatibility, monotonicity, and slot-$k$ vote inclusion at $\vote(k+1)$.}
 The preamble (R-compatibility at $\vote(k)$) of \Cref{rev:prop:getConfirmed-compat,rev:prop:target-monotonicity,rev:prop:honest-vote-inclusion} is trivial since $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ uniformly. Pick any honest~$v_\ell$; by Step~1, $\getConfirmed_{v_\ell}^{\vote(k)} \succeq \comm{R}^{\vote(k)} = R_v^t$ for every honest~$v$ and $t \in [\vote(k),\, \vote(k+1)]$, discharging the premise. Then:
@@ -1434,7 +1434,7 @@ The preamble (R-compatibility at $\vote(k)$) of \Cref{rev:prop:getConfirmed-comp
 \end{itemize}
 
 \emph{Step 3: canonical state-height reaches~$h+1$ at $\vote(k+1)$.}
-By Step~2, the chain at $\getConfirmed_v^{\vote(k+1)}$ contains the $\geq 2n/3$ slot-$k$ honest votes, each with target $a^k_i.\target \in D'$ at state-height~$h$ (the target is $\getConfirmed_i^{\vote(k)}$ from \Cref{def:voting-rule}'s default branch, or the deepest ancestor of $\getConfirmed_i^{\vote(k)}$ at state-height~$h_R = h$ from the $R$-shift branch; both lie on the chain extending $\comm{R}^{\vote(k)} \in D \subseteq D'$). After processing on~$D'$, each honest contributor~$i$ has $\sigma.\ntargets[i] = a^k_i.\target$ and $\sigma.\nslots[i] = k$ at state-height~$h$. The prefix-notar $\arg\max_\preceq$ in \processHeight{} fires a bit-$0$ cert at $(h, 0, k, -B^\star.\slot, \hash(B^\star))$ for some $B^\star \in D'$ at state-height~$h$, advancing canonical state-height to~$h+1$ (the cert key is dominated by $\key_R$'s bit-$1$, so $R_v$ doesn't update). Combining with $\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq R_v^{\vote(k+1)}.h + 1 = h+1$ (\Cref{rev:cor:processed-height-bound}) gives $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.
+By Step~2, the chain at $\getConfirmed_v^{\vote(k+1)}$ contains the $\geq 2n/3$ slot-$k$ honest votes, each with target $a^k_i.\target \in D'$ at state-height~$h$ (the target is $\getConfirmed_i^{\vote(k)}$ from \Cref{def:voting-rule}'s default branch, or the deepest ancestor of $\getConfirmed_i^{\vote(k)}$ at state-height~$h_R = h$ from the $R$-shift branch; both lie on the chain extending $\comm{R}^{\vote(k)} \in D \subseteq D'$). After processing on~$D'$, each honest contributor~$i$ has $\sigma.\ntargets[i] = a^k_i.\target$ and $\sigma.\nslots[i] = k$ at state-height~$h$. The prefix-notar $\arg\max_\preceq$ in \processHeight{} fires a bit-$0$ cert at $(h, 0, k, B^\star.\slot, \hash(B^\star))$ for some $B^\star \in D'$ at state-height~$h$, advancing canonical state-height to~$h+1$ (the cert key is dominated by $\key_R$'s bit-$1$, so $R_v$ doesn't update). Combining with $\sigma[\getConfirmed_v^{\vote(k+1)}].h \leq R_v^{\vote(k+1)}.h + 1 = h+1$ (\Cref{rev:cor:processed-height-bound}) gives $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.
 
 \emph{Step 4: slot-$(k+1)$ honest votes form a same-slot cert at~$h+1$ on~$D'$.}
 By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The (R1) branch fires (no prior honest vote at height~$h+1$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, Step~3 places slot-$k$ at height~$h$ exactly), and the lock check fails (hypothesis~\ref{rev:hfj:nh} also excludes before-$\vote(k)$ honest finalize-bearing at height~$h+1$; slot-$k$ has $\finalizeHeight \leq h - 1 < h+1$). So the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
@@ -1442,7 +1442,7 @@ By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state
 By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest validators cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the $\geq 2n/3$ slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
 
 \emph{Step 5: $R_v^{\vote(k+2)}$ is a uniform bit-$0$ notarization at height~$h+1$ with notarization slot~$k+1$.}
-\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes (uniform across honest by synchrony) into a virtual block extending its canonical (on~$D'$). The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star} \in D'$ at state-height~$h+1$, with $\geq 2n/3$ honest contributors having $B^{\star\star} \preceq T_v^{(k+1)}$. The selection depends only on the honest contributions (which dominate the $\geq 2n/3$ count alone) and $D'$'s linear structure, so $B^{\star\star}$ is uniform across honest validators. The cert key $(h+1, 0, k+1, -B^{\star\star}.\slot, \hash(B^{\star\star}))$ strictly dominates $\key_R = (h, 1, 0, \ldots)$ on the leading coordinate, so $R_v^{\vote(k+2)} = B^{\star\star}$ for every honest~$v$, with cert-key height~$h+1$ and notarization slot~$k+1 = (k+2) - 1$.
+\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes (uniform across honest by synchrony) into a virtual block extending its canonical (on~$D'$). The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star} \in D'$ at state-height~$h+1$, with $\geq 2n/3$ honest contributors having $B^{\star\star} \preceq T_v^{(k+1)}$. The selection depends only on the honest contributions (which dominate the $\geq 2n/3$ count alone) and $D'$'s linear structure, so $B^{\star\star}$ is uniform across honest validators. The cert key $(h+1, 0, k+1, B^{\star\star}.\slot, \hash(B^{\star\star}))$ strictly dominates $\key_R = (h, 1, 0, \ldots)$ on the leading coordinate, so $R_v^{\vote(k+2)} = B^{\star\star}$ for every honest~$v$, with cert-key height~$h+1$ and notarization slot~$k+1 = (k+2) - 1$.
 
 \emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
 We verify each condition of \Cref{rev:def:healed-state}.
@@ -1465,7 +1465,7 @@ All four conditions verified, the system is in a healed state at slot~$k+2$ with
 \item[{Case 2: $a^k_v.\height = h+1$ for some honest~$v$.}]\hfill
 
 \emph{Step 1: cert-target compatibility throughout $[\vote(k),\, \vote(k+1)]$.}
-By hypothesis~\ref{rev:hfj:r}, $\key_R \geq (h, 1, 0, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest votes at heights~$\leq h+1$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Honest contributions at height~$>h+1$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h+1$ fires; \Cref{lem:Rs-key-monotone} keeps $\key_R.h \leq h+1$.
+By hypothesis~\ref{rev:hfj:r}, $\key_R \geq (h, 1, 0, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest votes at heights~$\leq h+1$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Honest contributions at height~$>h+1$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h+1$ fires; \Cref{lem:Rs-key-monotone} keeps $\key_R.h \leq h+1$.
 
 We classify cert events whose key may dominate $\key_R$ $(h, 1, 0, \ldots)$ in $v$'s view in the interval. At height~$h$, bit-$1$ uniquely targets $\comm{R}^{\vote(k)}$ (\Cref{lem:just-unique-height} under $f<n/3$, hypothesis~\ref{rev:hfj:f}); bit-$0$ at height~$h$ is dominated. At height~$h+1$, bit-$1$ uniquely targets some $J^*$ (\Cref{lem:just-unique-height}); bit-$0$ slot-$k$ same-slot certs at $h+1$ are pairwise compatible (\Cref{rev:lem:notar-unique-per-slot}). For any cert at height~$h+1$, the witnessing quorum has $\geq 2n/3 - f \geq 1$ honest contributors; each such contributor~$i$ has $a^k_i.\height = h+1$, which by \Cref{def:voting-rule} forces both the $R$-shift branch and the lock branch off (the $R$-shift branch sets $h_c = h_R = h \neq h+1$; the lock branch is excluded by hypothesis~\ref{rev:hfj:nh} ruling out before-$\vote(k)$ honest finalize-bearing votes at $h+1$), so the default target~$T_c = T = \getConfirmed_i^{\vote(k)}$ fires with $\sigma[\getConfirmed_i^{\vote(k)}].h = h_c = h+1$. So every cert target $T^{**}$ at height~$h+1$ satisfies $T^{**} \preceq \getConfirmed_i^{\vote(k)}$ for some honest~$i$ at state-height~$h+1$, hence lies on the chain extending $\comm{R}^{\vote(k)}$ through $\getConfirmed_i^{\vote(k)}$ (since $\getConfirmed_i^{\vote(k)} \succeq \comm{R}^{\vote(k)}$ by the store invariant). Combined with the pairwise-compatibility statements above, $\comm{R}^{\vote(k)}$, $J^*$ (when applicable), every slot-$k$ same-slot cert target at $h+1$, and the $\getConfirmed_i^{\vote(k)}$ at state-height~$h+1$ that bound them all lie on a common chain~$D$ extending $\comm{R}^{\vote(k)}$.
 
@@ -1489,7 +1489,7 @@ By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state
 By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
 
 \emph{Step 5: $R_v^{\vote(k+2)}.h = h+1$ for every honest~$v$, with target on~$D'$.}
-\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into a virtual block extending its canonical chain (on~$D'$); the prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star}_v \in D'$ at state-height~$h+1$, firing a bit-$0$ cert event with key $(h+1, 0, k+1, -B^{\star\star}_v.\slot, \hash(B^{\star\star}_v))$. The $\arg\max$ depends on $\Sigma_v.V$ (which has uniform honest content by synchrony) and~$D'$'s linear structure; honest contributions alone form a $\geq n - f > 2n/3$ quorum, so $B^{\star\star}_v$ is uniform across honest validators.
+\updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into a virtual block extending its canonical chain (on~$D'$); the prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star}_v \in D'$ at state-height~$h+1$, firing a bit-$0$ cert event with key $(h+1, 0, k+1, B^{\star\star}_v.\slot, \hash(B^{\star\star}_v))$. The $\arg\max$ depends on $\Sigma_v.V$ (which has uniform honest content by synchrony) and~$D'$'s linear structure; honest contributions alone form a $\geq n - f > 2n/3$ quorum, so $B^{\star\star}_v$ is uniform across honest validators.
 
 We compare the new cert key to $\key_R$:
 \begin{itemize}
@@ -1523,7 +1523,7 @@ All four conditions verified, the system is in a healed state at slot~$k+2$ with
 \Cref{rev:cor:processed-height-bound} applied to $\Sigma_{v_*}^{\vote(k+1)}$ gives $R_{v_*}^{\vote(k+1)}.h \geq h+1$. Step~1's bound $\key_R.h \leq h+1$ then forces $R_{v_*}^{\vote(k+1)}.h = h+1$. By Step~1's classification of cert events that may dominate $\key_R$, the corresponding cert event has target $T^* \in D'$. Since $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$, the cert event also fired on $v_*$'s canonical chain (the height-advance from $h+1$ to $h+2$ requires processHeight to fire the cert at~$h+1$ on canonical), at processSlot for some block~$B^* \in \Sigma_{v_*}^{\vote(k+1)}.\T$ on canonical.
 
 \emph{Step 5: every honest validator has $R_v^{\vote(k+2)}.h \geq h+1$ with target on~$D'$.}
-By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$, post-GST), every block in $\Sigma_{v_*}^{\vote(k+1)}.\T$ is delivered to every honest by $\vote(k+2) - \Delta$, and honest validators process received blocks via onBlock in $\preceq$-respecting order. In particular, every honest~$v$ processes~$B^*$ together with all of its ancestors by $\vote(k+2)$. The state map is a deterministic function of the chain (\Cref{thm:orderindep}), so $\sigma_v[B^*.\parent] = \sigma_{v_*}[B^*.\parent]$, and the same processSlot/processHeight that fired the cert at~$h+1$ in $v_*$'s view fires it in $v$'s view; the descriptor offered to \updateForkChoiceRoot raises $\key_R$ to at least $(h+1, b, s_n, -T^*.\slot, \hash(T^*))$. \Cref{lem:Rs-key-monotone} preserves the bound, giving $R_v^{\vote(k+2)}.h \geq h+1$.
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$, post-GST), every block in $\Sigma_{v_*}^{\vote(k+1)}.\T$ is delivered to every honest by $\vote(k+2) - \Delta$, and honest validators process received blocks via onBlock in $\preceq$-respecting order. In particular, every honest~$v$ processes~$B^*$ together with all of its ancestors by $\vote(k+2)$. The state map is a deterministic function of the chain (\Cref{thm:orderindep}), so $\sigma_v[B^*.\parent] = \sigma_{v_*}[B^*.\parent]$, and the same processSlot/processHeight that fired the cert at~$h+1$ in $v_*$'s view fires it in $v$'s view; the descriptor offered to \updateForkChoiceRoot raises $\key_R$ to at least $(h+1, b, s_n, T^*.\slot, \hash(T^*))$. \Cref{lem:Rs-key-monotone} preserves the bound, giving $R_v^{\vote(k+2)}.h \geq h+1$.
 
 A subsequent cert in $v$'s view at height~$>h+1$ during $[\vote(k+1),\, \vote(k+2)]$ has height~$\leq h+2$ (no honest votes at height~$>h+2$ exist before $\vote(k+2)$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest at $\leq h+1$ and slot-$(k+1)$ honest at $\leq h+2$; dishonest alone $\leq f < 2n/3$). Such a cert at~$h+2$ has target $\preceq$ some slot-$(k+1)$ honest contributor's target $a^{k+1}_w.\target$ at $a^{k+1}_w.\height = h+2$ for some honest~$w$; \Cref{def:voting-rule} forces $w$'s $R$-shift branch off ($h_R = R_w^{\vote(k+1)}.h \leq h+1 \neq h+2$, so the branch would set $h_c = h$ or $h+1$, not $h+2$) and the lock branch off (hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest at $>h$, slot-$k$ R1 finalize-bearing votes have $\finalizeHeight \leq h < h+2$), so the default target $a^{k+1}_w.\target = \getConfirmed_w^{\vote(k+1)}$ at state-height $h+2$ on~$D'$. Hence $R_v^{\vote(k+2)} \in D'$.
 
@@ -1574,10 +1574,10 @@ By view-merge under honest $\syncer(k+1)$ (hypothesis~\ref{rev:hfjm:syncers}, \C
 \emph{$\key_R^{\vote(k+1)}$ at $\vote(k+1)$ post-vote: case split.}
 Root-key monotonicity gives $\key_R^{\vote(k+1)}.h \in \{h, h+1\}$ (the global bound rules out cert events at $> h+1$, since each requires a $\geq 2n/3$ vote-quorum at that height). Slot-$\geq k+1$ contributions don't yet exist at $\vote(k+1)$ pre-vote, so any bit-$0$ cert at $h+1$ is from a slot $\leq k$. Combined with \Cref{lem:just-unique-height} ($f<n/3$, hypothesis~\ref{rev:hfjm:f}) for the unique justified-at-$h+1$, $\key_R$ is one of:
 \begin{description}
-  \item[(I)] $(h+1, 1, 0, -J^\star.\slot, \hash(J^\star))$ for the unique $J^\star$ justified at $h+1$;
-  \item[(II)] $(h+1, 0, s, -B^\star.\slot, \hash(B^\star))$ with $s < k$ and $B^\star$ notarized at $h+1$ from slot~$s$;
-  \item[(III)] $(h+1, 0, k, -B^\star.\slot, \hash(B^\star))$ with $B^\star$ notarized at $h+1$ from slot~$k$;
-  \item[(IV)] $(h, 1, 0, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ unchanged from $\vote(k)$.
+  \item[(I)] $(h+1, 1, 0, J^\star.\slot, \hash(J^\star))$ for the unique $J^\star$ justified at $h+1$;
+  \item[(II)] $(h+1, 0, s, B^\star.\slot, \hash(B^\star))$ with $s < k$ and $B^\star$ notarized at $h+1$ from slot~$s$;
+  \item[(III)] $(h+1, 0, k, B^\star.\slot, \hash(B^\star))$ with $B^\star$ notarized at $h+1$ from slot~$k$;
+  \item[(IV)] $(h, 1, 0, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ unchanged from $\vote(k)$.
 \end{description}
 
 \begin{description}
@@ -1757,7 +1757,7 @@ Then the system is in a healed state for some slot $k_h$ and height $h_h$ (\Cref
 Let $h \coloneqq \comm{R}^{\vote(k)}.h$, write $a^k_v$ for honest~$v$'s slot-$k$ vote, and $T_{\mathrm{prev},v}^{\vote(t)}$ for the pre-vote value of $\getConfirmed(\Sigma_v, \Omega)$ at $\vote(t)$ (computed under $\Sigma_v.R$ frozen from the previous voting time).
 
 \emph{Global bound: no honest vote at height $> h+1$ at any time pre-$\vote(k+1)$.}
-By hypothesis~\ref{rev:hfnm:r}, $\key_R^{\vote(k)} = (h, 0, s_v, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ with $s_v \leq k-1$. Root-key monotonicity (\Cref{lem:Rs-key-monotone}) gives $\key_R.h \leq h$ at every $t \leq \vote(k)$, so by \Cref{rev:cor:processed-height-bound} every pre-$\vote(k)$ honest vote is at height~$\leq h+1$. Hypothesis~\ref{rev:hfnm:nh} strengthens this to height~$\leq h$ before $\vote(k)$. The slot-$k$ vote at $\vote(k)$ satisfies $a^k_v.\height \in \{h, h+1\}$ by the same height bound. Hence no honest has cast any vote at height~$> h+1$ at any time pre-$\vote(k+1)$.
+By hypothesis~\ref{rev:hfnm:r}, $\key_R^{\vote(k)} = (h, 0, s_v, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ with $s_v \leq k-1$. Root-key monotonicity (\Cref{lem:Rs-key-monotone}) gives $\key_R.h \leq h$ at every $t \leq \vote(k)$, so by \Cref{rev:cor:processed-height-bound} every pre-$\vote(k)$ honest vote is at height~$\leq h+1$. Hypothesis~\ref{rev:hfnm:nh} strengthens this to height~$\leq h$ before $\vote(k)$. The slot-$k$ vote at $\vote(k)$ satisfies $a^k_v.\height \in \{h, h+1\}$ by the same height bound. Hence no honest has cast any vote at height~$> h+1$ at any time pre-$\vote(k+1)$.
 
 \emph{View-merge at $\vote(k+1)$.}
 By view-merge under honest $\syncer(k+1)$ (hypothesis~\ref{rev:hfnm:syncers}, \Cref{rev:ass:view-merge}), every honest's $\Sigma_v$ at $\vote(k+1)$ post-merge equals the common $\comm{\Sigma}^{\vote(k+1)}$. The pending-commit at the start of \constructVote{} therefore makes $\Sigma_v.R^{\vote(k+1)}$ and $\key_R^{\vote(k+1)}$ uniform across honest post-vote.
@@ -1765,10 +1765,10 @@ By view-merge under honest $\syncer(k+1)$ (hypothesis~\ref{rev:hfnm:syncers}, \C
 \emph{$\key_R^{\vote(k+1)}$ at $\vote(k+1)$ post-vote: case split.}
 By root-key monotonicity, $\key_R^{\vote(k+1)} \geq \key_R^{\vote(k)} = (h, 0, s_v, \ldots)$, so $\key_R^{\vote(k+1)}.h \in \{h, h+1\}$ (the global bound rules out cert events at $> h+1$). Slot-$\geq k+1$ contributions don't yet exist at $\vote(k+1)$ pre-vote, so any cert at $h$ or $h+1$ has slot $\leq k$. Combined with \Cref{lem:just-unique-height} ($f<n/3$, hypothesis~\ref{rev:hfnm:f}), $\key_R$ is one of:
 \begin{description}
-  \item[(I)] $(h, 1, 0, -J^\star.\slot, \hash(J^\star))$ for the unique $J^\star$ justified at $h$;
-  \item[(II)] $(h+1, 1, 0, -J^{\star\star}.\slot, \hash(J^{\star\star}))$ for the unique $J^{\star\star}$ justified at $h+1$;
-  \item[(III)] $(h+1, 0, k, -B^{\star\star}.\slot, \hash(B^{\star\star}))$ for $B^{\star\star}$ notarized at $h+1$ from slot~$k$;
-  \item[(IV)] $(h, 0, s, -\comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ for some $s \in [s_v, k]$, with $\Sigma_v.R^{\vote(k+1)} = \comm{R}^{\vote(k)}$ unchanged in target.
+  \item[(I)] $(h, 1, 0, J^\star.\slot, \hash(J^\star))$ for the unique $J^\star$ justified at $h$;
+  \item[(II)] $(h+1, 1, 0, J^{\star\star}.\slot, \hash(J^{\star\star}))$ for the unique $J^{\star\star}$ justified at $h+1$;
+  \item[(III)] $(h+1, 0, k, B^{\star\star}.\slot, \hash(B^{\star\star}))$ for $B^{\star\star}$ notarized at $h+1$ from slot~$k$;
+  \item[(IV)] $(h, 0, s, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ for some $s \in [s_v, k]$, with $\Sigma_v.R^{\vote(k+1)} = \comm{R}^{\vote(k)}$ unchanged in target.
 \end{description}
 (Hypothesis~\ref{rev:hfnm:nh} excludes pre-$\vote(k)$ honest at $h+1$, so any cert at $h+1$ has its honest contributions from slot~$k$ only — hence slot $s = k$ in (III), and the slot-$<k$ bit-$0$-at-$h+1$ case from \Cref{rev:lem:healing-from-justified-multi} doesn't arise here. In (IV), the slot-$k$ same-slot bit-$0$ at $h$ has target on the chain through $\comm{R}^{\vote(k)}$ at chain-height~$h$, namely $\comm{R}^{\vote(k)}$ itself by chain-uniqueness, so $\Sigma_v.R^{\vote(k+1)}$ stays $\comm{R}^{\vote(k)}$ even when $s = k$.)
 
@@ -1902,11 +1902,11 @@ By view-merge under honest $\syncer(k+1)$ (hypothesis~\ref{rev:hfnmnn:syncers}),
 \emph{$\key_R^{\vote(k+1)}$ at $\vote(k+1)$ post-vote.}
 By root-key monotonicity, $\key_R^{\vote(k+1)}.h \in \{h, h+1\}$ (the global bound rules out cert events at $> h+1$); slot-$\geq k+1$ contributions don't yet exist at $\vote(k+1)$ pre-vote, so any cert at $h$ or $h+1$ has slot $\leq k$. Combined with \Cref{lem:just-unique-height} ($f<n/3$), $\key_R$ at $\vote(k+1)$ post-vote is one of:
 \begin{description}
-  \item[(I)] $(h+1, 1, 0, -J^\star.\slot, \hash(J^\star))$ — bit-$1$ at $h+1$;
-  \item[(II)] $(h, 1, 0, -J^\sharp.\slot, \hash(J^\sharp))$ — bit-$1$ at $h$;
-  \item[(III)] $(h+1, 0, s, -B^\star.\slot, \hash(B^\star))$ — bit-$0$ at $h+1$, slot $s \leq k$;
-  \item[(IV)] $(h, 0, s, -B^\sharp.\slot, \hash(B^\sharp))$ — bit-$0$ at $h$, slot $s < k$;
-  \item[(V)] $(h, 0, k, -B^\sharp.\slot, \hash(B^\sharp))$ — bit-$0$ at $h$, slot $s = k$.
+  \item[(I)] $(h+1, 1, 0, J^\star.\slot, \hash(J^\star))$ — bit-$1$ at $h+1$;
+  \item[(II)] $(h, 1, 0, J^\sharp.\slot, \hash(J^\sharp))$ — bit-$1$ at $h$;
+  \item[(III)] $(h+1, 0, s, B^\star.\slot, \hash(B^\star))$ — bit-$0$ at $h+1$, slot $s \leq k$;
+  \item[(IV)] $(h, 0, s, B^\sharp.\slot, \hash(B^\sharp))$ — bit-$0$ at $h$, slot $s < k$;
+  \item[(V)] $(h, 0, k, B^\sharp.\slot, \hash(B^\sharp))$ — bit-$0$ at $h$, slot $s = k$.
 \end{description}
 
 \begin{description}
