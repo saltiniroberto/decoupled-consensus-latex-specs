@@ -478,7 +478,7 @@ Different validators may pass different~$\Omega$, and a single validator may pas
 
 \Function{\getConfirmed}{$\Sigma,\; \Omega$}
   \State $R \gets \Sigma.J$ \textbf{if} $\Sigma.J \in \viableTree(\Sigma)$ \textbf{else} $\Sigma.F$ \Comment{$\Sigma.F$ always viable; Lemma~\ref{lem:F-viable}}
-  \State \Return a block in $\Sigma.\T$ with $\sigma$-height $\geq \Sigma.\hmax - 1$ that descends from $R$, depending on~$\Omega$
+  \State \Return a block in $\viableTree(\Sigma)$ with $\sigma$-height $\geq \Sigma.\hmax - 1$ that descends from $R$, depending on~$\Omega$
 \EndFunction
 
 \end{algorithmic}
