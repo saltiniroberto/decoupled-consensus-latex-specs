@@ -556,13 +556,22 @@ Block additions that do not bump $\Sigma.\hmax$ preserve $\Sigma.F$'s viability 
 The remaining case is an $\Sigma.\hmax$ bump in \onBlock with new block~$B$ satisfying $\sigma[B].h > \Sigma.\hmax$; after the bump $\Sigma.\hmax = \sigma[B].h$, and the assertion $\Sigma.F \preceq B$ makes~$B$ --- a leaf at the moment of addition with $\sigma[B].h$ equal to the new $\Sigma.\hmax$ --- a viable leaf descendant of~$\Sigma.F$, witnessing $\Sigma.F \in \viableTree(\Sigma)$.
 \end{proof}
 
+\begin{corollary}[\getConfirmed is total]\label{cor:getConfirmed-total}
+For every store~$\Sigma$ and auxiliary~$\Omega$, $\getConfirmed(\Sigma, \Omega)$ returns a block in $\viableTree(\Sigma)$ at $\sigma$-height $\geq \Sigma.\hmax - 1$.
+\end{corollary}
+
+\begin{proof}
+If the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ holds, $R = \Sigma.J$ with $\sigma[\Sigma.J].h = \Sigma.h_j = \Sigma.\hmax - 1$ (Remark~\ref{rem:fresh-equiv}); state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) gives every descendant of~$\Sigma.J$ in $\Sigma.\T$ a $\sigma$-height $\geq \Sigma.\hmax - 1$, so any leaf of $\Sigma.\T$ above $\Sigma.J$ is a viable leaf and witnesses $\Sigma.J \in \viableTree(\Sigma)$.
+Otherwise $R = \Sigma.F$, and Lemma~\ref{lem:F-viable} gives a viable leaf descending from~$\Sigma.F$ in $\Sigma.\T$.
+\end{proof}
+
 \begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
 Once a node sets $\Sigma.F = F$, $\getConfirmed(\Sigma, \Omega)$ returns a block descending from~$F$ at all future times, for every $\Omega$.
 \end{theorem}
 
 \begin{proof}
 By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq \Sigma.F \preceq \Sigma.J$ at all future times.
-Both branches of $\getConfirmed$ return a descendant of $\Sigma.J$ or $\Sigma.F$; either descends from~$F$.
+Both branches of $\getConfirmed$ return a descendant of $\Sigma.J$ or $\Sigma.F$ (Corollary~\ref{cor:getConfirmed-total}); either descends from~$F$.
 \end{proof}
 
 \subsubsection*{Further properties under fewer than $n/3$ slashable validators}
