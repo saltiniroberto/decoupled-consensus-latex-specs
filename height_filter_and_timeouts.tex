@@ -65,6 +65,12 @@
 \newcommand{\processInactivityPenalties}{\textsf{processInactivityPenalties}\xspace}
 \newcommand{\finalizeConflict}{\textsf{finalizeConflict}\xspace}
 \newcommand{\isSlashable}{\textsf{isSlashable}\xspace}
+\newcommand{\updateJFromVotes}{\textsf{updateJFromVotes}\xspace}
+\newcommand{\start}{\ensuremath{\mathrm{start}}}
+\newcommand{\vote}{\ensuremath{\mathrm{vote}}}
+\newcommand{\GST}{\ensuremath{\mathrm{GST}}\xspace}
+\newcommand{\comm}[1]{\ensuremath{\widetilde{#1}}}
+\newcommand{\syncer}{\textsf{syncer}\xspace}
 \newcommand{\getBaseVote}{\textsf{getBaseVote}\xspace}
 \newcommand{\getFinalVote}{\textsf{getFinalVote}\xspace}
 \newcommand{\recordVote}{\textsf{recordVote}\xspace}
@@ -98,6 +104,7 @@
 
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
+\newtheorem{assumption}[theorem]{Assumption}
 
 \title{Fresh Simplex with Height Filter and Timeouts}
 
@@ -111,7 +118,7 @@ Any two quorums overlap in at least $n/3 + 1 > f$ validators, so their intersect
 
 \begin{definition}[Height]\label{def:height}
 \emph{Height} is the finality-gadget counter, separate from slot.
-The genesis height is~$0$; height advances by exactly~$1$ via fixed-target justification (Definition~\ref{def:justification}) or a timeout (Definition~\ref{def:timeout}).
+The genesis state-height is~$1$ (with $\genesis$ treated as pre-justified and pre-finalized at height~$0$); height advances by exactly~$1$ via fixed-target justification (Definition~\ref{def:justification}) or a timeout (Definition~\ref{def:timeout}).
 \end{definition}
 
 \begin{definition}[Block]\label{def:block}
@@ -157,9 +164,9 @@ with components:
 \end{itemize}
 The genesis state is
 \[
-  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 0,\; 0,\; \bot^n,\; \mathtt{false}^n,\; \genesis,\; 0,\; \genesis,\; \emptyset),
+  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 1,\; 0,\; \bot^n,\; \mathtt{false}^n,\; \genesis,\; 0,\; \genesis,\; \emptyset),
 \]
-with $\sigma[\genesis] \coloneqq \sigma_{\mathrm{gen}}$.
+with $\sigma[\genesis] \coloneqq \sigma_{\mathrm{gen}}$: $\genesis$ is treated as pre-justified and pre-finalized at height~$0$, so the genesis state-height is~$1$ and $h_j = 0$ records the genesis-justification.
 When unambiguous we drop the chain prefix and write $L$, $s$, $h$, etc.\ for the components of $\sigma[L]$.
 
 \begin{definition}[State-height]\label{def:sheight}
@@ -416,7 +423,7 @@ Equivalently, $B \in \viableTree(\Sigma)$ iff some leaf $L \succeq B$ has $\sigm
 
 The viability filter discards branches whose tip lags the most recently advanced chain by more than one height.
 Under $f < n/3$, Lemma~\ref{lem:mainsafety} forces every block at $\sigma$-height strictly greater than~$h_F$ to descend from~$F$, so when $\hmax > h_F$ any block at $\sigma$-height~$\hmax$ descends from~$F$ (and when $\hmax = h_F$, $F$ itself satisfies $\sigma[F].h = \hmax \geq \hmax - 1$); either way the filter is automatic for finalized blocks.
-Blocks at $\sigma$-height $\hmax - 1$ may still conflict with~$F$, since mainsafety constrains only strictly higher heights --- this is why $\Sigma.J$ remains the primary walk-from block in the cascade whenever it has not itself been filtered out.
+Blocks at $\sigma$-height $\hmax - 1$ may still conflict with~$F$, since mainsafety constrains only strictly higher heights --- this is why $\Sigma.J$ remains the primary walk-from block in the cascade whenever it has not slipped behind the frontier.
 $\Sigma.F$ itself is always viable (Lemma~\ref{lem:F-viable} below): the \onBlock assertion $\Sigma.F \preceq B$ makes every newly admitted block a descendant of $\Sigma.F$, so the block driving any $\Sigma.\hmax$ bump is itself a viable witness for $\Sigma.F$.
 
 \paragraph{Store mutators.}
@@ -429,7 +436,10 @@ $\updateFinalized(\Sigma, F')$ sets $\Sigma.F \gets F'$ iff $F' \succ \Sigma.F$,
 
 $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, under synchrony, is safe in the sense that it will not be reverted as long as more than half of the online validators are honest.
 Here $\Omega$ represents the state of the available chain --- whatever extra information the validator uses to disambiguate among viable descendants of the walk-from block.
-The protocol fixes the walk-from rule via a two-way cascade: walk from $\Sigma.J$ when $\Sigma.J \in \viableTree(\Sigma)$, and otherwise walk from $\Sigma.F$ (always viable; Lemma~\ref{lem:F-viable}).
+The protocol fixes the walk-from rule via a two-way cascade: walk from $\Sigma.J$ when $\Sigma.\hmax = \Sigma.h_j + 1$, and otherwise walk from $\Sigma.F$ (always viable, Lemma~\ref{lem:F-viable}).
+A justification at height~$h$ on a processed chain forces that chain's state-height to~$h + 1$, so $\Sigma.\hmax \geq \Sigma.h_j + 1$ always; the gate therefore holds precisely when no timeout has advanced any chain's state-height further past $\Sigma.J$'s height.
+When the gate holds, $\sigma[\Sigma.J].h = \Sigma.h_j = \Sigma.\hmax - 1$ meets the leaf-viability bound and $\Sigma.J \in \viableTree(\Sigma)$.
+When it fails, $\Sigma.J$ is ``stale'' --- some chain has advanced past $\Sigma.J$'s height via timeout cert --- and the adversary cannot force canonical to track such a justification even if its key dominates by lex.
 The choice among admissible descendants is left to~$\Omega$.
 Different validators may pass different~$\Omega$, and a single validator may pass different~$\Omega$ at different call sites.
 
@@ -439,7 +449,7 @@ Different validators may pass different~$\Omega$, and a single validator may pas
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F \gets \genesis,\ \Sigma.J \gets \genesis,\ \Sigma.h_j \gets 0,\ \Sigma.\hmax \gets 0,$
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F \gets \genesis,\ \Sigma.J \gets \genesis,\ \Sigma.h_j \gets 0,\ \Sigma.\hmax \gets 1,$
 \State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
 \vspace{3pt}
 
@@ -477,8 +487,8 @@ Different validators may pass different~$\Omega$, and a single validator may pas
 \vspace{3pt}
 
 \Function{\getConfirmed}{$\Sigma,\; \Omega$}
-  \State $R \gets \Sigma.J$ \textbf{if} $\Sigma.J \in \viableTree(\Sigma)$ \textbf{else} $\Sigma.F$ \Comment{$\Sigma.F$ always viable; Lemma~\ref{lem:F-viable}}
-  \State \Return a block in $\viableTree(\Sigma)$ with $\sigma$-height $\geq \Sigma.\hmax - 1$ that descends from $R$, depending on~$\Omega$
+  \State $R \gets \Sigma.J$ \textbf{if} $\Sigma.\hmax = \Sigma.h_j + 1$ \textbf{else} $\Sigma.F$ \Comment{$\Sigma.J$ is at the frontier}
+  \State \Return $B \in \viableTree(\Sigma)$ with $B \succeq R$ and $\sigma[B].h \geq \Sigma.\hmax - 1$, depending on~$\Omega$
 \EndFunction
 
 \end{algorithmic}
@@ -608,10 +618,9 @@ Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~
 \end{theorem}
 
 \begin{proof}
-$\Sigma.J \succeq F$ by Lemma~\ref{lem:upgrade}; $F \in \viableTree(\Sigma)$ by Lemma~\ref{lem:viable-finalized}.
-If $\Sigma.J \in \viableTree(\Sigma)$, $\getConfirmed$ enters its first branch and returns a descendant of $\Sigma.J \succeq F$.
-Otherwise every leaf in $\Sigma.J$'s subtree has $\sigma$-height $< \Sigma.\hmax - 1$, so $\sigma[\Sigma.J].h \leq \Sigma.\hmax - 2$ by state-height monotonicity (Lemma~\ref{lem:slotmono}); combined with $\sigma[\Sigma.J].h \geq h_F$ (state-height monotonicity along $F \preceq \Sigma.J$, using $\sigma[F].h = h_F$ from Remark~\ref{rem:fresh-equiv}), this gives $\Sigma.\hmax \geq h_F + 2$.
-\getConfirmed's second branch returns a block~$T$ with $\sigma[T].h \geq \Sigma.\hmax - 1 \geq h_F + 1 > h_F$, so Lemma~\ref{lem:mainsafety} gives $F \preceq T$.
+$\Sigma.J \succeq F$ by Lemma~\ref{lem:upgrade}, so $\sigma[\Sigma.J].h = \Sigma.h_j \geq h_F$ by state-height monotonicity along $F \preceq \Sigma.J$ (using $\sigma[F].h = h_F$ from Remark~\ref{rem:fresh-equiv}); $F \in \viableTree(\Sigma)$ by Lemma~\ref{lem:viable-finalized}.
+If $\Sigma.\hmax = \Sigma.h_j + 1$, $\getConfirmed$'s first branch fires and returns a descendant of $\Sigma.J \succeq F$.
+Otherwise $\Sigma.\hmax \geq \Sigma.h_j + 2 \geq h_F + 2$, and \getConfirmed's second branch returns a block~$T$ with $\sigma[T].h \geq \Sigma.\hmax - 1 \geq h_F + 1 > h_F$, so Lemma~\ref{lem:mainsafety} gives $F \preceq T$.
 \end{proof}
 
 \begin{theorem}[Order independence]\label{thm:orderindep}
@@ -770,7 +779,7 @@ The honest reachable per-height configurations are $(\bot, \mathtt{false}, \math
 
 \smallskip
 \noindent\emph{Implementation.}
-$\Delta$ may safely drop entries at heights below $\Sigma.\hmax - 1$; \getFinalVote then conservatively clears the finalize commitment at older heights (because the gate $\Delta.T(h_f) = T_f$ fails on a missing entry), but every emitted vote remains E1-safe.
+$\Delta$ may safely drop entries at heights below $\Sigma.\hmax - 1$; \getFinalVote then conservatively clears the finalize commitment at older heights (because the gate $\Delta.T(h_f) = T_f$ fails on a missing entry), but every emitted vote remains E1-safe (Lemma~\ref{lem:honest-e1-safety}).
 $\Delta$ is the entire state needed for safe vote signing on the validator-client side, depending only on~$\Delta$, separated from fork-choice on the beacon-client side (depending on $\Sigma$ and~$\Omega$).
 \end{definition}
 
@@ -887,16 +896,17 @@ The fallback branch emits $v.\target = \bot$, satisfying the first disjunct.
 The first-vote-at-$h_c$ branch sets $v.\target = T$ with $\sigma[T].h = h_c$ and $T \preceq T$, satisfying the second disjunct.
 
 The remaining branch is the lock branch with $v.\target = T_{\mathrm{lock}}$ fixed by an earlier finalize-bearing vote~$v_0$ of~$i$ with $v_0.\finalizeHeight = h_c$ and $v_0.\finalizeTarget = T_{\mathrm{lock}}$.
-Only the first-vote-at-$h_c$ branch produces finalize-bearing votes, so $v_0$'s firing read $(h_j^0, J^0) = (h_c, T_{\mathrm{lock}})$ from~$i$'s then-canonical state, meaning the justification branch of \processHeight fired with target~$T_{\mathrm{lock}}$ at pre-state height~$h_c$ inside some \onBlock call on a processed block~$B^\star$, whose post-state has $\sigma[B^\star].h \geq h_c + 1$ (height-advance).
+Since $v_0$ is finalize-bearing, \getBaseVote populated its finalize fields from $i$'s then-canonical state, giving $(v_0.\finalizeHeight, v_0.\finalizeTarget) = (h_c, T_{\mathrm{lock}}) = (\sigma[T^0].h_j, \sigma[T^0].J)$ at $v_0$'s firing.
+The justification branch of \processHeight thus fired with target $T_{\mathrm{lock}}$ at pre-state height~$h_c$ inside some \onBlock call on a processed block~$B^\star$, whose post-state has $\sigma[B^\star].h \geq h_c + 1$ (height-advance).
 Hence $\Sigma.\hmax \geq h_c + 1$, i.e., $h_c \leq \Sigma.\hmax - 1$.
 
 Since $T = \getConfirmed(\Sigma, \Omega)$ has $\sigma[T].h \geq \Sigma.\hmax - 1$ (algorithm spec), combining with the previous inequality yields $h_c = \sigma[T].h = \Sigma.\hmax - 1$ and $\sigma[B^\star].h = \Sigma.\hmax$.
 The same height-advance argument applied to $\Sigma.J$'s own justification (its witnessing block has $\sigma$-height $\geq \Sigma.h_j + 1$, and that $\sigma$-height is $\leq \Sigma.\hmax$ by definition of~$\hmax$) gives $\Sigma.h_j \leq \Sigma.\hmax - 1 = h_c$, while Lemma~\ref{lem:no-high-just} applied to $T_{\mathrm{lock}}$'s justification at~$h_c$ gives $h_c \leq \Sigma.h_j$.
 Hence $\Sigma.h_j = h_c$, and Lemma~\ref{lem:just-unique-height} forces $\Sigma.J = T_{\mathrm{lock}}$.
 
-$B^\star$ descends from $\Sigma.J = T_{\mathrm{lock}}$ (it carries the justification with target~$T_{\mathrm{lock}}$) at $\sigma$-height~$\Sigma.\hmax$.
-Any leaf $L \succeq B^\star$ in $\Sigma.\T$ has $\sigma[L].h \geq \sigma[B^\star].h = \Sigma.\hmax$ by state-height monotonicity, so $L$ is a viable leaf descendant of~$\Sigma.J$, placing $\Sigma.J \in \viableTree(\Sigma)$.
-\getConfirmed therefore walks from~$\Sigma.J$, so $T \succeq \Sigma.J = T_{\mathrm{lock}}$, with $\sigma[T_{\mathrm{lock}}].h = h_c$ by Remark~\ref{rem:fresh-equiv} on the chain witnessing $T_{\mathrm{lock}}$'s justification.
+$\Sigma.h_j = h_c = \Sigma.\hmax - 1$ gives $\Sigma.\hmax = \Sigma.h_j + 1$, satisfying the cascade gate, so \getConfirmed{} walks from~$\Sigma.J$.
+The return descends from~$\Sigma.J = T_{\mathrm{lock}}$ (existence: $B^\star \succeq \Sigma.J$ with $\sigma[B^\star].h = \Sigma.\hmax$ provides the required witness in $\viableTree(\Sigma)$ at $\sigma$-height~$\Sigma.\hmax$, since any leaf $L \succeq B^\star$ inherits $\sigma[L].h = \Sigma.\hmax$ by state-height monotonicity).
+Hence $T \succeq \Sigma.J = T_{\mathrm{lock}}$, with $\sigma[T_{\mathrm{lock}}].h = h_c$ by Remark~\ref{rem:fresh-equiv} on the chain witnessing $T_{\mathrm{lock}}$'s justification.
 \end{proof}
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
@@ -917,6 +927,136 @@ In the non-timeout sub-case, $v.\target \preceq T \preceq T'$ with $\sigma[v.\ta
 
 Either way, $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
 $\timeouts$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists and Layer~1 does not bump~$i$.
+\end{proof}
+
+\section{Healing from asynchrony}\label{sec:healing}
+
+This section shows that, after a prolonged period of asynchrony during which the gate $\Sigma.\hmax = \Sigma.h_j + 1$ may have failed and validators may have been driven into divergent local stores, three consecutive honest syncer slots --- under standard synchrony, online-honest-majority, available-chain-relay, and all-honest-awake assumptions --- restore a healed state in which all honest validators agree on the canonical chain and on a fresh justification at the new frontier.
+
+The core simplification compared with the prefix-notarization design is that the cascade gate ($\Sigma.\hmax = \Sigma.h_j + 1$) automatically discards stale justifications that fall below the frontier, so the adversary cannot stage an unbounded ``staircase'' of reorgs from old held justifications.
+The bound is tight against an adversary holding two justification cards: (i)~the unique justification at $\Sigma.\hmax^0 - 1$ on a sibling chain, and (ii)~the unique justification at $\Sigma.\hmax^0$ on another chain whose containing block bumps $\Sigma.\hmax$ by 1 on release.
+By justification uniqueness, the adversary holds at most one $J$ per height, and quorum-overlap under $f < n/3$ rules out a third disruptive card (e.g.\ a timeout-only chain at $\Sigma.\hmax^0 + 1$ would require an honest contribution overlapping with~(ii)'s, and the disjoint-quorum bound forbids both).
+Each card forces at most one canonical reorg in the slot it is played; staggered across slots~$k+1$ and~$k+2$, both cards are spent by slot~$k+2$, and slot~$k+3$ produces the final fresh frontier-justification.
+
+\subsection{Model and view-merge}
+
+\begin{definition}[Slots and voting time]\label{def:slots}
+Physical time is partitioned into discrete \emph{slots} indexed by $k \in \mathbb{N}$, with start time $\start(k)$ satisfying $\start(k+1) \geq \start(k) + 2\Delta$ for the network delay bound~$\Delta$, and \emph{voting time} $\vote(k) \coloneqq \start(k) + \Delta$ at which every honest validator~$i$ invokes \getFinalVote{} (Definition~\ref{def:voting-rule}) to produce at most one slot-$k$ vote.
+\end{definition}
+
+\begin{definition}[Syncer]\label{def:syncer}
+A publicly known function $\syncer \colon \mathbb{N} \to \{1, \ldots, n\}$ assigns to each slot~$k$ a validator $\syncer(k)$, who runs the view-merge protocol during $[\start(k),\, \vote(k))$.
+\end{definition}
+
+\begin{assumption}[View-merge guarantee]\label{ass:view-merge}
+If $\syncer(k)$ is honest, every honest validator~$i$ has $\Sigma_i = \comm{\Sigma}^{\vote(k)}$ at $\vote(k)$ for some store $\comm{\Sigma}^{\vote(k)}$.
+\end{assumption}
+
+\begin{definition}[Standing assumptions for slot $k$]\label{def:standing}
+We say slot~$k$ satisfies the \emph{standing assumptions} when (a)~$\start(k) - \Delta \geq \GST$ (synchrony), (b)~more than half of the validators online at~$\vote(k)$ are honest (\emph{online-honest majority}), (c)~every honest validator is online at~$\vote(k)$ (\emph{all-honest-awake}), and (d)~every vote cast by an honest validator at~$\vote(k)$ is received by some honest proposer that builds an available-chain block before $\vote(k+1) - \delta_c$ (\emph{honest-relay}, with $\delta_c$ the available-chain confirmation delay).
+\end{definition}
+
+For an honest validator~$v$ and time~$t$, write $\Sigma_v^t,\, \Omega_v^t$ for $v$'s store and auxiliary state at~$t$, and $\getConfirmed_v^t \coloneqq \getConfirmed(\Sigma_v^t,\, \Omega_v^t)$.
+
+\subsection{Protocol modifications}
+
+\paragraph{Virtual-block cert events.}
+For this section, the store admits cert-event candidates not only from on-chain block processing but also from \emph{virtual extensions} of canonical: using the votes in the local pool, a routine~\updateJFromVotes hypothesizes a virtual block with parent~$\getConfirmed(\Sigma,\Omega)$ that carries the height-fresh subset of pool votes and offers the resulting cert-key descriptor to \updateJustified.
+Virtual blocks are never inserted into $\Sigma.\T$ and the hypothetical states are discarded; only $(\Sigma.J,\, \Sigma.h_j)$ may change.
+We further extend $\Sigma$ with a vote pool~$\Sigma.V$ populated by view-merge.
+
+\paragraph{View-merge processing.}
+When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.V$, then invokes \updateJFromVotes.
+
+\paragraph{No voting-rule change.}
+Unlike the prefix-notarization design, no $R$-shift branch or stale-cert handling is needed inside \getFinalVote{}: the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ in \getConfirmed{} (Figure~\ref{alg:store}) absorbs that role.
+
+\subsection{Healed state}
+
+For an honest validator $v$ and time $t$, write
+$R_v^t \coloneqq \begin{cases}\Sigma_v^t.J & \text{if } \Sigma_v^t.\hmax = \Sigma_v^t.h_j + 1 \\ \Sigma_v^t.F & \text{otherwise}\end{cases}$
+for the cascade root selected inside $\getConfirmed_v^t$.
+
+\begin{definition}[Healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:healed}
+The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}$} when:
+\begin{enumerate}
+  \item slot~$k$ satisfies the standing assumptions (Definition~\ref{def:standing});
+  \item for every honest~$v$, $\sigma[R_v^{\vote(k)}].h \geq \comm{h}$;
+  \item for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
+  \item there exists an honest~$v_\ell$ such that every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\end{enumerate}
+\end{definition}
+
+\subsection{Persistence and advance}
+
+\begin{lemma}[Healing persistence over one slot]\label{lem:healing-persistence}
+If $f < n/3$, all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies the standing assumptions, and the system is in a healed state at slot~$k$ with frontier height~$\comm{h}$, then it is in a healed state at slot~$k+1$ with frontier height~$\comm{h}$ (or a higher one, if a fresh justification fires).
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+View-merge under the slot-$k$ honest syncer (Assumption~\ref{ass:view-merge}) makes $\Sigma_v^{\vote(k)}$ uniform across honest~$v$, and condition~(3) is the post-merge \getConfirmed equality.
+
+\emph{Slot-$k$ honest vote targets uniform.}
+Each honest~$v$ casts via $\getFinalVote(\Delta_v,\, \getBaseVote(\Sigma_v^{\vote(k)}, \Omega_v^{\vote(k)}))$.
+$\getBaseVote$ produces $(h_c, T, h_f, T_f)$ uniformly across honest at $\vote(k)$ (since $\Sigma$ is common and $h_c, h_f, T_f$ depend only on $\Sigma$; $T = \getConfirmed$ is also $\sim$-compatible across honest by~(3), with the deterministic-disambiguation $\Omega$ resolving up to the same canonical block when given uniform $\Sigma$).
+$\getFinalVote$ then either reproduces $T$ (first-vote), substitutes a lock target $\Delta_v.T(h_c)$ (lock), or emits $\bot$ (timeout).
+By the healed-state target-cap~(4), every prior $i$-vote that pinned $\Delta_v.T(h_c)$ targeted some prefix of $\getConfirmed_{v_\ell}^{\vote(k)}$, so each lock-branch vote also targets a chain $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$ on the common chain.
+A timeout vote has $\target = \bot$ and contributes universally.
+Hence at least $n - f > 2n/3$ honest cast slot-$k$ votes whose contributions to a virtual height-fresh quorum on canonical agree on the canonical target.
+
+\emph{Slot-$(k+1)$ uniform $\Sigma$ post-virtual.}
+By honest-relay (standing assumption~(d)), the slot-$k$ honest votes reach an honest available-chain proposer that builds a slot-$k$ block before $\vote(k+1) - \delta_c$, and synchrony delivers that block to every honest by $\vote(k+1) - \Delta$.
+Folding the block through \onBlock and \updateJFromVotes fires the virtual justification $J^*$ at $h_c = \sigma[\getConfirmed^{\vote(k)}].h$ on canonical, raising $\Sigma.h_j$ uniformly to $h_c$.
+By view-merge under the slot-$(k+1)$ honest syncer, $\Sigma_v^{\vote(k+1)}$ is again uniform.
+
+\emph{Re-verifying the four conditions at slot~$k+1$.}
+(1)~slot~$k+1$ standing assumptions are inherited.
+(2)~$\sigma[R_v^{\vote(k+1)}].h \geq h_c \geq \comm{h}$: either $\Sigma.h_j = h_c$ keeps the gate at $\Sigma.\hmax = \Sigma.h_j + 1 = h_c + 1$, or a higher cert event has fired and dominates.
+(3)~uniformity from view-merge at $\vote(k+1)$.
+(4)~target-cap inherits from~(4) at slot~$k$ together with the slot-$k$ vote targets bounded above.
+\end{proof}
+
+\begin{lemma}[Three-slot advance]\label{lem:healing-3slot}
+If $f < n/3$, all honest follow Definition~\ref{def:voting-rule}, slots~$k+1, k+2, k+3$ all satisfy the standing assumptions and have honest syncers, and the system is in any state at slot~$k$ (no healed-state assumption needed) with $\Sigma.\hmax^{(k)} = h^0$, then the system is in a healed state at slot~$k+3$ with some frontier height~$\comm{h} \geq h^0$.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+\emph{Adversary card inventory.}
+The adversary holds at most two disruptive cards usable post-async:
+\begin{itemize}
+\item[(i)] a unique justification $J^*$ at height~$h^0 - 1$ on a sibling chain~$Y^*$;
+\item[(ii)] a unique justification $J^\dagger$ at height~$h^0$ on a chain~$Y^\dagger$ whose containing block has $\sigma$-height~$h^0 + 1$.
+\end{itemize}
+Justifications at heights below $h^0 - 1$, when released, update $\Sigma.h_j$ to that older height, but $\Sigma.\hmax \geq h^0$ throughout (state-height monotonicity + adversary releases never decrease $\Sigma.\hmax$), so the cascade gate fails and the released chain is silently demoted to $R = \Sigma.F$ without reorg.
+Justifications at heights above $h^0$ would require honest contributions at $\sigma$-heights $> h^0$, which cannot fire before slot~$k+1$.
+A timeout-only chain reaching $\sigma$-height $h^0 + 1$ via a timeout cert at $h^0$ is incompatible with~(ii) under $f < n/3$: both events require disjoint $2n/3$-honest quorums at height~$h^0$, exceeding the $n - f$ honest budget.
+So no third card exists.
+
+\emph{Per-slot mechanics.}
+At each slot~$\ell \in \{k+1, k+2, k+3\}$: view-merge under the honest syncer makes $\Sigma_v^{\vote(\ell)}$ uniform across honest, and the standing assumptions (synchrony, AHA, HAR) ensure honest slot-$\ell$ votes are aggregated into the slot-$\ell$ block via \updateJFromVotes by $\vote(\ell+1) - \Delta$.
+At least $2n/3$ honest votes converge on the common canonical's target (via $\getFinalVote$'s first-vote branch on common $\Sigma$, modulo lock-validators whose targets are bounded by the prior healed-state target-cap or by the prior-justification quorums witnessing them), forming a virtual justification at canonical's $h_c$.
+
+\emph{Card consumption.}
+Each release of (i) or (ii) updates $\Sigma.J$ via the lex test, satisfies the cascade gate at the moment of release ($\Sigma.\hmax = \Sigma.h_j + 1$ holds with $\Sigma.h_j$ now equal to the new card's height), and reorgs canonical onto the released chain.
+The slot-$\ell$ honest virtual justification at canonical's $h_c$ then dominates the released card on the lex test in turn (since $h_c$ matches or exceeds the released height), absorbing the card.
+The adversary's optimal strategy staggers releases one per slot pre-vote, so by slot~$k+2$ both cards are spent.
+
+\emph{Slot~$k+3$ produces a healed state.}
+At slot~$k+3$ no card remains. View-merge gives uniform $\Sigma$, and slot-$(k+3)$ honest votes form a uniform virtual justification at canonical's $h_c$, which is the new frontier $\comm{h}$.
+The four healed-state conditions are verified at $\vote(k+3)$:~(1) standing assumptions are hypothesized;~(2) $\sigma[R_v^{\vote(k+3)}].h \geq \comm{h}$ from the slot-$(k+3)$ virtual cert;~(3) view-merge uniformity gives pairwise compatibility;~(4) the union of pre-async target-bounds and slots~$k+1, k+2, k+3$ honest votes are all bounded by the maximal honest $\getConfirmed^{\vote(k+3)}$.
+Finally, $\comm{h} \geq h^0$: slots~$k+1, k+2, k+3$ each form a virtual justification at canonical's $h_c \geq h^0 - 1$, and the lex monotonicity together with the staggered card consumption forces $\Sigma.h_j \geq h^0$ by slot~$k+3$.
+\end{proof}
+
+\subsection{Main theorem}
+
+\begin{theorem}[Healing]\label{thm:healing}
+Assume $f < n/3$ and that all honest validators follow Definition~\ref{def:voting-rule}.
+Let~$k$ be a slot such that slots~$k+1, k+2, k+3$ all satisfy the standing assumptions and have honest syncers.
+Then the system is in a healed state at some slot $k_h \leq k + 3$, and remains healed at every subsequent slot satisfying the standing assumptions.
+\end{theorem}
+
+\begin{proof}
+Lemma~\ref{lem:healing-3slot} gives the healed state at $k_h \leq k + 3$, and Lemma~\ref{lem:healing-persistence} propagates the healed state forward.
 \end{proof}
 
 \end{document}
