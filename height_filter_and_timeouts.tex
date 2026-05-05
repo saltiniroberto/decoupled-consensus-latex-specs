@@ -400,7 +400,7 @@ where:
   \item $\hmax \in \mathbb{N}$ is the maximum state-height $\sigma[B].h$ over $B \in \T$.
 \end{itemize}
 The genesis store has $\T = \{\genesis\}$, $F = J = \genesis$, $h_j = 0$, $\hmax = 1$ (matching $\sigma[\genesis].h = 1$ from Definition~\ref{def:height}).
-Section~\ref{sec:healing} extends $\Sigma$ with a vote pool $\Sigma.V$.
+Section~\ref{sec:healing} extends $\Sigma$ with a vote pool $\Sigma.\mathcal{V}$ for view-merge processing.
 \end{definition}
 
 The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$.
@@ -972,10 +972,10 @@ For an honest validator~$v$ and time~$t$, write $\Sigma_v^t,\, \Omega_v^t$ for $
 \paragraph{Virtual-block cert events.}
 For this section, the store admits cert-event candidates not only from on-chain block processing but also from \emph{virtual extensions} of canonical: using the votes in the local pool, a routine~\updateJFromVotes hypothesizes a virtual block with parent~$\getConfirmed(\Sigma,\Omega)$ that carries the height-fresh subset of pool votes and offers the resulting cert-key descriptor to \updateJustified.
 Virtual blocks are never inserted into $\Sigma.\T$ and the hypothetical states are discarded; only $(\Sigma.J,\, \Sigma.h_j)$ may change.
-We further extend $\Sigma$ with a vote pool~$\Sigma.V$ populated by view-merge.
+We further extend $\Sigma$ with a \emph{vote pool} $\Sigma.\mathcal{V}$ populated by view-merge --- a fresh field, distinct from the per-validator vote record $\Delta$ of Definition~\ref{def:voterecord}.
 
 \paragraph{View-merge processing.}
-When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.V$, then invokes \updateJFromVotes.
+When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.\mathcal{V}$, then invokes \updateJFromVotes{}.
 
 \paragraph{No voting-rule change.}
 Unlike the prefix-notarization design, no $R$-shift branch or stale-cert handling is needed inside \getFinalVote{}: the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ in \getConfirmed{} (Figure~\ref{alg:store}) absorbs that role.
@@ -1052,44 +1052,6 @@ Lemma~\ref{lem:vote-inclusion} places $v_\ell$'s slot-$k$ vote on the chain at $
 In the first-vote and lock branches of \getFinalVote{}, the target equals $\getConfirmed_{v_\ell}^{\vote(k)}$ (by Lemma~\ref{lem:honest-vote-sets-timeout}'s cascade-gate analysis combined with maximality on~$D$); height-fresh inclusion of the vote on~$B^\sharp$'s chain places $\getConfirmed_{v_\ell}^{\vote(k)} \preceq \getConfirmed_v^{\vote(k+1)}$.
 \end{proof}
 
-\subsection{Adversary card inventory}\label{sec:card-inventory}
-
-The adversary may withhold and selectively release justification certificates to disrupt canonical inside \getConfirmed{}.
-The next lemma bounds this disruption to two cards under $f < n/3$, which underpins the staggered consumption argument in Lemma~\ref{lem:healing-3slot}.
-
-\begin{lemma}[Adversary card inventory under $f < n/3$]\label{lem:adversary-cards}
-Assume $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}.
-Fix a slot~$k$ with an honest syncer, and let $h^0 \coloneqq \comm{\Sigma}^{\vote(k)}.\hmax$, the post-merge frontier height (uniform across honest stores at $\vote(k)$ by Assumption~\ref{ass:view-merge}).
-The adversary holds at most two distinct justification certificates that, when delivered to~$\Sigma$, both pass the lex test inside \updateJustified{} \emph{and} satisfy the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ inside \getConfirmed{}:
-\begin{itemize}
-\item[(i)] a unique justification $J^*$ at height~$h^0 - 1$, carried by a processed block $B^*$ with $\sigma[B^*].h = h^0$;
-\item[(ii)] a unique justification $J^\dagger$ at height~$h^0$, carried by a processed block $B^\dagger$ with $\sigma[B^\dagger].h = h^0 + 1$.
-\end{itemize}
-Justifications at heights $< h^0 - 1$ may be released but never satisfy the gate after release; justifications at heights $> h^0$ do not exist; and a timeout-only chain advancing $\sigma$-height to~$h^0 + 1$ on a sibling of card~(ii)'s chain cannot coexist with~(ii).
-\end{lemma}
-
-\begin{proof}
-\emph{Cards (i), (ii) when present are unique.}
-Lemma~\ref{lem:just-unique-height} forces at most one justified block per height; carrying-block heights follow from the height-advance rule (Lemma~\ref{lem:slotmono}: a justification at~$h$ produces a containing block of $\sigma$-height $h + 1$).
-On release of card~(i), $\Sigma.\hmax \gets \max(\Sigma.\hmax, h^0) = h^0$ and $\Sigma.h_j \gets h^0 - 1$ (when the lex test passes), leaving $\Sigma.\hmax = h^0 = \Sigma.h_j + 1$ and the gate fires.
-On release of card~(ii), $\Sigma.\hmax \gets h^0 + 1$ and $\Sigma.h_j \gets h^0$, again with $\Sigma.\hmax = \Sigma.h_j + 1$.
-
-\emph{Heights below $h^0 - 1$ fail the gate.}
-A justification at height $h < h^0 - 1$ on any chain, when released, sets $\Sigma.h_j \gets h$ and bumps $\Sigma.\hmax$ to at most $\max(\Sigma.\hmax, h + 1) \leq h^0$.
-Since $\Sigma.\hmax \geq h^0 > h + 1 = \Sigma.h_j + 1$ after the release, the gate fails, $R = \Sigma.F$ inside \getConfirmed{}, and the released card does not shift canonical.
-
-\emph{Heights above $h^0$ do not exist.}
-Any quorum of size $\geq 2n/3$ requires at least $2n/3 - f > n/3$ honest contributions, but no honest validator has cast a non-$\bot$ vote at height $> h^0$ pre-slot-$k$: each honest's voting height $h_c = \sigma[\getConfirmed_v].h$ at any prior voting time satisfies $h_c \leq \Sigma_v.\hmax$, and $\Sigma_v.\hmax \leq h^0$ in every honest history before $\start(k)$ by definition of~$h^0$.
-Hence no justification at height $> h^0$ exists.
-
-\emph{Timeout-only chain at $\sigma$-height $h^0 + 1$ excluded jointly with~(ii).}
-Suppose card~(ii) exists on chain $Y^\dagger$ and the adversary also presents a chain $Y^\circ$ disjoint from $Y^\dagger$ that reaches $\sigma$-height $h^0 + 1$ via a timeout cert at height~$h^0$ (per-height uniqueness rules out a separate justification at $h^0$ on $Y^\circ$).
-Card~(ii) on $Y^\dagger$ provides a justification quorum~$Q^\dagger$ of size $\geq 2n/3$ at height~$h^0$ on $Y^\dagger$; the timeout cert on $Y^\circ$ provides a timeout quorum~$Q^\circ$ of size $\geq 2n/3$ at height~$h^0$ on~$Y^\circ$.
-By Definition~\ref{def:voting-rule}, an honest validator casts at most one vote per height, and the target of a non-$\bot$ vote on~$Y^\dagger$ at height~$h^0$ excludes a $\bot$-target timeout vote at the same height (and conversely).
-Hence no honest validator contributes to both quorums, so the joint honest contributions sum to at most $n - f$, while individually they sum to at least $2(2n/3 - f) = 4n/3 - 2f$.
-The combined inequality $4n/3 - 2f \leq n - f$ rearranges to $f \geq n/3$, which together with the standing $f < n/3$ rules out the joint configuration.
-\end{proof}
-
 \subsection{Healed state}\label{sec:healed}
 
 \begin{definition}[Healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:healed}
@@ -1147,45 +1109,107 @@ For an honest vote~$u$ cast strictly before~$\vote(k+1)$ with $u.\height \geq \c
 This is condition~(3) at slot~$k+1$ with $v_\ell^{(k+1)}$ and frontier height $\comm{h}'$.
 \end{proof}
 
-\subsection{Advance}\label{sec:healing-advance}
+\subsection{Card inventory and three-slot advance}\label{sec:card-and-advance}
 
-\begin{lemma}[Three-slot advance from arbitrary state]\label{lem:healing-3slot}
+The adversary may withhold and selectively release justification certificates to disrupt canonical inside \getConfirmed{}.
+A potential-function bookkeeping argument shows that under $f < n/3$ at most two such cards can ever influence canonical, and three honest-syncer slots suffice to absorb them and reach a healed state.
+The bound and the advance fold into a single lemma; no per-slot enumeration of adversary release patterns is needed.
+
+\begin{lemma}[Card inventory and three-slot advance]\label{lem:healing-3slot}
 Assume $f < n/3$ and that all honest validators follow Definition~\ref{def:voting-rule}.
-Let~$k$ be a slot.
-If slots~$k+1, k+2, k+3$ each satisfy the standing assumptions and have honest syncers, then there exists $k_h \in \{k+1, k+2, k+3\}$ such that the system is in a healed state at slot~$k_h$ with some frontier height $\comm{h} \geq h^0 - 1$, where $h^0$ is the post-async frontier height of Lemma~\ref{lem:adversary-cards}.
+Let~$k$ be a slot, and let $h^0 \coloneqq \comm{\Sigma}^{\vote(k+1)}.\hmax$ (uniform across honest stores at $\vote(k+1)$ by Assumption~\ref{ass:view-merge} under the honest slot-$(k+1)$ syncer).
+If slots~$k+1, k+2, k+3$ each satisfy the standing assumptions and have honest syncers, then there exists $k_h \in \{k+1, k+2, k+3\}$ such that the system is in a healed state at slot~$k_h$ with some frontier height $\comm{h} \geq h^0 - 1$.
 \end{lemma}
 
-\begin{proof}[Proof sketch]
-By Lemma~\ref{lem:adversary-cards}, the adversary holds at most two disruptive cards: $J^*$ at height~$h^0 - 1$ and $J^\dagger$ at height~$h^0$, carried by blocks of $\sigma$-heights~$h^0$ and~$h^0 + 1$ respectively.
-For each slot~$\ell \in \{k+1, k+2, k+3\}$, view-merge under the honest syncer (Assumption~\ref{ass:view-merge}) makes $\Sigma_v^{\vote(\ell)}$ uniform across honest~$v$, and Definition~\ref{def:standing}(d) ensures slot-$\ell$ honest votes are aggregated into the slot-$\ell$ block by $\vote(\ell+1) - \Delta$, firing the slot-$\ell$ honest virtual justification at canonical's $h_c^{(\ell)} \coloneqq \sigma[\getConfirmed^{\vote(\ell)}].h$ via \updateJFromVotes{}.
+\begin{proof}
+\emph{Step 1: Card inventory.}
+By Lemma~\ref{lem:just-unique-height}, every justification at any height on any chain processed by the node is unique; carrying-block heights follow from the height-advance rule (Lemma~\ref{lem:slotmono}: a justification at height~$h$ produces a containing block of $\sigma$-height $h+1$).
+Three observations bound the adversary's disruptive inventory at slot $k+1$:
 
-\emph{Card consumption.}
-Each release of $J^*$ or $J^\dagger$ pre-vote at slot~$\ell$ updates $\comm{\Sigma}^{(\ell)}.J$ via the lex test, with the cascade gate firing at the moment of release; canonical reorgs onto the released chain, $h_c^{(\ell)}$ matches or exceeds the released card's height, and the slot-$\ell$ honest virtual cert at $h_c^{(\ell)}$ raises $\Sigma.h_j$ accordingly.
-A second card released within the same slot is dominated on lex by the first ($J^\dagger > J^*$ in lex height): if $J^\dagger$ has fired first, the next $J^*$ release is rejected by the lex test; if $J^*$ has fired first, $J^\dagger$ dominates and absorbs $J^*$.
-At most one card is consumed per slot in the worst-case stagger.
-
-\emph{Case analysis} (which cards released in which slots, up to symmetry):
 \begin{itemize}
-  \item \emph{No release.} Slot-$(k+1)$ honest virtual cert fires at $h_c^{(k+1)} \geq h^0 - 1$; $k_h = k+1$.
-  \item \emph{Single card released at slot~$\ell_B \in \{k+1, k+2\}$.} The slot-$\ell_B$ honest virtual cert at $h_c^{(\ell_B)} \geq h^0 - 1$ absorbs the card; from slot~$\ell_B + 1$ no further disruption occurs; $k_h = \ell_B + 1$.
-  \item \emph{Both cards released at the same slot~$\ell_C$.} $J^\dagger$ dominates $J^*$ via lex; the slot-$\ell_C$ honest virtual cert at $h_c^{(\ell_C)} \geq h^0$ then absorbs $J^\dagger$; $k_h = \ell_C + 1$.
-  \item \emph{Forward stagger ($J^*$ at $k+1$, $J^\dagger$ at $k+2$).} Slot-$(k+1)$ virtual cert fires at $h_c^{(k+1)} \geq h^0 - 1$; slot-$(k+2)$ release of $J^\dagger$ dominates by lex, canonical reorgs to $J^\dagger$'s chain, slot-$(k+2)$ virtual cert at $h_c^{(k+2)} \geq h^0$ absorbs $J^\dagger$; $k_h = k+3$.
-  \item \emph{Reverse stagger ($J^\dagger$ at $k+1$, $J^*$ at $k+2$).} $J^*$'s lex height $h^0 - 1$ falls below the current $\Sigma.h_j = h^0$, so the lex test rejects it; $J^*$ is wasted, $k_h = k+2$.
-\end{itemize}
-The worst case is forward stagger, giving $k_h = k+3$; in every case $k_h \leq k+3$.
+  \item\emph{Heights $> h^0$ do not exist.}
+  A $\geq 2n/3$ justification quorum at height~$h$ requires $\geq 2n/3 - f > n/3$ honest contributions; each honest's voting height $h_c = \sigma[\getConfirmed_v].h$ at any prior voting time satisfies $h_c \leq \Sigma_v.\hmax \leq h^0$ by the definition of~$h^0$.
+  Hence no honest validator has cast a non-$\bot$ vote at height~$> h^0$, and no justification at height~$> h^0$ exists.
 
-\emph{Healed-state conditions at $\vote(k_h)$.}
-Set $\comm{h} \coloneqq h_c^{(k_h - 1)} \geq h^0 - 1$.
-\begin{enumerate}
-  \item View-merge gives $\comm{\Sigma}^{(k_h)}.h_j \geq \comm{h}$ from the slot-$(k_h-1)$ virtual cert; the gate $\comm{\Sigma}^{(k_h)}.\hmax = \comm{\Sigma}^{(k_h)}.h_j + 1$ holds (no further card released after slot~$k_h - 1$ in the relevant case); $R_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}.J$ has $\sigma$-height $\geq \comm{h}$.
-  \item View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$.
-  \item Pick $v_\ell$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k_h)}$ on the common chain.
-  Honest votes~$u$ cast strictly before~$\vote(k_h)$ with $u.\height \geq \comm{h}$ split into:
-  \begin{itemize}
-    \item votes contributing to a justification at height $\geq \comm{h}$ (already absorbed by some virtual cert in $\{k+1, \ldots, k_h - 1\}$): per Lemma~\ref{lem:just-unique-height}, the unique justified target at each such height lies on canonical at $\vote(k_h)$, and freshness of the contributing vote on its chain forces $u.\target$ onto canonical;
-    \item slot-$\ell$ honest votes for $\ell \in \{k+1, \ldots, k_h - 1\}$: by Lemma~\ref{lem:honest-vote-sets-timeout} each such vote targets the then-canonical, and Lemma~\ref{lem:getConfirmed-monotone} together with chain compatibility through the absorbed cards gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k_h)}$.
-  \end{itemize}
-\end{enumerate}
+  \item\emph{Heights $< h^0 - 1$ fail the cascade gate post-release.}
+  Releasing a justification at height $h < h^0 - 1$ on any chain sets $\Sigma.h_j \gets h$ and bumps $\Sigma.\hmax$ to at most $\max(\Sigma.\hmax, h + 1) \leq h^0$.
+  Since $\Sigma.\hmax \geq h^0 > h + 1 = \Sigma.h_j + 1$ post-release, the gate fails, $R = \Sigma.F$ inside \getConfirmed{}, and the released card does not shift canonical.
+
+  \item\emph{The two surviving cards.}
+  Let~$J^*$ denote the unique justification at $h^0 - 1$ when present, with carrier $B^*$ at $\sigma[B^*].h = h^0$, and $J^\dagger$ the unique justification at $h^0$ when present, with carrier $B^\dagger$ at $\sigma[B^\dagger].h = h^0 + 1$.
+  On release of card~$J^*$: $\Sigma.h_j \gets h^0 - 1$, $\Sigma.\hmax = h^0$, gate fires.
+  On release of card~$J^\dagger$: $\Sigma.h_j \gets h^0$, $\Sigma.\hmax \gets h^0 + 1$, gate fires.
+  When both exist, the disjoint-quorum bound under $f < n/3$ forces $J^* \preceq J^\dagger$ on a common chain: the height advance from~$h^0 - 1$ to~$h^0$ on $J^\dagger$'s chain via a timeout cert would require a $\geq 2n/3$ timeout quorum at height~$h^0 - 1$ disjoint (in honest validators) from $J^*$'s justification quorum at the same height (Definition~\ref{def:voting-rule}: at most one vote per height), giving $4n/3 - 2f \leq n - f$, i.e., $f \geq n/3$, ruled out by the standing $f < n/3$.
+\end{itemize}
+
+\emph{Step 2: Potential function.}
+For $\ell \in \{k+1, k+2, k+3\}$, define on the post-merge common store $\comm{\Sigma}^{(\ell)} \coloneqq \comm{\Sigma}^{\vote(\ell)}$:
+\begin{itemize}
+  \item a card $c \in \{J^*, J^\dagger\}$ is \emph{live at}~$\ell$ iff the adversary still holds $c$ \emph{and} releasing $c$ would update $\comm{\Sigma}^{(\ell)}.J$ via the lex test in \updateJustified{} --- equivalently (using Lemma~\ref{lem:just-unique-height} to discard hash tiebreaks), iff $c$ is held and $\mathrm{height}(c) > \comm{\Sigma}^{(\ell)}.h_j$;
+  \item $N^{(\ell)}$ counts live cards at~$\ell$;
+  \item $\Phi^{(\ell)} \coloneqq \min(\comm{\Sigma}^{(\ell)}.h_j,\; h^0) + N^{(\ell)}$.
+\end{itemize}
+
+The bound $\Phi^{(\ell)} \leq h^0$ holds in all cases:
+$\comm{\Sigma}^{(\ell)}.h_j \geq h^0$ kills both cards ($N = 0$, $\Phi = h^0$); $\comm{\Sigma}^{(\ell)}.h_j = h^0 - 1$ kills $J^*$ ($N \leq 1$, $\Phi \leq h^0$); $\comm{\Sigma}^{(\ell)}.h_j \leq h^0 - 2$ admits $N \leq 2$ ($\Phi \leq h^0$).
+
+\emph{Step 3: $\Phi$ is monotone non-decreasing.}
+Three transition classes can change $\Phi$ in $[\vote(\ell),\, \vote(\ell+1)]$.
+
+\emph{(T1) Live card $c$ released and absorbed.}
+Pre-release $h_j^{\mathrm{old}} < \mathrm{height}(c)$ (liveness). Post-release $h_j \gets \mathrm{height}(c)$, so $\Delta \min(h_j, h^0) = \mathrm{height}(c) - h_j^{\mathrm{old}} \geq 1$; $c$ leaves the live set ($\Delta N \ni \{-1\}$); a second card $c'$ leaves the live set iff $\mathrm{height}(c') \leq \mathrm{height}(c)$.
+Direct enumeration on $\{(c, c')\} \in \{(J^*, J^\dagger), (J^\dagger, J^*)\}$, using $\mathrm{height}(J^*) = h^0 - 1 < h^0 = \mathrm{height}(J^\dagger)$ and the corresponding liveness thresholds:
+\begin{itemize}
+  \item $c = J^*$ released, $J^\dagger$ live: $\Delta \min = h^0 - 1 - h_j^{\mathrm{old}} \geq 1$, $\Delta N = -1$ (only $J^*$ removed; $J^\dagger$ remains live since $h^0 > h^0 - 1$); $\Delta \Phi \geq 0$;
+  \item $c = J^\dagger$ released, $J^*$ live ($h_j^{\mathrm{old}} \leq h^0 - 2$): $\Delta \min = h^0 - h_j^{\mathrm{old}} \geq 2$, $\Delta N = -2$ (both cards removed); $\Delta \Phi \geq 0$;
+  \item $c = J^\dagger$ released, $J^*$ not live: $\Delta \min = h^0 - h_j^{\mathrm{old}} \geq 1$, $\Delta N = -1$; $\Delta \Phi \geq 0$.
+\end{itemize}
+
+\emph{(T2) Honest virtual cert via \updateJFromVotes{} or on-chain cert event.}
+The cert offers a key at height $h^* \in \{h_c^{(\ell)},\, h^0 - 1,\, h^0\}$, with $h_c^{(\ell)} \coloneqq \sigma[\getConfirmed^{\vote(\ell)}].h \geq \comm{\Sigma}^{(\ell)}.\hmax - 1 \geq h^0 - 1$.
+\updateJustified{} updates $h_j$ iff the lex test passes, in which case $\Delta \min(h_j, h^0) \geq 1$ and $\Delta N$ is at most the number of cards with height in $(h_j^{\mathrm{old}}, h^*]$, which is at most $\Delta \min(h_j, h^0)$ since payloads are distinct.
+$\Delta \Phi \geq 0$.
+If lex fails (e.g., gate firing with $h_c^{(\ell)} = h_j^{\mathrm{old}}$ giving a hash-tied cert at the unique target by Lemma~\ref{lem:just-unique-height}): no-op, $\Delta \Phi = 0$.
+
+\emph{(T3) View-merge.}
+$\comm{\Sigma}^{(\ell+1)}.h_j$ takes the cross-honest maximum, weakly $\geq$ pre-merge values.
+$N$ shrinks weakly. $\Delta \Phi \geq 0$.
+
+\emph{Step 4: Frontier advance.}
+We claim $\comm{\Sigma}^{(\ell+1)}.h_j \geq h^0 - 1$ for $\ell \in \{k+1, k+2\}$.
+Slot-$\ell$ honest votes have $.\height = h_c^{(\ell)} \geq h^0 - 1$ (uniformity from view-merge plus Lemma~\ref{lem:honest-vote-sets-timeout}); their targets lie on the chain~$D^{(\ell)}$ ending at $\getConfirmed_{v_\ell}^{\vote(\ell)}$ at $\sigma$-height $h_c^{(\ell)}$.
+By Definition~\ref{def:standing}(d), an honest available-chain proposer aggregates these slot-$\ell$ votes into a slot-$\ell$ block delivered to every honest validator before $\vote(\ell+1) - \Delta$, and \updateJFromVotes{} fires either the on-chain or the virtual cert at $h_c^{(\ell)}$.
+Either canonical at $\vote(\ell+1)$ extends $D^{(\ell)}$, so the cert's lex test passes and $\comm{\Sigma}^{(\ell+1)}.h_j \geq h_c^{(\ell)} \geq h^0 - 1$; or canonical reorganizes onto the chain of a card released in $[\vote(\ell), \vote(\ell+1))$, in which case the released card's height ($h^0 - 1$ or $h^0$) bounds $\comm{\Sigma}^{(\ell+1)}.h_j$ from below by $h^0 - 1$.
+
+\emph{Step 5: Cascade gate at $\vote(\ell)$ for $\ell \in \{k+2, k+3\}$.}
+Step~4 gives $\comm{\Sigma}^{(\ell)}.h_j \geq h^0 - 1$.
+$\comm{\Sigma}^{(\ell)}.\hmax \in \{h^0,\, h^0 + 1\}$: $\hmax = h^0 + 1$ requires $B^\dagger$ to have entered $\Sigma.\T$, which forces $\comm{\Sigma}^{(\ell)}.h_j \geq h^0$; $\hmax = h^0$ admits $\comm{\Sigma}^{(\ell)}.h_j \in \{h^0 - 1\}$.
+Combined with the protocol invariant $h_j \leq \hmax - 1$:
+\begin{itemize}
+  \item $\hmax = h^0,\, h_j = h^0 - 1$: gate fires;
+  \item $\hmax = h^0 + 1,\, h_j = h^0$: gate fires.
+\end{itemize}
+
+\emph{Step 6: Identifying $k_h$.}
+Let $\ell_d$ be the largest $\ell \in \{k+1, k+2\}$ such that a live card was released-and-absorbed in $[\vote(\ell), \vote(\ell+1))$ (set $\ell_d = k$ if no such slot exists, treating slot~$k+1$ as the first opportunity).
+Set $k_h \coloneqq \ell_d + 1 \in \{k+1, k+2, k+3\}$ when $\ell_d \geq k+1$; and $k_h \coloneqq k+1$ when $\ell_d = k$.
+
+By Step~4, $\comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$, and Step~5 gives gate firing.
+View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$ (condition~(2) of Definition~\ref{def:healed}).
+Set $\comm{h} \coloneqq \comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$ and $R_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}.J$ at $\sigma$-height $\comm{h}$ (condition~(1)).
+
+\emph{Condition~(3) at $\vote(k_h)$.}
+Pick $v_\ell$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k_h)}$ on the common chain (well-defined by condition~(2)).
+For an honest vote~$u$ cast strictly before~$\vote(k_h)$ with $u.\height \geq \comm{h}$:
+\begin{itemize}
+  \item $u$ contributes to the justification at $\mathrm{height}(c) \in \{h^0 - 1, h^0\}$ for some absorbed card~$c$: by Lemma~\ref{lem:just-unique-height}, the unique justified target at $\mathrm{height}(c)$ is~$c$ on its chain $\preceq \comm{\Sigma}^{(k_h)}.J$ post-absorption, and freshness of $u$ on its contributing chain forces $u.\target = c$ on canonical at $\vote(k_h)$;
+  \item $u$ is a slot-$\ell$ honest vote for $\ell \in \{k+1, \ldots, k_h - 1\}$: by view-merge uniformity at $\vote(\ell)$ together with Lemma~\ref{lem:honest-vote-sets-timeout}, all honest at $\vote(\ell)$ target the same block $T_\ell$ on the common canonical chain at $\sigma$-height $h_c^{(\ell)} \in \{h^0 - 1, h^0\}$.
+  Definition~\ref{def:standing}(b,c) gives $\geq 2n/3$ honest contributions, forming a justification quorum at $h_c^{(\ell)}$ targeting $T_\ell$ (delivered via on-chain processing or \updateJFromVotes{} by $\vote(\ell+1) - \Delta$).
+  Lemma~\ref{lem:just-unique-height} then forces $T_\ell$ to coincide with the unique justified block at $h_c^{(\ell)}$, namely $J^*$ when $h_c^{(\ell)} = h^0 - 1$ and $J^\dagger$ when $h_c^{(\ell)} = h^0$ (creating $J^*$ or $J^\dagger$ as a newly justified block when no card-borne justification pre-existed at that height).
+  Both $J^*$ and $J^\dagger$ lie on canonical at $\vote(k_h)$: by Step~1, $J^* \preceq J^\dagger$ when both exist, and Lemma~\ref{lem:Rs-key-monotone} together with the per-height uniqueness places the unique justified block of $\comm{\Sigma}^{(k_h)}.h_j$ on canonical via $\Sigma.J$-monotonicity along absorbed-card transitions.
+  Hence $u.\target \in \{J^*, J^\dagger\} \preceq \getConfirmed_{v_\ell}^{\vote(k_h)}$.
+\end{itemize}
+This is condition~(3) at slot~$k_h$ with frontier height $\comm{h} \geq h^0 - 1$.
 \end{proof}
 
 \subsection{Main theorem}\label{sec:healing-main}
