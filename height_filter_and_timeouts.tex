@@ -1,0 +1,922 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+
+\usepackage{graphicx}
+
+\usepackage[table]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+\definecolor{xlightgray}{HTML}{D1DBE4}
+\definecolor{xgreen}{HTML}{B9C89F}
+\definecolor{xred}{HTML}{F19F9E}
+\definecolor{xyellow}{HTML}{F6DA71}
+\definecolor{xblue}{HTML}{ACE7EF}
+\definecolor{xpurple}{HTML}{C3A4E7}
+\usepackage{todonotes}
+\usepackage{booktabs,tabularx,makecell,hyperref}
+\definecolor{rowgray}{RGB}{246,246,246}
+
+\usepackage{pdflscape}
+\usepackage{environ}
+
+\usetikzlibrary{arrows.meta,positioning,fit,calc,decorations.pathmorphing}
+
+% Math
+\usepackage{amsmath,amssymb}
+\usepackage{mathtools}
+\usepackage{xspace}
+
+% Algorithmic
+\usepackage[noend]{algpseudocode}
+\usepackage{amsthm}
+\usepackage{cleveref}
+
+\usepackage{float}
+\floatstyle{ruled}
+\newfloat{algo}{htbp}{algo}
+\floatname{algo}{Algorithm}
+
+% --- Custom commands ---
+\newcommand{\genesis}{\ensuremath{B_{\mathrm{gen}}}}
+\newcommand{\T}[0]{\ensuremath{\mathcal{T}}}
+\newcommand{\slot}[0]{\ensuremath{\operatorname{\mathrm{slot}}}}
+
+\newcommand{\target}{\mathsf{target}}
+\newcommand{\height}{\mathsf{height}}
+\newcommand{\validator}{\mathsf{validator}}
+\newcommand{\parent}{\mathsf{parent}}
+
+% Vote fields and state variables
+\newcommand{\finalizeHeight}{\mathsf{finalize\_height}}
+\newcommand{\finalizeTarget}{\mathsf{finalize\_target}}
+\newcommand{\targets}{\mathsf{targets}}
+\newcommand{\timeouts}{\mathsf{timeouts}}
+\newcommand{\penalties}{\mathsf{penalties}}
+\newcommand{\fresh}{\mathsf{fresh}}
+\newcommand{\hash}{\mathsf{hash}}
+\newcommand{\hmax}{\ensuremath{h_{\max}}\xspace}
+\newcommand{\viableTree}{\ensuremath{\mathcal{T}'}}
+
+% Procedure names
+\newcommand{\processSlot}{\textsf{processSlot}\xspace}
+\newcommand{\processBlock}{\textsf{processBlock}\xspace}
+\newcommand{\processHeight}{\textsf{processHeight}\xspace}
+\newcommand{\processVote}{\textsf{processVote}\xspace}
+\newcommand{\processInactivityPenalties}{\textsf{processInactivityPenalties}\xspace}
+\newcommand{\finalizeConflict}{\textsf{finalizeConflict}\xspace}
+\newcommand{\isSlashable}{\textsf{isSlashable}\xspace}
+\newcommand{\getBaseVote}{\textsf{getBaseVote}\xspace}
+\newcommand{\getFinalVote}{\textsf{getFinalVote}\xspace}
+\newcommand{\recordVote}{\textsf{recordVote}\xspace}
+\newcommand{\onBlock}{\textsf{onBlock}\xspace}
+\newcommand{\updateJustified}{\textsf{updateJustified}\xspace}
+\newcommand{\updateFinalized}{\textsf{updateFinalized}\xspace}
+\newcommand{\getConfirmed}{\textsf{getConfirmed}\xspace}
+
+% Algorithmic event environment
+\algdef{SE}[EVENT]{Event}{EndEvent}[1]{\textbf{at}\ #1\ \algorithmicdo}{\algorithmicend\ \textbf{event}}
+\algtext*{EndEvent}
+
+\pagestyle{plain}
+
+\renewcommand{\paragraph}[1]{\vspace{7pt}\noindent\textbf{#1}}
+
+\algrenewcommand\textproc{}
+
+\usepackage{boxedminipage}
+
+% Theorem environments
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem*{theorem*}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Fresh Simplex with Height Filter and Timeouts}
+
+\begin{document}
+\maketitle
+\section{Model and definitions}\label{sec:model}
+
+We consider a system of~$n$ validators of which at most~$f$ are adversarial, where $n \geq 3f + 1$.
+A \emph{quorum} is any set of at least $2n/3$ validators.
+Any two quorums overlap in at least $n/3 + 1 > f$ validators, so their intersection contains at least one honest validator.
+
+\begin{definition}[Height]\label{def:height}
+\emph{Height} is the finality-gadget counter, separate from slot.
+The genesis height is~$0$; height advances by exactly~$1$ via fixed-target justification (Definition~\ref{def:justification}) or a timeout (Definition~\ref{def:timeout}).
+\end{definition}
+
+\begin{definition}[Block]\label{def:block}
+A \emph{block} has a \emph{parent} block, a \emph{slot} field, and a set of votes (Definition~\ref{def:vote}).
+The \emph{genesis block}~$\genesis$ has no parent and slot~$0$.
+Slots strictly increase along parent links: $B.\slot > B.\parent.\slot$ for every non-genesis~$B$.
+\end{definition}
+
+\begin{definition}[Chain]\label{def:chain}
+A \emph{chain} is a path from~$\genesis$ to some block~$B$ via parent links.
+Chains are in bijection with their tips, and we identify the two.
+Blocks form a tree rooted at~$\genesis$; we write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \sim B'$ (\emph{compatible}) when $B \preceq B'$ or $B' \preceq B$.
+Two chains \emph{conflict} when their tips are not compatible.
+\end{definition}
+
+\begin{definition}[Vote]\label{def:vote}
+A \emph{vote} is a signed tuple
+\[
+  (\validator,\; \height,\; \target,\; \finalizeHeight,\; \finalizeTarget),
+\]
+where $\validator$ is the signer, $\height$ is a height, and $\target \in \{\bot\} \cup \mathrm{Blocks}$.
+A vote with $\target = \bot$ is a \emph{timeout vote}; a vote with $\target \neq \bot$ is a \emph{justification vote}.
+The pair $(\finalizeHeight,\, \finalizeTarget)$ is either both~$\bot$ or a commitment to finalize a block at a height.
+A vote included on a chain must reference a target (and finalize target, when present) that exists on that chain when non-$\bot$.
+\end{definition}
+
+\paragraph{State.}
+The \emph{state after block~$B$}, written $\sigma[B]$, is the tuple
+\[
+  (L,\; s,\; h,\; s_h,\; \targets,\; \timeouts,\; J,\; h_j,\; F,\; P),
+\]
+with components:
+\begin{itemize}
+  \item $L$: the \emph{chain head} ($L = B$ after processing~$B$).
+  \item $s$: the \emph{current slot}, incremented once per slot by \processSlot (Figure~\ref{alg:state-machine}).
+  \item $h$: the \emph{current height}.
+  \item $s_h$: the slot of the block whose processing last advanced~$h$ on this chain ($0$ if no advance has occurred).
+  \item $\targets[1..n]$: for each validator~$i$, the target of~$i$'s justification vote at the current height ($\bot$ if none processed).
+  \item $\timeouts[1..n]$: for each~$i$, a boolean that is \texttt{true} iff~$i$'s vote at the current height set the timeout marker --- either a timeout vote ($\target = \bot$) or a height-fresh justification vote on this chain.
+  \item $J$, $h_j$: the most recently justified block and its height.
+  \item $F$: the most recently finalized block.
+  \item $P \subseteq \{1, \ldots, n\}$: validators who have cast a vote with $\finalizeHeight = h_j$ and $\finalizeTarget = J$.
+\end{itemize}
+The genesis state is
+\[
+  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 0,\; 0,\; \bot^n,\; \mathtt{false}^n,\; \genesis,\; 0,\; \genesis,\; \emptyset),
+\]
+with $\sigma[\genesis] \coloneqq \sigma_{\mathrm{gen}}$.
+When unambiguous we drop the chain prefix and write $L$, $s$, $h$, etc.\ for the components of $\sigma[L]$.
+
+\begin{definition}[State-height]\label{def:sheight}
+The \emph{state-height} of a block~$B$ is $\sigma[B].h$: the height after processing~$B$ on its own chain.
+\end{definition}
+
+\paragraph{Height freshness.}
+A justification vote~$v$ (i.e., $v.\target = T \neq \bot$) is \emph{fresh} on a chain with head state $\sigma[L]$ iff
+\[
+  \sigma[L].h = v.\height \;\wedge\; T \preceq L \;\wedge\; T.\slot \geq \sigma[L].s_h:
+\]
+the chain is at~$v$'s height, $T$ lies on this chain, and $T$'s slot is no earlier than where the chain's current height began.
+A timeout vote ($v.\target = \bot$) is fresh on the chain iff $\sigma[L].h = v.\height$.
+Intuitively, a fresh justification vote attests that its signer saw~$T$ as a chain of height~$v.\height$.
+
+\begin{remark}[Freshness via $T$'s own chain]\label{rem:fresh-equiv}
+For a justification vote with target $T \preceq L$, the constraint $T.\slot \geq \sigma[L].s_h$ is equivalent to $\sigma[T].h = \sigma[L].h$.
+State-height is $\preceq$-monotone (Lemma~\ref{lem:slotmono}), equals $\sigma[L].h$ on~$L$, and advanced to its current value at the block whose slot is $\sigma[L].s_h$; so the ancestors of~$L$ at that state-height are exactly those with slot $\geq \sigma[L].s_h$.
+\end{remark}
+
+Freshness ensures that every justification at height~$h$ is witnessed by targets whose own chains reached state-height~$h$, and pins both timeout and justification contributions to the chain's current height.
+
+\begin{definition}[Fixed-target justification]\label{def:justification}
+A block~$T$ is \emph{justified at height~$h$} on a chain with state $\sigma[L]$ with $\sigma[L].h = h$ iff
+\[
+  \bigl|\{i \,:\, \targets[i] = T\}\bigr| \;\geq\; 2n/3.
+\]
+Only votes with target exactly~$T$ contribute.
+\end{definition}
+
+\begin{definition}[Timeout]\label{def:timeout}
+On a chain with head state $\sigma[L]$ at height~$h$, a \emph{timeout} fires iff
+\[
+  \bigl|\{i : \timeouts[i] = \mathtt{true}\}\bigr| \;\geq\; 2n/3.
+\]
+A timeout has no associated target block.
+Both timeout votes and height-fresh justification votes (with target $\preceq L$ at the chain's current height) set $\timeouts[i] = \mathtt{true}$, so a justification quorum implies a timeout quorum.
+The two height-advance branches are checked in order, justification first (Figure~\ref{alg:state-machine}).
+\end{definition}
+
+\begin{definition}[Finality]\label{def:finality}
+The justified block~$J$ is \emph{finalized at height~$h_j$} once $|P| \geq 2n/3$.
+\end{definition}
+
+\begin{definition}[Slashing, rule E1]\label{def:slashing}
+A validator is \emph{slashable} if it signed two votes~$a, b$ (possibly $a = b$) with
+\[
+  b.\finalizeTarget \neq \bot \;\wedge\; a.\height = b.\finalizeHeight \;\wedge\; a.\target \neq b.\finalizeTarget.
+\]
+That is, a validator committing $(\finalizeHeight,\, \finalizeTarget) = (h_f, T_f)$ must not sign any vote at height~$h_f$ with target $\neq T_f$.
+Note that timeout votes ($a.\target = \bot$) are themselves in conflict with any commitment $b.\finalizeTarget \neq \bot$ at the same height, since $\bot \neq b.\finalizeTarget$.
+\end{definition}
+
+Two justification votes (or two timeout votes) at the same height are not by themselves slashable; per-height uniqueness of honest justification votes is imposed behaviorally (Section~\ref{sec:store}).
+A validator who never sets $\finalizeTarget \neq \bot$ trivially avoids slashing.
+
+\paragraph{State transitions.}
+The state machine (Figure~\ref{alg:state-machine}) exposes two per-chain routines: \processSlot, invoked once per slot on every maintained chain, and \processBlock, invoked additionally whenever a block~$B$ is processed.
+
+\processSlot increments~$s$ and calls \processHeight, which checks three branches in order: (i) finality, $F \gets J$ if $|P| \geq 2n/3$; (ii) justification, if some~$T$ has $\geq 2n/3$ entries in $\targets$; (iii) timeout cert, if $\geq 2n/3$ entries of $\timeouts$ are \texttt{true}.
+Branches (ii) and (iii) both advance height and reset $\targets, \timeouts$, so at most one height-advance fires per invocation.
+
+$\processBlock(\sigma, B)$ has precondition $\sigma.s = B.\slot$: the caller runs \processSlot up to $B.\slot$ first.
+Then $L \gets B$, and each vote~$v$ in~$B$ is fed through \processVote.
+A timeout vote ($v.\target = \bot$) at the current height sets $\timeouts[i] \gets \mathtt{true}$.
+A height-fresh justification vote sets both $\targets[i] \gets v.\target$ and $\timeouts[i] \gets \mathtt{true}$.
+The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finalizeTarget = \sigma.J$; this is independent of freshness.
+\processBlock never advances~$h$: height advances happen only in \processSlot, which runs on every slot (including empty ones).
+
+\begin{figure}[H]
+\caption{State machine}\label{alg:state-machine}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{\processSlot}{$\sigma$} \Comment{Runs once per slot on every chain, even without a block}
+  \State $\sigma.s \gets \sigma.s + 1$
+  \State $\sigma \gets \processHeight(\sigma)$
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\processBlock}{$\sigma,\; B$}
+  \State \textbf{assert} $\sigma.s = B.\slot$ \Comment{Precondition: caller advanced $\sigma.s$ via \processSlot}
+  \State $\sigma.L \gets B$
+  \For{each vote $v$ in $B$} $\sigma \gets \processVote(\sigma,\, v)$ \EndFor
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\processVote}{$\sigma,\; v$}
+  \State $i \gets v.\validator$
+  \If{$v.\target = \bot$} \Comment{Timeout vote}
+    \If{$v.\height = \sigma.h$}
+      \State $\sigma.\timeouts[i] \gets \mathtt{true}$
+    \EndIf
+  \Else \Comment{Justification vote: apply height freshness}
+    \State $\fresh \gets (v.\height = \sigma.h) \land (v.\target \preceq \sigma.L) \land (v.\target.\slot \geq \sigma.s_h)$
+    \If{$\fresh$}
+      \State $\sigma.\targets[i] \gets v.\target$
+      \State $\sigma.\timeouts[i] \gets \mathtt{true}$
+    \EndIf
+  \EndIf
+  \If{$v.\finalizeHeight = \sigma.h_j$ \textbf{and} $v.\finalizeTarget = \sigma.J$}
+    \State $\sigma.P \gets \sigma.P \cup \{i\}$
+  \EndIf
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\processHeight}{$\sigma$}
+  \If{$|\sigma.P| \geq 2n/3$} \Comment{Finality}
+    \State $\sigma.F \gets \sigma.J$
+  \EndIf
+  \State $T \gets \arg\max_{T' \in \{\sigma.\targets[i] \,:\, \sigma.\targets[i] \neq \bot\}} |\{i : \sigma.\targets[i] = T'\}|$ \Comment{$T \gets \bot$ if the set is empty}
+  \If{$T \neq \bot$ \textbf{and} $|\{i : \sigma.\targets[i] = T\}| \geq 2n/3$} \Comment{Justification}
+    \State $\sigma.J \gets T$, \; $\sigma.h_j \gets \sigma.h$, \; $\sigma.P \gets \emptyset$
+    \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
+    \State reset $\targets, \timeouts$
+    \State \Return $\sigma$
+  \EndIf
+  \If{$|\{i : \sigma.\timeouts[i] = \mathtt{true}\}| \geq 2n/3$} \Comment{Timeout}
+    \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.L.\slot$
+    \State reset $\targets, \timeouts$
+  \EndIf
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\finalizeConflict}{$v_1, v_2$} \Comment{Does $v_1$ conflict with $v_2$'s finalize commitment?}
+  \State \Return $v_2.\finalizeTarget \neq \bot \;\wedge\; v_1.\height = v_2.\finalizeHeight \;\wedge\; v_1.\target \neq v_2.\finalizeTarget$
+\EndFunction
+\vspace{3pt}
+
+\Function{\isSlashable}{$v_1, v_2$}
+  \State \Return $v_1.\validator = v_2.\validator$
+  \Statex \hspace{3em}$\land \;(\finalizeConflict(v_1, v_2) \lor \finalizeConflict(v_2, v_1))$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\section{Accountable safety}\label{sec:safety}
+
+\begin{lemma}[Height progression]\label{lem:heightprog}
+\processHeight increments~$h$ by at most~$1$ per invocation, and each increment is gated by a $\geq 2n/3$ justification or timeout quorum.
+\end{lemma}
+
+\begin{proof}
+The only assignments to~$h$ are $h \gets h + 1$ in the justification and timeout-cert branches of \processHeight, each guarded by its $\geq 2n/3$ quorum and followed by a return or function exit, so at most one fires per call.
+\end{proof}
+
+\begin{lemma}[Checkpoint monotonicity]\label{lem:slotmono}
+On any chain, the fields $s$, $h$, $h_j$, $s_h$, $F$, $J$ are non-decreasing along~$\preceq$, with $F \preceq J$ at all times.
+$J$ and $h_j$ advance only on justification events, and $s_h$ only on height-advances, with $s_h$ set to the slot of the advancing block.
+Consequently, when $\sigma[Y].h = h$, the ancestors of~$Y$ at state-height~$h$ are $\{B' \preceq Y : B'.\slot \geq \sigma[Y].s_h\}$.
+\end{lemma}
+
+\begin{proof}
+Reading off Figure~\ref{alg:state-machine}: $s$ only increases (in \processSlot); $h$ only increases, by~$1$, in the height-advance branches of \processHeight, which also set $h_j \gets h$ on the justification branch and $s_h \gets L.\slot$ on either branch.
+Slots strictly increase along~$\preceq$ (Definition~\ref{def:block}), so $s_h$ is non-decreasing.
+$F$ updates only via $F \gets J$, so $F \preceq J$ reduces to $J$-monotonicity.
+
+\emph{Height-$h$ interval.}
+Along any chain, $h$ increases monotonically; when $\sigma[Y].h = h$, the value $s_h$ was set at the block that advanced state-height to~$h$.
+By strict slot increase along~$\preceq$ and the monotonicity of $(h, s_h)$, the ancestors $B' \preceq Y$ with $\sigma[B'].h = h$ are exactly those with $B'.\slot \geq s_h$.
+
+\emph{Block field $J$.}
+At a justification advance on chain~$Y$ firing at target~$T$ with pre-state height~$h$, freshness forces $T.\slot \geq s_h$, since every contributing justification vote has target~$T$ and was processed only when fresh.
+By the height-$h$ interval claim, $\sigma[T].h = h$, so the previous justified block $J_{\mathrm{old}}$ with $\sigma[J_{\mathrm{old}}].h \leq h-1$ and $J_{\mathrm{old}} \preceq Y$ satisfies $T \succ J_{\mathrm{old}}$ by state-height monotonicity.
+Hence $J$ strictly advances along~$\preceq$ at every justification event.
+\end{proof}
+
+\begin{lemma}[Any chain past a finalized height contains the finalized block]\label{lem:mainsafety}
+Unless $\geq n/3$ validators are slashable: if~$C$ is finalized at height~$h$, then $C \preceq B$ for every block~$B$ with $\sigma[B].h > h$.
+\end{lemma}
+
+\begin{proof}
+By Lemma~\ref{lem:heightprog}, some $B^* \preceq B$ advanced height from~$h$ to~$h+1$ via a quorum~$Q$ at height~$h$ on~$B^*$'s chain (justification or timeout cert).
+Finality of~$C$ at~$h$ gives a quorum~$Q_F$ each signing a finalize-bearing vote~$b$ with $b.\finalizeHeight = h$ and $b.\finalizeTarget = C$.
+Quorum intersection gives $|Q \cap Q_F| \geq n/3$; pick $v \in Q \cap Q_F$ not slashable, with~$b \in Q_F$ its finalize-bearing vote and~$a$ its contribution to~$Q$ at height~$h$ on~$B^*$'s chain.
+Non-slashability rules out $\finalizeConflict(a, b)$, so $a.\target \neq \bot$ and $a.\target = C$ (since $a.\height = h = b.\finalizeHeight$ and $b.\finalizeTarget = C \neq \bot$).
+Hence~$a$ is a fresh justification vote (timeouts have $a.\target = \bot$) processed on~$B^*$'s chain at state-height~$h$, and freshness gives $C = a.\target \preceq B^* \preceq B$.
+\end{proof}
+
+\begin{lemma}[Finalized blocks form a chain]\label{lem:finchain}
+Unless $\geq n/3$ validators are slashable: any two finalized checkpoints $(C, h), (C', h')$ are compatible, with $C \preceq C'$ whenever $h \leq h'$.
+\end{lemma}
+
+\begin{proof}
+\emph{Case $h = h'$.}
+Finality of~$C$ gives a quorum~$Q_F$ with $\finalizeHeight = h$, $\finalizeTarget = C$.
+Finality of~$C'$ requires justification of~$C'$, giving a justification quorum~$Q'$ at height~$h$ with target~$C'$.
+By quorum intersection, $|Q_F \cap Q'| \geq n/3$; pick $v \in Q_F \cap Q'$ not slashable.
+E1 (Definition~\ref{def:slashing}) applied to $v$'s votes in~$Q_F, Q'$ forces $C = C'$.
+
+\emph{Case $h < h'$.}
+Let~$Z$ be the chain on which~$C'$ was finalized, at the post-state where the finalize-quorum closed; then $\sigma[Z].h \geq h' > h$, $C' \preceq Z$, and $\sigma[C'].h = h'$ (Remark~\ref{rem:fresh-equiv}).
+Lemma~\ref{lem:mainsafety} at~$Z$ gives $C \preceq Z$; Remark~\ref{rem:fresh-equiv} on~$C$'s own finalizing chain gives $\sigma[C].h = h$.
+Both~$C, C'$ lie on~$Z$, so comparable; with $\sigma[C].h = h < h' = \sigma[C'].h$, state-height monotonicity (Lemma~\ref{lem:slotmono}) forces $C \prec C'$.
+\end{proof}
+
+\begin{theorem}[Accountable safety]\label{thm:safety}
+Unless $\geq n/3$ validators are slashable, no two conflicting blocks can be finalized.
+\end{theorem}
+
+\begin{proof}
+Immediate from Lemma~\ref{lem:finchain}: any two finalized blocks are compatible.
+\end{proof}
+\section{Fork-choice store}\label{sec:store}
+
+A node may track multiple chains simultaneously; the \emph{store} is the node-local data structure that mediates which chain the node follows.
+It maintains a single \emph{root block}~$J$ --- the block of the highest-key justification ever observed --- together with that justification's height~$h_j$.
+Each justification firing is compared against $(h_j, \hash(J))$ in lex order, and $(J, h_j)$ is updated whenever a new justification strictly dominates.
+Because timeouts replace every prefix-notarization mechanism, the comparison uses the lexicographic pair $(h, \hash(C))$ associated with each justification firing $(C, h)$: height first, hash tiebreak; under $f < n/3$ the tiebreak is rarely needed and exists for robustness only.
+
+\begin{definition}[Store]\label{def:store}
+A node maintains a \emph{store}
+\[
+  \Sigma \;=\; (\sigma,\; \T,\; V,\; F,\; J,\; h_j,\; \hmax),
+\]
+where:
+\begin{itemize}
+  \item $\sigma$ is the \emph{state map}, assigning each accepted block its per-chain post-state (Section~\ref{sec:model});
+  \item $\T$ is the \emph{block tree}, the set of accepted blocks;
+  \item $V$ is the set of votes the owning validator has cast so far;
+  \item $F$ is the \emph{store-finalized block};
+  \item $J$ is the \emph{store root}: the block of the highest-key justification ever observed;
+  \item $h_j$ is the height component of that justification key;
+  \item $\hmax \in \mathbb{N}$ is the maximum state-height $\sigma[B].h$ over $B \in \T$.
+\end{itemize}
+The genesis store has $\T = \{\genesis\}$, $V = \emptyset$, $F = J = \genesis$, $h_j = 0$, $\hmax = 0$.
+\end{definition}
+
+The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$.
+We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F$, $\Sigma.J$, $\Sigma.h_j$, $\Sigma.\hmax$ for field access.
+The store key associated with the root is $(\Sigma.h_j,\, \hash(\Sigma.J))$.
+
+\paragraph{Viable subtree.}
+The store also defines a \emph{viable subtree} $\viableTree(\Sigma) \subseteq \Sigma.\T$, gating which blocks $\getConfirmed$ may return.
+
+\begin{definition}[Viable subtree]\label{def:viable}
+A \emph{leaf} of $\Sigma.\T$ is a block with no proper descendant in $\Sigma.\T$.
+Define \emph{viability} recursively:
+\begin{itemize}
+  \item a leaf~$B$ is \emph{viable} iff $\sigma[B].h \geq \Sigma.\hmax - 1$;
+  \item an internal block~$B$ is viable iff some descendant of~$B$ in $\Sigma.\T$ is viable.
+\end{itemize}
+The \emph{viable subtree} is $\viableTree(\Sigma) \coloneqq \{B \in \Sigma.\T : B \text{ is viable}\}$.
+Equivalently, $B \in \viableTree(\Sigma)$ iff some leaf $L \succeq B$ has $\sigma[L].h \geq \Sigma.\hmax - 1$.
+\end{definition}
+
+The viability filter discards branches whose tip lags the most recently advanced chain by more than one height.
+Under $f < n/3$, Lemma~\ref{lem:mainsafety} forces every block at $\sigma$-height strictly greater than~$h_F$ to descend from~$F$, so when $\hmax > h_F$ any block at $\sigma$-height~$\hmax$ descends from~$F$ (and when $\hmax = h_F$, $F$ itself satisfies $\sigma[F].h = \hmax \geq \hmax - 1$); either way the filter is automatic for finalized blocks.
+Blocks at $\sigma$-height $\hmax - 1$ may still conflict with~$F$, since mainsafety constrains only strictly higher heights --- this is why $\Sigma.J$ remains the primary walk-from block in the cascade whenever it has not itself been filtered out.
+$\Sigma.F$ itself is always viable (Lemma~\ref{lem:F-viable} below): the \onBlock assertion $\Sigma.F \preceq B$ makes every newly admitted block a descendant of $\Sigma.F$, so the block driving any $\Sigma.\hmax$ bump is itself a viable witness for $\Sigma.F$.
+
+\paragraph{Store mutators.}
+The acceptance routine \onBlock (Figure~\ref{alg:store}) admits~$B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F \preceq B$.
+It runs \processSlot once per slot from $\Sigma.\sigma[B.\parent].s + 1$ up to $B.\slot$ (so any height advance enabled by the accumulated tally fires before~$B$'s votes are folded in), then $\processBlock(\cdot, B)$; the resulting post-state $\sigma'$ becomes $\Sigma.\sigma[B]$.
+The post-state then offers the justified checkpoint $(\sigma'.J,\, \sigma'.h_j)$ to \updateJustified and the finalized block $\sigma'.F$ to \updateFinalized; $\hmax$ is bumped to $\max(\Sigma.\hmax,\, \sigma'.h)$ before either guard is evaluated, so the viability filter sees the new maximum.
+
+$\updateJustified(\Sigma, J', h')$ first filters out any candidate~$J'$ with $J' \not\succeq \Sigma.F$ and then updates $(\Sigma.J,\, \Sigma.h_j)$ iff the candidate's justification key strictly exceeds $(\Sigma.h_j,\, \hash(\Sigma.J))$ in lex order; this maintains $J$ incrementally as the lex-max justification ever observed on a chain extending the current~$F$, never recomputed.
+$\updateFinalized(\Sigma, F')$ sets $\Sigma.F \gets F'$ iff $F' \succ \Sigma.F$, $F' \preceq \Sigma.J$, \emph{and} $F' \in \viableTree(\Sigma)$; the final clause is the \emph{viability guard}, which prevents $\Sigma.F$ from settling at a block the height filter has rendered unreachable from $\getConfirmed$.
+
+$\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, under synchrony, is safe in the sense that it will not be reverted as long as more than half of the online validators are honest.
+Here $\Omega$ represents the state of the available chain --- whatever extra information the validator uses to disambiguate among viable descendants of the walk-from block.
+The protocol fixes the walk-from rule via a two-way cascade: walk from $\Sigma.J$ when $\Sigma.J \in \viableTree(\Sigma)$, and otherwise walk from $\Sigma.F$ (always viable; Lemma~\ref{lem:F-viable}).
+The choice among admissible descendants is left to~$\Omega$.
+Different validators may pass different~$\Omega$, and a single validator may pass different~$\Omega$ at different call sites.
+
+\begin{figure}[H]
+\caption{Store and fork-choice root}\label{alg:store}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F \gets \genesis,\ \Sigma.J \gets \genesis,\ \Sigma.h_j \gets 0,\ \Sigma.\hmax \gets 0,$
+\State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
+\vspace{3pt}
+
+\Function{\onBlock}{$\Sigma,\; B$}
+  \State \textbf{assert} $B.\parent \in \Sigma.\T$
+  \State \textbf{assert} $\Sigma.F \preceq B$
+  \State $\Sigma.\T \gets \Sigma.\T \cup \{B\}$
+  \State $\sigma' \gets \Sigma.\sigma[B.\parent]$
+  \While{$\sigma'.s < B.\slot$} \Comment{Advance through every intervening slot}
+    \State $\sigma' \gets \processSlot(\sigma')$
+  \EndWhile
+  \State $\sigma' \gets \processBlock(\sigma',\; B)$
+  \State $\Sigma.\sigma[B] \gets \sigma'$
+  \State $\Sigma.\hmax \gets \max(\Sigma.\hmax,\; \sigma'.h)$
+  \State $\Sigma \gets \updateJustified(\Sigma,\; \sigma'.J,\; \sigma'.h_j)$
+  \State $\Sigma \gets \updateFinalized(\Sigma,\; \sigma'.F)$
+  \State \Return $\Sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\updateJustified}{$\Sigma,\; J',\; h'$} \Comment{$F$-filter, then running max}
+  \If{$\Sigma.F \preceq J'$ \textbf{and} $(h',\, \hash(J')) > (\Sigma.h_j,\, \hash(\Sigma.J))$}
+    \State $\Sigma.J \gets J'$; \;\; $\Sigma.h_j \gets h'$
+  \EndIf
+  \State \Return $\Sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\updateFinalized}{$\Sigma,\; F'$}
+  \If{$F' \succ \Sigma.F$ \textbf{and} $F' \preceq \Sigma.J$ \textbf{and} $F' \in \viableTree(\Sigma)$}
+    \State $\Sigma.F \gets F'$
+  \EndIf
+  \State \Return $\Sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\getConfirmed}{$\Sigma,\; \Omega$}
+  \State $R \gets \Sigma.J$ \textbf{if} $\Sigma.J \in \viableTree(\Sigma)$ \textbf{else} $\Sigma.F$ \Comment{$\Sigma.F$ always viable; Lemma~\ref{lem:F-viable}}
+  \State \Return a block in $\Sigma.\T$ with $\sigma$-height $\geq \Sigma.\hmax - 1$ that descends from $R$, depending on~$\Omega$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+The $F$-filter in \updateJustified never discards a key-dominant event: Theorem~\ref{thm:fleqr} below shows that $F$ advances only to blocks $\preceq J$, so every justification whose key could beat the current root remains on the $F$-chain.
+
+\subsection{Store invariants and safety}
+
+\subsubsection*{Unconditional invariants}
+
+\begin{lemma}[$h_j$ monotonicity]\label{lem:Rs-key-monotone}
+$\Sigma.h_j$ is non-decreasing over time, and the justification key $(\Sigma.h_j,\, \hash(\Sigma.J))$ is non-decreasing in lex order.
+\end{lemma}
+
+\begin{proof}
+Both $\Sigma.J$ and $\Sigma.h_j$ change only inside \updateJustified, whose guard enforces that the new key strictly exceeds the old in lex order; in particular the height coordinate $h_j$ is the leading component, so it is non-decreasing.
+\end{proof}
+
+\begin{theorem}[Local irreversibility of finality]\label{thm:finperm}
+Once a node sets $\Sigma.F = F$, $\Sigma.F$ descends from~$F$ at all future times.
+\end{theorem}
+
+\begin{proof}
+$\Sigma.F$ is updated only by \updateFinalized, whose guard $F' \succ \Sigma.F$ forces strict extension along~$\preceq$.
+\end{proof}
+
+\begin{theorem}[$F \preceq J$]\label{thm:fleqr}
+The store maintains $\Sigma.F \preceq \Sigma.J$ at all times.
+\end{theorem}
+
+\begin{proof}
+By induction on store operations.
+At genesis, $F = J = \genesis$, so $F \preceq J$.
+Assume the invariant before a call to either mutator in Figure~\ref{alg:store}.
+
+\emph{\updateJustified.}
+$F$ is untouched, and $J$ either stays or is replaced by a candidate~$J'$ that passed the $J' \succeq \Sigma.F$ filter; either way $J \succeq F$.
+
+\emph{\updateFinalized.}
+$J$ is untouched, and the guard $F' \preceq \Sigma.J$ ensures $F \gets F' \preceq J$.
+\end{proof}
+
+\begin{remark}[Store-finalized invariant]\label{rem:fs-invariant}
+At all times $\Sigma.F$ is either $\genesis$ or a block that was finalized on some chain; moreover, whenever a justification with target~$J^\star$ has fired at height~$h^\star$ on some chain processed by the node, the justification $(J^\star,\, h^\star)$ was offered to \updateJustified once $J^\star \succeq \Sigma.F$ at the moment of offering.
+$\Sigma.F$ only advances via \updateFinalized to $F' = \sigma[B].F$, and $\sigma[B].F \neq \genesis$ requires the finality branch of \processHeight to have fired on~$B$'s chain, so $F'$ is a block finalized on that chain.
+\end{remark}
+
+\begin{remark}[$\viableTree$ shrinks only when $\Sigma.\hmax$ grows]\label{rem:viable-monotone}
+Adding a block to $\Sigma.\T$ never removes any block from $\viableTree(\Sigma)$ unless the addition also increases $\Sigma.\hmax$.
+The viability threshold $\Sigma.\hmax - 1$ depends only on $\Sigma.\hmax$; while it is fixed, every previously viable leaf remains viable and every previously viable internal block retains its viable leaf witness, so $\viableTree(\Sigma)$ can only grow.
+Only an $\Sigma.\hmax$ bump can disqualify leaves whose $\sigma$-height falls below the new threshold.
+\end{remark}
+
+\begin{lemma}[$\Sigma.F$ is always viable]\label{lem:F-viable}
+$\Sigma.F \in \viableTree(\Sigma)$ at all times.
+\end{lemma}
+
+\begin{proof}
+At genesis, $\Sigma.F = \genesis$ and $\Sigma.\hmax = 0$, so $\genesis$ is a viable leaf.
+Inductively, $\Sigma.F$ changes only via \updateFinalized, whose viability guard ensures the new value is viable.
+Block additions that do not bump $\Sigma.\hmax$ preserve $\Sigma.F$'s viability by Remark~\ref{rem:viable-monotone}.
+The remaining case is an $\Sigma.\hmax$ bump in \onBlock with new block~$B$ satisfying $\sigma[B].h > \Sigma.\hmax$; after the bump $\Sigma.\hmax = \sigma[B].h$, and the assertion $\Sigma.F \preceq B$ makes~$B$ --- a leaf at the moment of addition with $\sigma[B].h$ equal to the new $\Sigma.\hmax$ --- a viable leaf descendant of~$\Sigma.F$, witnessing $\Sigma.F \in \viableTree(\Sigma)$.
+\end{proof}
+
+\begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
+Once a node sets $\Sigma.F = F$, $\getConfirmed(\Sigma, \Omega)$ returns a block descending from~$F$ at all future times, for every $\Omega$.
+\end{theorem}
+
+\begin{proof}
+By Theorems~\ref{thm:finperm} and~\ref{thm:fleqr}, $F \preceq \Sigma.F \preceq \Sigma.J$ at all future times.
+Both branches of $\getConfirmed$ return a descendant of $\Sigma.J$ or $\Sigma.F$; either descends from~$F$.
+\end{proof}
+
+\subsubsection*{Further properties under fewer than $n/3$ slashable validators}
+
+\begin{lemma}[Justification chain]\label{lem:certchain}
+Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and a justification $(C,\, h)$ has fired on any chain processed by the node with $h \geq h_F$, then $F$ and~$C$ are compatible, with $F \prec C$ when $h > h_F$.
+\end{lemma}
+
+\begin{proof}
+If $h_F = 0$ then $F = \genesis$ and compatibility is trivial; assume $h_F \geq 1$.
+The justification fired at the post-state of some processed block~$B$ whose \processSlot call triggered the justification branch with $(\sigma[B].J,\, \sigma[B].h_j) = (C,\, h)$, so $C \preceq B$ and $\sigma[B].h \geq h + 1$ (justification advances height).
+Lemma~\ref{lem:mainsafety} at $\sigma[B].h > h_F$ gives $F \preceq B$, and with $C \preceq B$ this yields $F \sim C$.
+For $h > h_F$: $\sigma[F].h = h_F < h = \sigma[C].h$ by Remark~\ref{rem:fresh-equiv}, and state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) forces $F \prec C$ on the comparable pair.
+\end{proof}
+
+\begin{lemma}[Upgrade property]\label{lem:upgrade}
+Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B$ with $\sigma[B].J = F$ and $\sigma[B].h_j = h_F$ has been processed by the node, then $\Sigma.J \succeq F$ at all future times.
+\end{lemma}
+
+\begin{proof}
+Let $F^0 \coloneqq \Sigma.F$ at the moment $\onBlock(B)$ offered $(F, h_F)$ to \updateJustified.
+Both $F^0$ and $F$ are genesis or finalized (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} makes them comparable.
+If $F \preceq F^0$, Theorem~\ref{thm:fleqr} gives $\Sigma.J \succeq \Sigma.F \succeq F^0 \succeq F$ at that moment, and Theorems~\ref{thm:finperm} and~\ref{thm:fleqr} preserve $\Sigma.J \succeq \Sigma.F \succeq F$ thereafter.
+Otherwise $F^0 \prec F$ strictly: the $F$-filter $\Sigma.F \preceq F$ passes, so the call brings $(\Sigma.h_j, \hash(\Sigma.J)) \geq (h_F, \hash(F))$ in lex order, preserved by Lemma~\ref{lem:Rs-key-monotone}.
+At any later moment, $\Sigma.h_j \geq h_F$, and the current $\Sigma.J$ is justified at some $h' \geq h_F$ on a processed chain: if $h' > h_F$, Lemma~\ref{lem:certchain} gives $F \prec \Sigma.J$; if $h' = h_F$, the justification quorum~$Q'$ for $\Sigma.J$ at $h_F$ and the finality quorum~$Q_F$ for~$F$ at $h_F$ intersect in $\geq n/3$, and a non-slashable $v \in Q' \cap Q_F$ forces $\Sigma.J = F$ by E1.
+Either way $\Sigma.J \succeq F$.
+\end{proof}
+
+\begin{lemma}[Finalized blocks are viable]\label{lem:viable-finalized}
+Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ and some block~$B$ with $\sigma[B].J = F$ and $\sigma[B].h_j = h_F$ has been processed by the node, then $F \in \viableTree(\Sigma)$ at all future times.
+\end{lemma}
+
+\begin{proof}
+Processing of~$B$ with $\sigma[B].h_j = h_F$ means the justification branch of \processHeight fired with target~$F$ at pre-state height~$h_F$ on~$B$'s chain, advancing~$\sigma$ to $\sigma[B].h \geq h_F + 1$; hence $\Sigma.\hmax \geq h_F + 1 > h_F$ at all future times.
+Pick any leaf $L \in \Sigma.\T$ with $\sigma[L].h = \Sigma.\hmax$ (some block achieves~$\Sigma.\hmax$ by definition, and any leaf descendant preserves the maximum by state-height monotonicity).
+Then $L$ is viable, and Lemma~\ref{lem:mainsafety} gives $F \preceq L$, so $L$ witnesses $F \in \viableTree(\Sigma)$.
+\end{proof}
+
+\begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
+Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by \onBlock and $\sigma[B].F = F'$, then after processing $\Sigma.F \succeq F'$.
+\end{theorem}
+
+\begin{proof}
+If $\Sigma.F \succeq F'$ already, processing~$B$ preserves the bound by monotonicity of~$\Sigma.F$ (Theorem~\ref{thm:finperm}).
+Otherwise $\Sigma.F$ is genesis or finalized (Remark~\ref{rem:fs-invariant}), so Lemma~\ref{lem:finchain} gives $\Sigma.F \sim F'$ and hence $\Sigma.F \prec F'$.
+$\sigma[B].F = F'$ requires some ancestor~$B' \preceq B$ with $\sigma[B'].J = F'$ and $\sigma[B'].h_j = h_{F'}$; $B'$ was processed before~$B$ (parent-first), so Lemma~\ref{lem:upgrade} gives $\Sigma.J \succeq F'$, hence the $F' \preceq \Sigma.J$ guard passes.
+For the viability guard, Lemma~\ref{lem:viable-finalized} gives $F' \in \viableTree(\Sigma)$.
+All three guards pass, so $\Sigma.F \gets F'$.
+\end{proof}
+
+\begin{theorem}[Lock-in]\label{thm:lockin}
+Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~$h_F$ on any chain, and some block~$B$ with $\sigma[B].J = F$ and $\sigma[B].h_j = h_F$ has been processed by the node, then $\Sigma.J \succeq F$ at all future times, $F \in \viableTree(\Sigma)$ at all future times, and $\getConfirmed(\Sigma, \Omega)$ always returns a descendant of~$F$, for every $\Omega$.
+\end{theorem}
+
+\begin{proof}
+$\Sigma.J \succeq F$ by Lemma~\ref{lem:upgrade}; $F \in \viableTree(\Sigma)$ by Lemma~\ref{lem:viable-finalized}.
+If $\Sigma.J \in \viableTree(\Sigma)$, $\getConfirmed$ enters its first branch and returns a descendant of $\Sigma.J \succeq F$.
+Otherwise every leaf in $\Sigma.J$'s subtree has $\sigma$-height $< \Sigma.\hmax - 1$, so $\sigma[\Sigma.J].h \leq \Sigma.\hmax - 2$ by state-height monotonicity (Lemma~\ref{lem:slotmono}); combined with $\sigma[\Sigma.J].h \geq h_F$ (state-height monotonicity along $F \preceq \Sigma.J$, using $\sigma[F].h = h_F$ from Remark~\ref{rem:fresh-equiv}), this gives $\Sigma.\hmax \geq h_F + 2$.
+\getConfirmed's second branch returns a block~$T$ with $\sigma[T].h \geq \Sigma.\hmax - 1 \geq h_F + 1 > h_F$, so Lemma~\ref{lem:mainsafety} gives $F \preceq T$.
+\end{proof}
+
+\begin{theorem}[Order independence]\label{thm:orderindep}
+Unless $\geq n/3$ validators are slashable: the store state after processing a set of blocks depends only on which blocks have been processed, not on their order.
+Consequently, two nodes that have processed the same set of blocks agree on $(\sigma,\, \T,\, F,\, J,\, h_j,\, \hmax)$, and hence on $\viableTree$.
+\end{theorem}
+
+\begin{proof}
+Each block's post-state is a deterministic function of itself and its parent's post-state, so $\sigma$ depends only on the processed set; in particular $\Sigma.\hmax$ and $\viableTree(\Sigma)$ depend only on the set.
+
+\emph{$F$.} By Lemma~\ref{lem:finchain}, $\{\sigma[B].F : B \in \T\}$ is a chain with maximum $F_{\max}$, attained at some processed~$B^\ast$.
+Remark~\ref{rem:fs-invariant} forces $\Sigma.F$ into this chain, so $\Sigma.F \preceq F_{\max}$; once $B^\ast$ has been processed, Theorem~\ref{thm:finlive} gives $\Sigma.F \succeq F_{\max}$.
+
+\emph{$J$.} The multiset~$D$ of cert descriptors offered to \updateJustified is a deterministic function of the processed set: each block contributes its post-state's justified checkpoint exactly once.
+Write $K_{\max} \coloneqq (h_{F_{\max}},\, \hash(F_{\max}))$.
+For any $(C, h) \in D$ with $h \geq h_{F_{\max}}$: if $h > h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succ F_{\max}$; if $h = h_{F_{\max}}$, finality of $F_{\max}$ at $h_{F_{\max}}$ provides a finality quorum~$Q_F$ of size $\geq 2n/3$ with $\finalizeHeight = h_{F_{\max}}$ and $\finalizeTarget = F_{\max}$, while the descriptor's existence gives a justification quorum~$Q'$ at height~$h_{F_{\max}}$ targeting~$C$; quorum intersection picks a non-slashable $v \in Q' \cap Q_F$, and E1 (as in Lemma~\ref{lem:upgrade}) forces $C = F_{\max}$.
+Descriptors with $h < h_{F_{\max}}$ have key strictly below $K_{\max}$ on the leading coordinate, so once $\Sigma.h_j \geq h_{F_{\max}}$ holds they are dominated.
+Hence $\Sigma.J$'s final value is the lex-max over $\{(C, h) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
+\end{proof}
+
+\begin{lemma}[Justifications stay at or below~$\Sigma.h_j$]\label{lem:no-high-just}
+Unless $\geq n/3$ validators are slashable, every justification $(C, h)$ that has fired on any chain processed by the node satisfies $h \leq \Sigma.h_j$ at all subsequent times.
+\end{lemma}
+
+\begin{proof}
+The justification fires inside an \onBlock call on some processed block~$B$, at which point Remark~\ref{rem:fs-invariant} gives the descriptor $(C, h)$ offered to \updateJustified.
+$C$ lies on $B$'s chain (it is the justified target), and so does $\Sigma.F$ (by $\Sigma.F \preceq B$), so $\Sigma.F$ and~$C$ are comparable.
+If $\Sigma.F \not\preceq C$, then $\Sigma.F \succ C$, so $h_F = \sigma[\Sigma.F].h \geq \sigma[C].h = h$ by state-height monotonicity (Lemma~\ref{lem:slotmono}, applied along $C \prec \Sigma.F$, using $\sigma[C].h = h$ from Remark~\ref{rem:fresh-equiv}).
+Combining $\Sigma.F \preceq \Sigma.J$ (Theorem~\ref{thm:fleqr}) with $\sigma[\Sigma.J].h = \Sigma.h_j$ (Remark~\ref{rem:fresh-equiv}) and the same state-height monotonicity along $\Sigma.F \preceq \Sigma.J$ gives $\Sigma.h_j \geq h_F \geq h$.
+Otherwise the $F$-filter passes and \updateJustified's lex test forces $\Sigma.h_j \geq h$ after the call.
+Lemma~\ref{lem:Rs-key-monotone} preserves the bound at all later times.
+\end{proof}
+
+\section{Inactivity leak}\label{sec:leak}
+
+This section extends the per-chain state machine of Section~\ref{sec:model} with a penalty counter and a new transition function \processInactivityPenalties, invoked each slot by an extended \processSlot (Figure~\ref{alg:leak-processslot}); \processBlock, \processHeight, and \processVote are unchanged.
+Write $T = \getConfirmed(\Sigma, \Omega)$ for the \emph{canonical chain}, with $\Omega$ the validator's auxiliary state.
+
+Two results follow.
+Theorem~\ref{thm:tightness} is purely state-logic: on any fixed chain, the total penalty increment over a non-finality period is at least $(T-1) \cdot n/3$, with no hypothesis on synchrony, honesty, or the slashable set.
+Theorem~\ref{thm:fairness} is local to a single honest~$i$: the vote~$i$ produces per Definition~\ref{def:voting-rule}, once included on any extension of~$i$'s canonical chain still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
+Layer~2 exemption is out of scope: it depends on quorum formation on a common target, not on any local property of~$i$.
+
+\subsection{Penalty units}
+
+Augment the per-chain state tuple with one non-negative counter $\sigma.\penalties[1..n]$, initialized to~$0$ at genesis; no other field is added or modified.
+Figure~\ref{alg:leak-processslot} replaces \processSlot from Section~\ref{sec:model} with a version that snapshots the pre-advance state and invokes \processInactivityPenalties after \processHeight.
+The store of Section~\ref{sec:store} invokes this extended \processSlot in place of the base one.
+
+\begin{figure}[H]
+\caption{Penalty-tracking state extension (leak section)}\label{alg:leak-processslot}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{\processSlot}{$\sigma$} \Comment{extended: tracks penalties}
+  \State $\sigma.s \gets \sigma.s + 1$
+  \State $\sigma_{\mathrm{pre}} \gets \sigma$ \Comment{snapshot of pre-advance state}
+  \State $\sigma \gets \processHeight(\sigma)$
+  \State $\sigma \gets \processInactivityPenalties(\sigma_{\mathrm{pre}},\; \sigma)$
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\processInactivityPenalties}{$\sigma_{\mathrm{pre}},\; \sigma_{\mathrm{post}}$}
+  \If{$\sigma_{\mathrm{pre}}.h = \sigma_{\mathrm{post}}.h$} \Comment{Layer~1: stall}
+    \For{each $i \in \{1, \ldots, n\}$}
+      \If{$\sigma_{\mathrm{post}}.\timeouts[i] = \mathtt{false}$}
+        \State $\sigma_{\mathrm{post}}.\penalties[i] \gets \sigma_{\mathrm{post}}.\penalties[i] + 1$
+      \EndIf
+    \EndFor
+  \EndIf
+  \If{$\sigma_{\mathrm{pre}}.J = \sigma_{\mathrm{post}}.J$} \Comment{Layer~2 target: justification did \emph{not} advance}
+    \State $T^* \gets \arg\max_{T' \in \{\sigma_{\mathrm{pre}}.\targets[i] \,:\, \sigma_{\mathrm{pre}}.\targets[i] \neq \bot\}} |\{i : \sigma_{\mathrm{pre}}.\targets[i] = T'\}|$
+    \For{each $i \in \{1, \ldots, n\}$}
+      \If{$\sigma_{\mathrm{pre}}.\targets[i] \neq T^*$ \textbf{or} $\sigma_{\mathrm{pre}}.\targets[i] = \bot$}
+        \State $\sigma_{\mathrm{post}}.\penalties[i] \gets \sigma_{\mathrm{post}}.\penalties[i] + 1$
+      \EndIf
+    \EndFor
+  \EndIf
+  \If{$\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$ \textbf{and} $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$} \Comment{Layer~2 finalize}
+    \For{each $i \in \{1, \ldots, n\}$}
+      \If{$i \notin \sigma_{\mathrm{pre}}.P$}
+        \State $\sigma_{\mathrm{post}}.\penalties[i] \gets \sigma_{\mathrm{post}}.\penalties[i] + 1$
+      \EndIf
+    \EndFor
+  \EndIf
+  \State \Return $\sigma_{\mathrm{post}}$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\paragraph{Reading Figure~\ref{alg:leak-processslot}.}
+\processInactivityPenalties checks three independent guards; any subset may fire at a given slot.
+
+\emph{Layer~1 (stall).} Fires when the slot did not advance height.
+Every~$i$ with $\sigma_{\mathrm{post}}.\timeouts[i] = \mathtt{false}$ is bumped, i.e.\ every validator that failed to cast a vote setting the timeout marker at the current height ($\timeouts$ is not reset at a stall).
+The marker is set by either a timeout vote (target~$\bot$) at the current height or a height-fresh justification vote with target on this chain (Section~\ref{sec:model}).
+
+\emph{Layer~2 target.} Fires when the justification branch of \processHeight did not fire (else $J$ would strictly advance by Lemma~\ref{lem:slotmono}).
+$T^*$ is the plurality target across $\sigma_{\mathrm{pre}}.\targets$ (deterministic tiebreak), or $\bot$ if no justification votes have been registered; the second disjunct of the guard bumps non-voters when $T^* = \bot$ (in which case all~$n$ validators are bumped).
+Since no $2n/3$-quorum on a single target formed, the plurality count is $< 2n/3$, so $|\{i : \sigma_{\mathrm{pre}}.\targets[i] \neq T^* \vee \sigma_{\mathrm{pre}}.\targets[i] = \bot\}| > n/3$.
+
+\emph{Layer~2 finalize.} Fires when a pending-finality gap is open at the start of the slot ($\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$) and $F$ did not advance; every $i \notin \sigma_{\mathrm{pre}}.P$ is bumped.
+The finality branch of \processHeight, when it fires, sets $\sigma_{\mathrm{post}}.F = \sigma_{\mathrm{pre}}.J \succ \sigma_{\mathrm{pre}}.F$, so this guard is skipped automatically.
+
+\subsection{Leak tightness}
+
+\begin{definition}[Non-finality period]\label{def:non-finality-period}
+Fix a chain and write $\sigma_{\mathrm{pre}}^{(t)}, \sigma_{\mathrm{post}}^{(t)}$ for its pre/post-\processHeight snapshots at slot~$t$.
+A \emph{non-finality period} is a maximal interval $[t_1, t_T]$ of consecutive slots on which $F$ is stuck, i.e., $\sigma_{\mathrm{post}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.F$ throughout.
+Each such slot falls into exactly one category:
+\begin{itemize}
+  \item \emph{pending-stuck}: $\sigma_{\mathrm{pre}}^{(t)}.F \prec \sigma_{\mathrm{pre}}^{(t)}.J$ (pending-finality gap open at the start);
+  \item \emph{stable-stuck}: $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and $J$ does not advance at~$t$;
+  \item \emph{transition}: $\sigma_{\mathrm{pre}}^{(t)}.F = \sigma_{\mathrm{pre}}^{(t)}.J$ and the justification branch fires at~$t$ (opening a gap by slot's end).
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Non-finality period penalty bound]\label{thm:tightness}
+Over any non-finality period of length $T \geq 1$ on any chain, the total penalty increment across all validators assessed by \processInactivityPenalties on that chain is at least $(T - 1) \cdot n/3$.
+\end{theorem}
+
+\begin{proof}
+Fix a non-finality period $[t_1, t_T]$.
+We show (i) at most one slot is transition, and (ii) every pending-stuck or stable-stuck slot contributes $> n/3$ to the total penalty increment.
+
+\emph{(i) At most one transition slot.}
+After a transition at~$t$, $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm{pre}}^{(t)}.F$; since $F$ does not advance in the period and $J$ is monotone across slots, $\sigma_{\mathrm{pre}}^{(t')}.F \prec \sigma_{\mathrm{pre}}^{(t')}.J$ at every later $t' > t$, making every such $t'$ pending-stuck.
+
+\emph{(ii) Per-slot charge $> n/3$.}
+
+\emph{Pending-stuck.} The Layer~2 finalize guard fires at~$t$.
+The finality branch of \processHeight did not fire (else $F$ would advance), so $|\sigma_{\mathrm{pre}}^{(t)}.P| < 2n/3$ and $|\{i : i \notin \sigma_{\mathrm{pre}}^{(t)}.P\}| > n/3$.
+
+\emph{Stable-stuck.} The Layer~2 target guard fires at~$t$.
+The justification branch did not fire, so the plurality count on $\sigma_{\mathrm{pre}}^{(t)}.\targets$ is $< 2n/3$ (counting $T^* = \bot$ as~$0$); hence the bumped set has size $> n/3$.
+
+At most one slot is transition, so at least $T - 1$ slots are pending-stuck or stable-stuck; each contributes $> n/3$ by~(ii), and Layer~1 adds only non-negative charges.
+Summing gives total increment $\geq (T-1) \cdot n/3$.
+\end{proof}
+
+\subsection{Honest voting rule}
+
+We state the honest rule explicitly, as it underpins the leak fairness proof.
+The rule consumes three pieces of validator-local state: the store~$\Sigma$ (drives fork-choice), the auxiliary~$\Omega$ (disambiguates among admissible \getConfirmed outputs), and a new \emph{vote record}~$\Delta$ (the validator's own past-vote summary, used to avoid slashable signatures).
+
+\begin{definition}[Vote record]\label{def:voterecord}
+The vote record~$\Delta$ associates to each height~$h$ a triple $(\Delta.T(h),\, \Delta.\tau(h),\, \Delta.\lambda(h)) \in (\mathrm{Block} \cup \{\bot\}) \times \mathtt{bool} \times \mathtt{bool}$, initialized to $(\bot,\, \mathtt{false},\, \mathtt{false})$:
+$\Delta.T(h)$ is~$\bot$ until~$i$'s first non-$\bot$ vote at~$h$, after which it pins the target of that vote; $\Delta.\tau(h)$ records that~$i$ has voted timeout at~$h$; and $\Delta.\lambda(h)$ records that~$i$ has voted to finalize~$\Delta.T(h)$ at height~$h$ (i.e.\ has cast a finalize-bearing vote with $\finalizeHeight = h$ and $\finalizeTarget = \Delta.T(h)$).
+$\Delta$ is updated only by \recordVote (Figure~\ref{alg:voting-rule}), invoked once per signed vote.
+The honest reachable per-height configurations are $(\bot, \mathtt{false}, \mathtt{false})$, $(T, \mathtt{false}, \mathtt{false})$, $(T, \mathtt{false}, \mathtt{true})$, and $(T, \mathtt{true}, \mathtt{false})$; the configuration $(T, \mathtt{true}, \mathtt{true})$ is the slashable trace (a finalize-bearing vote at~$h$ alongside a timeout vote at~$h$).
+
+\smallskip
+\noindent\emph{Implementation.}
+$\Delta$ may safely drop entries at heights below $\Sigma.\hmax - 1$; \getFinalVote then conservatively clears the finalize commitment at older heights (because the gate $\Delta.T(h_f) = T_f$ fails on a missing entry), but every emitted vote remains E1-safe.
+$\Delta$ is the entire state needed for safe vote signing on the validator-client side, depending only on~$\Delta$, separated from fork-choice on the beacon-client side (depending on $\Sigma$ and~$\Omega$).
+\end{definition}
+
+\begin{definition}[Honest voting rule]\label{def:voting-rule}
+At each voting opportunity, $i$ produces its vote by $\getFinalVote(\Delta,\, \getBaseVote(\Sigma, \Omega))$ (Figure~\ref{alg:voting-rule}) and signs the result.
+$\getBaseVote$ reads fork-choice state to assemble an unconstrained candidate; $\getFinalVote$ adjusts it to respect~$\Delta$'s prior commitments and folds the new vote back into~$\Delta$ via \recordVote.
+\end{definition}
+
+\begin{figure}[H]
+\caption{Honest voting rule}\label{alg:voting-rule}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{\getBaseVote}{$\Sigma,\; \Omega$} \Comment{the unconstrained vote}
+  \State $T \gets \getConfirmed(\Sigma,\; \Omega)$
+  \State $h_c \gets \sigma[T].h$; \;\; $h_f \gets \sigma[T].h_j$; \;\; $T_f \gets \sigma[T].J$
+  \State \Return $(i,\; h_c,\; T,\; h_f,\; T_f)$
+\EndFunction
+\vspace{3pt}
+
+\Function{\getFinalVote}{$\Delta,\; v$}
+  \State $(i,\; h_c,\; T,\; h_f,\; T_f) \gets v$
+  \State \textbf{assert} $h_c > h_f$ \Comment{vote-height strictly above the finalize-commitment height}
+  \vspace{3pt}
+  \If{$\Delta.\lambda(h_c) = \mathtt{true}$} \Comment{lock at $h_c$: re-submit lock target}
+    \State $T \gets \Delta.T(h_c)$
+  \ElsIf{$\Delta.T(h_c) \neq \bot$} \Comment{voted at $h_c$ before, not locked: timeout}
+    \State $T \gets \bot$
+  \EndIf
+  \vspace{3pt}
+  \If{$\Delta.T(h_f) \neq T_f$ \textbf{or} $\Delta.\tau(h_f) = \mathtt{true}$} \Comment{cannot E1-safely commit to finalize}
+    \State $(h_f,\, T_f) \gets (\bot,\, \bot)$
+  \EndIf
+  \vspace{3pt}
+  \State $v' \gets (i,\; h_c,\; T,\; h_f,\; T_f)$
+  \State $\recordVote(\Delta,\; v')$
+  \State \Return $v'$
+\EndFunction
+\vspace{3pt}
+
+\Function{\recordVote}{$\Delta,\; v$}
+  \State $h \gets v.\height$; \;\; $h_f \gets v.\finalizeHeight$
+  \If{$v.\target \neq \bot$ \textbf{and} $\Delta.T(h) = \bot$}
+    \State $\Delta.T(h) \gets v.\target$
+  \ElsIf{$v.\target = \bot$}
+    \State $\Delta.\tau(h) \gets \mathtt{true}$
+  \EndIf
+  \If{$v.\finalizeTarget \neq \bot$}
+    \State $\Delta.\lambda(h_f) \gets \mathtt{true}$
+  \EndIf
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+The target adjustment in \getFinalVote produces the lock target when~$i$ is locked at~$h_c$; a timeout when~$i$ has voted at~$h_c$ without locking (so a second non-$\bot$ vote at~$h_c$ would violate per-height target consistency); or the unconstrained~$T$ otherwise (first vote at~$h_c$).
+The finalize fields are kept iff the gate $\Delta.T(h_f) = T_f \wedge \Delta.\tau(h_f) = \mathtt{false}$ holds (so~$i$ previously voted~$T_f$ at~$h_f$ and has not voted timeout there); the assert $h_c > h_f$ rules out the degenerate case where the vote and the commitment would land at the same height (which would be E1-self-slashable when $T \neq T_f$).
+The gate is the same in all three target branches, so locks attach finalize symmetrically with first-votes whenever the gate passes.
+
+\begin{lemma}[Honest E1 safety]\label{lem:honest-e1-safety}
+If validator~$i$ follows Definition~\ref{def:voting-rule}, then $i$ never produces a vote-pair $(v_1, v_2)$ with $v_2.\finalizeTarget \neq \bot$, $v_1.\height = v_2.\finalizeHeight$, and $v_1.\target \neq v_2.\finalizeTarget$.
+\end{lemma}
+
+\begin{proof}
+Write $h_\ast \coloneqq v_2.\finalizeHeight$ and $T_\ast \coloneqq v_2.\finalizeTarget \neq \bot$.
+$v_2$ retained finalize fields, so the gate inside \getFinalVote held at $v_2$'s firing: $\Delta.T(h_\ast) = T_\ast \neq \bot$, $\Delta.\tau(h_\ast) = \mathtt{false}$, and $v_2.\target \neq \bot$; the subsequent \recordVote then set $\Delta.\lambda(h_\ast) \gets \mathtt{true}$.
+Since $v_2.\target \neq \bot$, the target-adjustment in \getFinalVote did not enter its timeout branch, so $v_2.\target = T$ (first-vote) or $v_2.\target = \Delta.T(h_c)$ (lock); either way $v_2.\target \neq \bot$ at $h_c = v_2.\height$, while $\Delta.T(h_\ast) = T_\ast \neq \bot$ at $h_\ast = v_2.\finalizeHeight$.
+
+If $v_1.\height = h_\ast$ and $v_1$ was cast before~$v_2$: $\Delta.\tau$-monotonicity and $\Delta.\tau(h_\ast) = \mathtt{false}$ at $v_2$'s firing rule out $v_1$ being a timeout at~$h_\ast$, so $v_1.\target \neq \bot$.
+$\Delta.T(h_\ast)$ is set once at~$i$'s first non-$\bot$ vote at~$h_\ast$ and pinned thereafter, and the target adjustment in \getFinalVote forces every subsequent non-$\bot$ vote of~$i$ at~$h_\ast$ to equal $\Delta.T(h_\ast)$ (lock branch returns $\Delta.T(h_\ast)$; first-vote branch is unreachable once $\Delta.T(h_\ast) \neq \bot$).
+Hence $v_1.\target = \Delta.T(h_\ast) = T_\ast$.
+
+If $v_1.\height = h_\ast$ and $v_1$ was cast after~$v_2$: at $v_1$'s firing $\Delta.\lambda(h_\ast) = \mathtt{true}$ (set by~$v_2$), so the lock branch fires and $v_1.\target = \Delta.T(h_\ast) = T_\ast$ ($\Delta.T(h_\ast)$ is fixed after~$v_2$'s firing).
+
+If $v_1 = v_2$: $v_1.\height = v_2.\height = h_c$, so the hypothesis $v_1.\height = v_2.\finalizeHeight$ requires $h_c = h_\ast$.
+At genesis ($h_c = h_j = 0$) this collapses with $J = \genesis$: $v_2.\target = \genesis$ in either the first-vote or lock branch ($\Delta.T(0)$ is either~$\bot$, in which case the unconstrained $T = \genesis$, or already $\genesis$, the only block at~$\sigma$-height~$0$); hence $v_1.\target = v_2.\target = \genesis = T_\ast$.
+Post-genesis, every height advance sets $h_j \gets h$ before $h \gets h+1$, giving $h_c \geq h_j + 1 > h_\ast$ at any state where $v_2$ could fire, so $h_c = h_\ast$ does not occur.
+\end{proof}
+
+\begin{lemma}[Per-height justification uniqueness]\label{lem:just-unique-height}
+If $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: for any two blocks $C_1, C_2$ justified at the same height~$h$ on any chains processed by the node, $C_1 = C_2$.
+\end{lemma}
+
+\begin{proof}
+Each justification at height~$h$ on a chain yields a quorum $Q_k$ of size $\geq 2n/3$; quorum intersection picks an honest~$v \in Q_1 \cap Q_2$ contributing a non-$\bot$-target vote at height~$h$ to each.
+Per Definition~\ref{def:voterecord} and the target adjustment in \getFinalVote, every non-$\bot$-target vote of~$v$ at height~$h$ has target equal to $\Delta.T(h)$ (set once at $v$'s first such vote and pinned thereafter; subsequent non-$\bot$ votes at~$h$ come from the lock branch, which returns $\Delta.T(h)$).
+Hence both contributions have the same target, $C_1 = C_2$.
+\end{proof}
+
+\subsection{Leak fairness}
+
+Fairness is local to a single honest validator~$i$: we fix~$i$, its local store~$\Sigma$, its auxiliary state~$\Omega$, and the canonical chain $T = \getConfirmed(\Sigma, \Omega)$.
+The claim is that the vote~$v$ produced by Definition~\ref{def:voting-rule}, once included on any extension of~$T$ still at the same state-height, exempts~$i$ from Layer~1 penalties at that state-height.
+Height advances reset $\targets$ and $\timeouts$ (Section~\ref{sec:model}), so Layer~2 state at the next height is independent of~$i$'s prior votes and no ``lock'' issue propagates.
+
+The proof rests on two facts about the canonical chain.
+First, $T = \getConfirmed(\Sigma,\Omega)$ has $\sigma$-height $\geq \Sigma.\hmax - 1$ by the algorithm spec, so $h_c = \sigma[T].h \in \{\Sigma.\hmax - 1,\, \Sigma.\hmax\}$.
+Second, every locally observed justification at height~$h$ is witnessed by some processed block whose post-state advanced to $\sigma$-height~$h+1$, so $h \leq \Sigma.\hmax - 1$.
+Together: at $h_c = \Sigma.\hmax$ no validator has observed a justification at~$h_c$, so the lock branch is unreachable; at $h_c = \Sigma.\hmax - 1$ the lock branch forces the lock target to coincide with~$\Sigma.J$ via Lemma~\ref{lem:just-unique-height}, and $\Sigma.J$ is itself viable (its witnessing block sits at $\sigma$-height~$\Sigma.\hmax$ as a descendant of~$\Sigma.J$).
+
+\begin{lemma}[Honest vote sets the timeout marker]\label{lem:honest-vote-sets-timeout}
+Assume $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}.
+Let~$i$ be honest with local store~$\Sigma$ and auxiliary state~$\Omega$, $T = \getConfirmed(\Sigma, \Omega)$, and $h_c = \sigma[T].h$.
+Let~$v$ be the vote~$i$ produces at the current slot.
+Then either $v.\target = \bot$ with $v.\height = h_c$, or $v.\target \preceq T$ with $\sigma[v.\target].h = h_c$.
+\end{lemma}
+
+\begin{proof}
+By Definition~\ref{def:voting-rule}, $v.\height = h_c$ in every branch.
+The fallback branch emits $v.\target = \bot$, satisfying the first disjunct.
+The first-vote-at-$h_c$ branch sets $v.\target = T$ with $\sigma[T].h = h_c$ and $T \preceq T$, satisfying the second disjunct.
+
+The remaining branch is the lock branch with $v.\target = T_{\mathrm{lock}}$ fixed by an earlier finalize-bearing vote~$v_0$ of~$i$ with $v_0.\finalizeHeight = h_c$ and $v_0.\finalizeTarget = T_{\mathrm{lock}}$.
+Only the first-vote-at-$h_c$ branch produces finalize-bearing votes, so $v_0$'s firing read $(h_j^0, J^0) = (h_c, T_{\mathrm{lock}})$ from~$i$'s then-canonical state, meaning the justification branch of \processHeight fired with target~$T_{\mathrm{lock}}$ at pre-state height~$h_c$ inside some \onBlock call on a processed block~$B^\star$, whose post-state has $\sigma[B^\star].h \geq h_c + 1$ (height-advance).
+Hence $\Sigma.\hmax \geq h_c + 1$, i.e., $h_c \leq \Sigma.\hmax - 1$.
+
+Since $T = \getConfirmed(\Sigma, \Omega)$ has $\sigma[T].h \geq \Sigma.\hmax - 1$ (algorithm spec), combining with the previous inequality yields $h_c = \sigma[T].h = \Sigma.\hmax - 1$ and $\sigma[B^\star].h = \Sigma.\hmax$.
+The same height-advance argument applied to $\Sigma.J$'s own justification (its witnessing block has $\sigma$-height $\geq \Sigma.h_j + 1$, and that $\sigma$-height is $\leq \Sigma.\hmax$ by definition of~$\hmax$) gives $\Sigma.h_j \leq \Sigma.\hmax - 1 = h_c$, while Lemma~\ref{lem:no-high-just} applied to $T_{\mathrm{lock}}$'s justification at~$h_c$ gives $h_c \leq \Sigma.h_j$.
+Hence $\Sigma.h_j = h_c$, and Lemma~\ref{lem:just-unique-height} forces $\Sigma.J = T_{\mathrm{lock}}$.
+
+$B^\star$ descends from $\Sigma.J = T_{\mathrm{lock}}$ (it carries the justification with target~$T_{\mathrm{lock}}$) at $\sigma$-height~$\Sigma.\hmax$.
+Any leaf $L \succeq B^\star$ in $\Sigma.\T$ has $\sigma[L].h \geq \sigma[B^\star].h = \Sigma.\hmax$ by state-height monotonicity, so $L$ is a viable leaf descendant of~$\Sigma.J$, placing $\Sigma.J \in \viableTree(\Sigma)$.
+\getConfirmed therefore walks from~$\Sigma.J$, so $T \succeq \Sigma.J = T_{\mathrm{lock}}$, with $\sigma[T_{\mathrm{lock}}].h = h_c$ by Remark~\ref{rem:fresh-equiv} on the chain witnessing $T_{\mathrm{lock}}$'s justification.
+\end{proof}
+
+\begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
+Assume $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}.
+Let~$i$ be an honest validator, $\Sigma$ its local store, $\Omega$ its auxiliary state, $T = \getConfirmed(\Sigma, \Omega)$ its canonical chain, and $h_c = \sigma[T].h$ the current canonical state-height.
+Let $v$ be the vote~$i$ produces at the current slot.
+Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$, with auxiliary state $\Omega'$, such that $T' = \getConfirmed(\Sigma', \Omega')$ is an extension of~$T$ with $\Sigma'.\sigma[T'].h = h_c$, and suppose~$v$ is included on~$T'$.
+Then for every slot processed on~$T'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
+\end{theorem}
+
+\begin{proof}
+We show that processing~$v$ on~$T'$ sets $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
+By Section~\ref{sec:model}, $\timeouts[i]$ is set at processing time iff either (a)~$v$ is a timeout vote at the current state-height ($v.\target = \bot$ and $v.\height = \sigma[T'].h = h_c$), or (b)~$v$'s target is height-fresh on~$T'$ ($v.\target \preceq T'$ with $\sigma[v.\target].h = h_c$, equivalently $v.\target.\slot \geq \sigma[T'].s_h$ via Remark~\ref{rem:fresh-equiv}).
+
+Lemma~\ref{lem:honest-vote-sets-timeout} gives the dichotomy.
+In the timeout sub-case, $v = (i, h_c, \bot, \bot, \bot)$ with $\sigma[T'].h = h_c$ satisfies (a) directly.
+In the non-timeout sub-case, $v.\target \preceq T \preceq T'$ with $\sigma[v.\target].h = h_c$, so~$v$ is height-fresh on~$T'$ and (b) holds.
+
+Either way, $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
+$\timeouts$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists and Layer~1 does not bump~$i$.
+\end{proof}
+
+\end{document}
