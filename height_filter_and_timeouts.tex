@@ -39,6 +39,7 @@
 % --- Custom commands ---
 \newcommand{\genesis}{\ensuremath{B_{\mathrm{gen}}}}
 \newcommand{\T}[0]{\ensuremath{\mathcal{T}}}
+\newcommand{\V}[0]{\ensuremath{\mathcal{V}}}
 \newcommand{\slot}[0]{\ensuremath{\operatorname{\mathrm{slot}}}}
 
 \newcommand{\target}{\mathsf{target}}
@@ -56,6 +57,7 @@
 \newcommand{\hash}{\mathsf{hash}}
 \newcommand{\hmax}{\ensuremath{h_{\max}}\xspace}
 \newcommand{\viableTree}{\ensuremath{\mathcal{T}'}}
+\newcommand{\uviable}{ultimately-viable\xspace}
 
 % Procedure names
 \newcommand{\processSlot}{\textsf{processSlot}\xspace}
@@ -83,6 +85,20 @@
 \algdef{SE}[EVENT]{Event}{EndEvent}[1]{\textbf{at}\ #1\ \algorithmicdo}{\algorithmicend\ \textbf{event}}
 \algtext*{EndEvent}
 
+% Define a colored-footnote macro: \newcolorfn{\name}{color}
+% produces a one-arg macro that renders a footnote whose mark and text
+% are both typeset in the given color.
+\newcommand{\newcolorfn}[2]{%
+  \newcommand{#1}[1]{%
+    \begingroup
+    \renewcommand{\thefootnote}{\textcolor{#2}{\arabic{footnote}}}%
+    \footnote{\textcolor{#2}{##1}}%
+    \endgroup
+  }%
+}
+
+\newcolorfn{\RSfn}{red}
+
 \pagestyle{plain}
 
 \renewcommand{\paragraph}[1]{\vspace{7pt}\noindent\textbf{#1}}
@@ -98,6 +114,7 @@
 \newtheorem{corollary}{Corollary}
 \newtheorem{lemma}{Lemma}
 \newtheorem{proposition}{Proposition}
+\newtheorem{property}[theorem]{Property}
 
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
@@ -988,69 +1005,31 @@ For an honest validator~$v$ and time~$t$, write
 \]
 for the cascade root selected inside $\getConfirmed_v^t$ (Figure~\ref{alg:store}).
 
+For an honest validator~$v$ and time~$t$, write
+\[
+  \V_v^t \;\coloneqq\; \{B \in \T'(\Sigma_v^t) \,:\, B \succeq R_v^t \;\wedge\; \sigma[B].h \geq \Sigma_v^t.\hmax-1\}
+\]
+for the set of \uviable\RSfn{Need to find a different terms as viable has already been used} blocks --- those that $\getConfirmed(\Sigma_v^t,\, \cdot)$ may return as the auxiliary state varies.
+
 The healing arguments rest on four utility lemmas: pairwise compatibility and intra-slot monotonicity of $\getConfirmed$, inclusion of slot-$k$ honest votes in the slot-$(k{+}1)$ canonical chain, and dominance of $v_\ell$'s slot-$k$ canonical at every honest's slot-$(k{+}1)$ canonical.
 All four share the same preamble: pairwise $\sim$-compatible cascade roots at $\vote(k)$ and an honest~$v_\ell$ whose $\getConfirmed_{v_\ell}^{\vote(k)}$ dominates every honest~$R$ throughout $[\vote(k),\, \vote(k{+}1)]$.
 
-\begin{lemma}[Cross-time, cross-validator target compatibility]\label{lem:getConfirmed-compat}
-Assume $f < n/3$, all honest follow Definition~\ref{def:voting-rule}, and slot~$k$ satisfies the standing assumptions (Definition~\ref{def:standing}).
-Suppose $R_v^{\vote(k)} \sim R_{v'}^{\vote(k)}$ for every pair of honest~$v, v'$, and there exists an honest~$v_\ell$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R_v^t$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k{+}1)]$.
+\begin{property}[Cross-time, cross-validator target compatibility]\label{prop:getConfirmed-compat}
+Assume $f < n/3$, all honest follow Definition~\ref{def:voting-rule},  slot~$k$ satisfies the standing assumptions (Definition~\ref{def:standing}), and, for any honest validator $v$ and time $t \in [\vote(k),\vote(k+1)]$, there exists a block $R' \in \V_v^t$ such that  $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$. 
 Then $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$ for every honest pair $v, v'$ and times $t, t' \in [\vote(k),\, \vote(k{+}1)]$.
-\end{lemma}
+\end{property}
 
-\begin{proof}
-Let $\comm{h} \coloneqq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$ and $D$ the chain ending at $\getConfirmed_{v_\ell}^{\vote(k)}$.
-By the premise, every honest $R_v^t$ lies on~$D$ at $\sigma$-height $\leq \comm{h}$.
+\begin{property}[Intra-slot target monotonicity]\label{prop:getConfirmed-monotone}
+Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$ and times $t \leq t' \in [\vote(k),\, \vote(k{+}1)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{property}
 
-\emph{Every $B \in \Sigma_v^t.\T$ at $\sigma$-height $\geq \comm{h}$ lies on~$D$.}
-Any such~$B$ is reached on its chain via a height advance at some $h^* \leq \sigma[B].h$, fired by a justification or timeout cert.
-A justification at $h^* \leq \comm{h}$ off~$D$ would, by Lemma~\ref{lem:just-unique-height}, coincide with the unique on-$D$ justification at the same height.
-A timeout cert at any $h^* \leq \comm{h}$ off~$D$ would form a $\geq 2n/3$ quorum disjoint from on-$D$ contributors at the same height, exceeding the $n - f$ honest budget under $f < n/3$.
-Hence every $B \in \Sigma_v^t.\T$ at $\sigma$-height $\geq \comm{h}$ lies on~$D$, and $\Sigma_v^t.\hmax \leq \comm{h} + 1$.
+\begin{property}[Honest-vote inclusion in slot-$(k{+}1)$ canonical]\label{prop:vote-inclusion}
+Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$, the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every vote cast by an honest validator at~$\vote(k)$.
+\end{property}
 
-\emph{$\getConfirmed_v^t \in D$.}
-$\getConfirmed_v^t$ lies in $\viableTree(\Sigma_v^t)$ above $R_v^t \in D$ at $\sigma$-height $\geq \Sigma_v^t.\hmax - 1$, hence on~$D$ by the chain restriction.
-Two blocks both on~$D$ are pairwise $\sim$-comparable, so $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$.
-\end{proof}
-
-\begin{lemma}[Intra-slot target monotonicity]\label{lem:getConfirmed-monotone}
-Under the hypotheses of Lemma~\ref{lem:getConfirmed-compat}, for every honest~$v$ and times $t \leq t' \in [\vote(k),\, \vote(k{+}1)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
-\end{lemma}
-
-\begin{proof}
-Lemma~\ref{lem:getConfirmed-compat} places $\getConfirmed_v^t,\, \getConfirmed_v^{t'} \in D$ at $\sigma$-heights in $\{\comm{h} - 1,\, \comm{h},\, \comm{h} + 1\}$.
-No honest voting occurs in $(\vote(k),\, \vote(k{+}1))$, so $\Sigma_v$ evolves only via \onBlock{} and view-merge processing of newly received blocks: $\Sigma_v.\T$ grows, $\Sigma_v.\hmax$ is non-decreasing, the lex key of $\Sigma_v.J$ is non-decreasing (Lemma~\ref{lem:Rs-key-monotone}), and $\Sigma_v.F$ is non-decreasing (Theorem~\ref{thm:finperm}).
-Hence $R_v^{t'} \succeq R_v^t$ on~$D$ by state-height monotonicity (Lemma~\ref{lem:slotmono}); the deterministic disambiguation~$\Omega_v$ extends $\getConfirmed_v$ along~$D$ as $\Sigma_v.\T$ grows, giving $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
-\end{proof}
-
-\begin{lemma}[Honest-vote inclusion in slot-$(k{+}1)$ canonical]\label{lem:vote-inclusion}
-Under the hypotheses of Lemma~\ref{lem:getConfirmed-compat}, for every honest~$v$, the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every vote cast by an honest validator at~$\vote(k)$.
-\end{lemma}
-
-\begin{proof}
-Lemma~\ref{lem:getConfirmed-compat} gives $\getConfirmed_v^{\vote(k+1)} \in D$.
-Each honest~$i$'s slot-$k$ vote~$a^k_i$ has, by Lemma~\ref{lem:honest-vote-sets-timeout}, either $a^k_i.\target = \bot$ or $a^k_i.\target \preceq \getConfirmed_i^{\vote(k)}$ at $\sigma[a^k_i.\target].h = \sigma[\getConfirmed_i^{\vote(k)}].h$; Lemma~\ref{lem:getConfirmed-compat} (at $t = \vote(k)$) gives $\getConfirmed_i^{\vote(k)} \in D$, so $a^k_i.\target \in D \cup \{\bot\}$.
-
-By Definition~\ref{def:standing}(d), every slot-$k$ honest vote reaches an honest available-chain proposer that builds a slot-$k$ block~$B^\sharp$ before $\vote(k{+}1) - \delta_c$.
-The proposer's canonical at proposal time lies on~$D$ (Lemma~\ref{lem:getConfirmed-compat} applied to the proposer), and $B^\sharp$ extends it on~$D$.
-Synchrony (Definition~\ref{def:standing}(a)) delivers $B^\sharp$ to every honest~$v$ by $\vote(k{+}1) - \Delta$, and \onBlock{} folds it into $\Sigma_v.\T$ on~$D$, so $\Sigma_v^{\vote(k+1)}.\hmax \geq \sigma[B^\sharp].h$.
-Lemma~\ref{lem:slotmono} along~$D$ together with $\getConfirmed_v^{\vote(k+1)} \in D$ at $\sigma$-height $\geq \Sigma_v^{\vote(k+1)}.\hmax - 1$ forces $B^\sharp \preceq \getConfirmed_v^{\vote(k+1)}$, placing every slot-$k$ honest vote on~$B^\sharp$ on the chain at $\getConfirmed_v^{\vote(k+1)}$.
-\end{proof}
-
-\begin{lemma}[Slot-$(k{+}1)$ canonical extends $v_\ell$'s slot-$k$ canonical]\label{lem:target-dominance}
-Under the hypotheses of Lemma~\ref{lem:getConfirmed-compat}, for every honest~$v$, $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$.
-\end{lemma}
-
-\begin{proof}[Proof sketch]
-Choose $v_\ell$ to be the $\preceq$-max honest at $\vote(k)$ on~$D$, well-defined by Lemma~\ref{lem:getConfirmed-compat}.
-Let $B^\sharp$ be the slot-$k$ honest available-chain block from Lemma~\ref{lem:vote-inclusion}; $B^\sharp \preceq \getConfirmed_v^{\vote(k+1)}$ on~$D$ by that lemma.
-
-By Definition~\ref{def:standing}(b,c,d), $\geq n - f > 2n/3$ honest validators cast a slot-$k$ vote and contribute to~$B^\sharp$; each sets $\timeouts[i] = \mathtt{true}$ on~$B^\sharp$'s chain at state-height $\sigma[\getConfirmed_i^{\vote(k)}].h$ (Definition~\ref{def:timeout}), with non-$\bot$ targets pinned onto~$D$ by Lemma~\ref{lem:honest-vote-sets-timeout} together with maximality of~$v_\ell$ and Lemma~\ref{lem:just-unique-height}.
-Iterating \processHeight{} on~$B^\sharp$'s chain advances state-height to~$\comm{h} + 1$ on~$D$: at each height $\leq \comm{h}$, either the unique on-$D$ justification target attains a $\geq 2n/3$ quorum or the $\geq 2n/3$ $\timeouts$-quorum fires.
-Hence $\Sigma_v^{\vote(k+1)}.\hmax \geq \comm{h} + 1$.
-
-Lemma~\ref{lem:vote-inclusion} places $v_\ell$'s slot-$k$ vote on the chain at $\getConfirmed_v^{\vote(k+1)}$.
-In the first-vote and lock branches of \getFinalVote{}, the target equals $\getConfirmed_{v_\ell}^{\vote(k)}$ (by Lemma~\ref{lem:honest-vote-sets-timeout}'s cascade-gate analysis combined with maximality on~$D$); height-fresh inclusion of the vote on~$B^\sharp$'s chain places $\getConfirmed_{v_\ell}^{\vote(k)} \preceq \getConfirmed_v^{\vote(k+1)}$.
-\end{proof}
+\begin{property}[Slot-$(k{+}1)$ canonical extends $v_\ell$'s slot-$k$ canonical]\label{prop:target-dominance}
+Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$, $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\end{property}
 
 \subsection{Healed state}\label{sec:healed}
 
@@ -1083,12 +1062,12 @@ For $t > \vote(k)$, $\Sigma_v.h_j$ is non-decreasing (Lemma~\ref{lem:Rs-key-mono
 
 For chain dominance, any update to $\Sigma_v.J$ during $(\vote(k),\, \vote(k{+}1)]$ comes from a justification at some height~$h^* \geq \comm{h}$ offered to \updateJustified{}.
 The witnessing quorum has size $\geq 2n/3$ and contains an honest~$u$; $u$'s contributing vote was cast at height~$h^* \geq \comm{h}$ strictly before~$t$.
-Condition~(3) (for votes cast strictly before~$\vote(k)$) gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; for votes cast at $\vote(k)$, Lemma~\ref{lem:vote-inclusion} (under the hypotheses inherited from conditions~(1)--(2) and Step~1's prefix) places $u.\target$ on~$D$ at $\sigma$-height $\leq \comm{h}$.
+Condition~(3) (for votes cast strictly before~$\vote(k)$) gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; for votes cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} (under the hypotheses inherited from conditions~(1)--(2) and Step~1's prefix) places $u.\target$ on~$D$ at $\sigma$-height $\leq \comm{h}$.
 Per-height uniqueness (Lemma~\ref{lem:just-unique-height}) forces the new justification's target onto~$D$ at $\sigma$-height $\leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$; the new $\Sigma_v^t.J$ stays $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and $\Sigma_v^t.F$ stays $\preceq \Sigma_v^t.J$ by Theorem~\ref{thm:fleqr}.
 Hence $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ throughout the interval.
 
 \emph{Step 2: pairwise compatibility at $\vote(k+1)$.}
-Step~1 verifies the hypothesis of Lemma~\ref{lem:getConfirmed-compat}, yielding $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for honest $v, v'$ --- condition~(2) at slot~$k+1$.
+Step~1 verifies the hypothesis of Property~\ref{prop:getConfirmed-compat}, yielding $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for honest $v, v'$ --- condition~(2) at slot~$k+1$.
 
 \emph{Step 3: frontier non-decrease.}
 By Definition~\ref{def:standing}(d) at slot~$k+1$, the slot-$k$ honest votes are aggregated by an honest available-chain proposer into a slot-$k$ block whose post-state is processed before $\vote(k+1) - \Delta$.
@@ -1103,8 +1082,8 @@ If the gate fails, $R_v^{\vote(k+1)} = \comm{\Sigma}.F$ has $\sigma$-height $\ge
 Choose $v_\ell^{(k+1)}$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k+1)}$ on the common chain (well-defined by Step~2).
 For an honest vote~$u$ cast strictly before~$\vote(k+1)$ with $u.\height \geq \comm{h}'$:
 \begin{itemize}
-  \item if $u$ was cast strictly before~$\vote(k)$, condition~(3) at slot~$k$ gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; Lemma~\ref{lem:target-dominance} gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$;
-  \item if $u$ was cast at $\vote(k)$, Lemma~\ref{lem:vote-inclusion} places $u.\target$ on the chain at $\getConfirmed_v^{\vote(k+1)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+  \item if $u$ was cast strictly before~$\vote(k)$, condition~(3) at slot~$k$ gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; Property~\ref{prop:target-dominance} gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$;
+  \item if $u$ was cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} places $u.\target$ on the chain at $\getConfirmed_v^{\vote(k+1)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
 \end{itemize}
 This is condition~(3) at slot~$k+1$ with $v_\ell^{(k+1)}$ and frontier height $\comm{h}'$.
 \end{proof}
