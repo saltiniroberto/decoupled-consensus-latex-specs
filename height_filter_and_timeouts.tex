@@ -1031,14 +1031,21 @@ Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every hones
 Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$, $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$.
 \end{property}
 
+\begin{property}[Cross-validator visibility of \getConfirmed]\label{prop:getConfirmed-visible}
+Assume $\start(k) - \Delta \geq \GST$ and the online-honest majority holds at $\vote(k)$ (Definition~\ref{def:standing}(a,b)).
+For every honest~$v,v'$, $\forall B \preceq \getConfirmed_v^{\vote(k)}, B\in \Sigma_{v'}^{\vote(k)}.\T$.
+That is, every honest validator's slot-$k$ canonical block has already been admitted into every other honest validator's block tree by~$\vote(k)$.
+\end{property}
+
 \subsection{Healed state}\label{sec:healed}
 
 \begin{definition}[Healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:healed}
-The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}$} when:
+The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}$} when there exists an honest validator $v_\ell$ such that:
 \begin{enumerate}
-  \item for every honest~$v$, $\sigma[R_v^{\vote(k)}].h \geq \comm{h}$;
-  \item for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
-  \item there exists an honest~$v_\ell$ such that every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+  \item\label{rev:def:healed-state:h} for every honest~$v$, $\Sigma_v^{\vote(k)}.\hmax \geq \comm{h}+1$;
+  \item\label{rev:def:healed-state:compat} for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
+  \item\label{rev:def:healed-state:cap} every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
+  \item\label{rev:def:healed-state:vote-h} every honest vote~$u$ cast at any time $\leq \vote(k)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
 \end{enumerate}
 \end{definition}
 
@@ -1047,45 +1054,158 @@ The standing assumptions of slot~$k$ are not part of the healed-state definition
 \subsection{Persistence}\label{sec:healing-persistence}
 
 \begin{lemma}[Healing persistence over one slot]\label{lem:healing-persistence}
-Assume $f < n/3$ and that all honest validators follow Definition~\ref{def:voting-rule}.
-If the system is in a healed state at slot~$k$ with frontier height~$\comm{h}$, slot~$k+1$ satisfies the standing assumptions, and $\syncer(k+1)$ is honest, then the system is in a healed state at slot~$k+1$ with frontier height $\comm{h}' \geq \comm{h}$.
+If
+\begin{enumerate}
+  \item\label{rev:hp:f} honest validators follow \Cref{def:voterecord};
+  \item\label{rev:hp:ohm} the online-honest-majority holds at slot~$k$;
+  \item\label{rev:hp:hs} the system is in a healed state at slot $k$ with frontier $\comm{h}$,
+\end{enumerate}
+then:
+\begin{enumerate}
+  \item the system is in a healed state at slot~$k+1$ with frontier height $\comm{h}' \geq \comm{h}$.
+  \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
+\end{lemma}
+
+\footnote{
+Manual sketch proof left for reference.
+\begin{proof}  
+  Let $v_\ell$ by an honest validator such that $\getConfirmed_{v_\ell}^{\vote(k)}\succeq \getConfirmed_v^{\vote(k)}$ for any honest validator $v$.
+  By \Cref{rev:def:healed-state:cap}, any vote sent by any honest at any time $\leq \vote(k)$ for an height $\geq \comm{h}$ have target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+  This means that any vote sent by any honest at any time $\leq \vote(k)$ is for an height $\leq $ the height of $\getConfirmed_{v_\ell}^{\vote(k)}$.
+  Let the height of $\getConfirmed_{v_\ell}^{\vote(k)}$ be $h^*$.
+  Given the compatibility of votes for height $\geq \comm{h}$, any justified $\geq \comm{h}$ is compatible with $\getConfirmed_{v_\ell}^{\vote(k)}$.
+  Due to \Cref{rev:def:healed-state:h}, justification for heights $< \comm{h}$ are not considered.
+  Also, given that it is impossible to justify something at height $h_j$ conflicting with a finalized at height $\leq h_j$, $\getConfirmed_{v_\ell}^{\vote(k)}$ descends from any finalized.
+  By \Cref{prop:getConfirmed-visible}, any honest has  $\getConfirmed_{v_\ell}^{\vote(k)}$ in their tree.
+  Also, by \Cref{prop:getConfirmed-visible}, for a time $t \in [\vote(k),\vote(k+1)]$, then $\hmax$ of any honest  $\in [h^*,h^*+1]$. 
+  This implies that  $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$ for any honest.
+  Then, by \Cref{prop:getConfirmed-compat}, we can conclude \Cref{rev:def:healed-state:compat} for $\vote(k+1)$.
+  Then, by \Cref{prop:getConfirmed-monotone}, there exists a validator $v'$, such that $\getConfirmed_{v'}^{\vote(k+1)}\succeq \getConfirmed_{v_\ell}^{\vote(k+1)}\succeq \getConfirmed_{v_\ell}^{\vote(k)}$ proving \Cref{rev:def:healed-state:cap}.
+\end{proof}}
+
+\begin{proof}
+
+\emph{Setup.}
+Let $v_\ell$ be the honest validator named by Definition~\ref{def:healed}, and write
+\[
+  h^\ast \;\coloneqq\; \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h.
+\]
+By condition~\ref{rev:def:healed-state:vote-h}, every honest vote $u$ cast at any time $\leq \vote(k)$ has $u.\height \leq h^\ast$.
+
+\emph{Outline.}
+Steps~1--3 establish $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$ for every honest $v$ and $t \in [\vote(k), \vote(k{+}1)]$.
+Step~4 applies Properties~\ref{prop:getConfirmed-compat} and~\ref{prop:getConfirmed-monotone}, yielding conclusions~2 and~3 of the lemma directly, and condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$ as a slot-$k{+}1$ specialisation.
+Steps~5--7 verify conditions~\ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:cap}, and~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$, completing conclusion~1.
+
+\medskip
+
+\emph{Step 1: justifications at heights $h \in [\comm{h}, h^\ast]$ have target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and no justification at heights $> h^\ast$ exists.}
+Any justification at height~$h$ has a $\geq 2n/3$ quorum.
+Under online-honest majority ($f < n/2$), no $2n/3$-quorum can be entirely dishonest, so each such quorum contains at least one honest non-$\bot$ contribution at height $h$.
+By condition~\ref{rev:def:healed-state:vote-h}, that contribution has $h \leq h^\ast$, ruling out justifications at heights $> h^\ast$.
+For $h \in [\comm{h}, h^\ast]$, condition~\ref{rev:def:healed-state:cap} places the honest contribution's target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and per-height uniqueness (Lemma~\ref{lem:just-unique-height}) extends this to the unique justified target.
+
+\emph{Step 2: $\Sigma_v^t.\hmax \leq h^\ast + 1$ throughout $[\vote(k), \vote(k{+}1)]$.}
+Growth of $\hmax$ to $\sigma$-height $> h^\ast + 1$ requires a height advance at some height $> h^\ast$, hence a justification or timeout cert at $> h^\ast$.
+Step~1 rules out justifications.
+A timeout cert at height $h > h^\ast$ needs marks at $h$, contributed by $\bot$-votes at $h$ or height-fresh non-$\bot$ votes at $h$;
+both forms of honest contribution have $u.\height = h > h^\ast$ and are ruled out by condition~\ref{rev:def:healed-state:vote-h}.
+The remaining contributors are dishonest, $\leq f < n/2$ under the online-honest majority --- below the $2n/3$ threshold.
+
+\emph{Step 3: $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$.}
+Property~\ref{prop:getConfirmed-visible} places $\getConfirmed_{v_\ell}^{\vote(k)} \in \Sigma_v^{\vote(k)}.\T \subseteq \Sigma_v^t.\T$, with $\sigma$-height $h^\ast$ in $v$'s store (Theorem~\ref{thm:orderindep}).
+By Step~2, $h^\ast \geq \Sigma_v^t.\hmax - 1$, so $\getConfirmed_{v_\ell}^{\vote(k)}$ is its own viable witness in $\T'(\Sigma_v^t)$.
+
+It remains to show $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+Note $\sigma[R_v^t].h \leq \Sigma_v^t.h_j \leq \Sigma_v^t.\hmax - 1 \leq h^\ast$ by Step~2.
+\begin{itemize}
+  \item \emph{Gate fires.} $R_v^t = \Sigma_v^t.J$ at height $\Sigma_v^t.h_j = \Sigma_v^t.\hmax - 1$, which lies in $[\comm{h}, h^\ast]$ by condition~\ref{rev:def:healed-state:h}.
+  Step~1 gives $\Sigma_v^t.J \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+  \item \emph{Gate fails.} $R_v^t = \Sigma_v^t.F$ is finalized (Remark~\ref{rem:fs-invariant}) at some height $h_F \leq h^\ast$.
+  If $h_F < h^\ast$, Lemma~\ref{lem:mainsafety} applied to $\getConfirmed_{v_\ell}^{\vote(k)}$ gives $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ directly.
+  If $h_F = h^\ast$, $\Sigma_v^t.F$ is the unique finalized block at $h^\ast$ (Lemma~\ref{lem:finchain}), which by Theorem~\ref{thm:fleqr} and Corollary~\ref{cor:getConfirmed-total} satisfies $\Sigma_{v_\ell}.F \preceq \Sigma_{v_\ell}.J \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
+  per-height uniqueness then identifies $\Sigma_v^t.F$ with $\Sigma_{v_\ell}.F$, hence $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\end{itemize}
+
+\medskip
+
+\emph{Step 4: conclusions 2 and 3, and condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$.}
+Step~3 instantiates the premise of Property~\ref{prop:getConfirmed-compat} with $R' = \getConfirmed_{v_\ell}^{\vote(k)}$ (which lies in $\V_v^t$ and is reflexively $\succeq$ itself).
+The property yields conclusion~2: $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$ for every honest $v, v'$ and $t, t' \in [\vote(k), \vote(k{+}1)]$.
+Property~\ref{prop:getConfirmed-monotone}, which inherits the same premise, yields conclusion~3: $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$ for every honest $v$ and $t \leq t' \in [\vote(k), \vote(k{+}1)]$.
+The $t = t' = \vote(k{+}1)$ specialisation of conclusion~2 is condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$.
+
+\emph{Step 5: condition~\ref{rev:def:healed-state:h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$.}
+$\hmax$ is non-decreasing in $t$, so $\Sigma_v^{\vote(k+1)}.\hmax \geq \Sigma_v^{\vote(k)}.\hmax \geq \comm{h} + 1 = \comm{h}' + 1$.
+
+\emph{Step 6: condition~\ref{rev:def:healed-state:cap} at $\vote(k{+}1)$.}
+By Step~4, the honest canonical blocks at $\vote(k{+}1)$ form a chain; pick $v_\ell^{(k+1)}$ honest achieving the $\preceq$-max.
+Property~\ref{prop:getConfirmed-monotone} gives $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$, so by maximality
+\[
+  \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k)}.
+\]
+For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$:
+\begin{itemize}
+  \item if cast strictly before $\vote(k)$, condition~\ref{rev:def:healed-state:cap} at slot~$k$ combined with the chain extension above gives $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$;
+  \item if cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} places $u.\target$ on the chain at $\getConfirmed_v^{\vote(k+1)}$ for every honest $v$, hence $\preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+\end{itemize}
+
+\emph{Step 7: condition~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$.}
+Write $h^{\ast\prime} \coloneqq \sigma[\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}].h$.
+For any honest vote $u$ cast at any time $\leq \vote(k{+}1)$:
+\begin{itemize}
+  \item if cast at $\leq \vote(k)$, condition~\ref{rev:def:healed-state:vote-h} at slot~$k$ gives $u.\height \leq h^\ast \leq h^{\ast\prime}$ (using Step~6's chain extension and state-height monotonicity);
+  \item if cast at $\vote(k{+}1)$, Lemma~\ref{lem:honest-vote-sets-timeout} gives $u.\height = \sigma[\getConfirmed_{v}^{\vote(k+1)}].h$ for the casting validator $v$, which is $\leq h^{\ast\prime}$ by maximality of $v_\ell^{(k+1)}$.
+\end{itemize}
+\end{proof}
+
+\begin{lemma}[Healing: persistence over unbounded times]\label{rev:lem:healing-unbounded}
+If
+\begin{enumerate}
+  \item\label{rev:hu:f} honest validators follow \Cref{def:voting-rule};
+  \item\label{rev:hu:ohm} the online-honest-majority holds at every slot $k' \geq k$;
+  \item\label{rev:hu:hs} the system is in a healed state at slot $k$ with height $\comm{h}$ (\Cref{def:healed}),
+\end{enumerate}
+then,
+\begin{enumerate}
+  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
 \end{lemma}
 
 \begin{proof}
-Write $\comm{\Sigma} \coloneqq \comm{\Sigma}^{\vote(k+1)}$ for the post-merge store guaranteed by Assumption~\ref{ass:view-merge} under the honest slot-$(k+1)$ syncer; $\Sigma_v^{\vote(k+1)} = \comm{\Sigma}$ for every honest~$v$.
-Let $D$ be the chain ending at $\getConfirmed_{v_\ell}^{\vote(k)}$, where $v_\ell$ is the witness from condition~(3) at slot~$k$.
+We induct on $K \geq k$, with inductive claim $H(K)$:
+\begin{enumerate}
+  \item the system is in a healed state at every slot $k' \in [k, K{+}1]$;
+  \item for every honest $v, v'$ and $t, t' \in [\vote(k), \vote(K{+}1)]$, $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest $v$ and $t \leq t' \in [\vote(k), \vote(K{+}1)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
 
-\emph{Step 1: cascade root stable over $[\vote(k),\, \vote(k{+}1)]$.}
-Fix honest~$v$ and $t \in [\vote(k),\, \vote(k{+}1)]$.
-At $t = \vote(k)$, condition~(1) gives $\sigma[R_v^{\vote(k)}].h \geq \comm{h}$, while $R_v^{\vote(k)} \preceq \getConfirmed_v^{\vote(k)}$ by the algorithm spec (Corollary~\ref{cor:getConfirmed-total}); condition~(2) and chain comparability give $R_v^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
-For $t > \vote(k)$, $\Sigma_v.h_j$ is non-decreasing (Lemma~\ref{lem:Rs-key-monotone}) and $\Sigma_v.F$ is non-decreasing (Theorem~\ref{thm:finperm}), so $\sigma[R_v^t].h \geq \comm{h}$ persists.
+\emph{Base ($K = k$).}
+Hypothesis~\ref{rev:hu:hs} gives the system healed at slot~$k$.
+Lemma~\ref{lem:healing-persistence} applies at slot~$k$ (its hypotheses follow from~\ref{rev:hu:f}, \ref{rev:hu:ohm} at $k$, and~\ref{rev:hu:hs}), yielding the system healed at $k+1$ (so~(i)) and conclusions~2 and~3 over $[\vote(k), \vote(k{+}1)]$ (so~(ii) and~(iii)).
 
-For chain dominance, any update to $\Sigma_v.J$ during $(\vote(k),\, \vote(k{+}1)]$ comes from a justification at some height~$h^* \geq \comm{h}$ offered to \updateJustified{}.
-The witnessing quorum has size $\geq 2n/3$ and contains an honest~$u$; $u$'s contributing vote was cast at height~$h^* \geq \comm{h}$ strictly before~$t$.
-Condition~(3) (for votes cast strictly before~$\vote(k)$) gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; for votes cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} (under the hypotheses inherited from conditions~(1)--(2) and Step~1's prefix) places $u.\target$ on~$D$ at $\sigma$-height $\leq \comm{h}$.
-Per-height uniqueness (Lemma~\ref{lem:just-unique-height}) forces the new justification's target onto~$D$ at $\sigma$-height $\leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$; the new $\Sigma_v^t.J$ stays $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and $\Sigma_v^t.F$ stays $\preceq \Sigma_v^t.J$ by Theorem~\ref{thm:fleqr}.
-Hence $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ throughout the interval.
+\emph{Inductive step.}
+Suppose $H(K)$ holds; we show $H(K{+}1)$.
+By~(i) at slot $K{+}1$ together with hypothesis~\ref{rev:hu:f} and~\ref{rev:hu:ohm} at $K{+}1$, Lemma~\ref{lem:healing-persistence} applies at slot $K{+}1$, yielding the system healed at $K{+}2$ (extending~(i)) and conclusions~2 and~3 over $[\vote(K{+}1), \vote(K{+}2)]$.
 
-\emph{Step 2: pairwise compatibility at $\vote(k+1)$.}
-Step~1 verifies the hypothesis of Property~\ref{prop:getConfirmed-compat}, yielding $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for honest $v, v'$ --- condition~(2) at slot~$k+1$.
+To extend~(ii) and~(iii) to $[\vote(k), \vote(K{+}2)]$, the only new case is $t \in [\vote(k), \vote(K{+}1)]$ and $t' \in [\vote(K{+}1), \vote(K{+}2)]$ (or vice versa, handled by symmetry of~$\sim$ and by interchanging the time-ordering).
 
-\emph{Step 3: frontier non-decrease.}
-By Definition~\ref{def:standing}(d) at slot~$k+1$, the slot-$k$ honest votes are aggregated by an honest available-chain proposer into a slot-$k$ block whose post-state is processed before $\vote(k+1) - \Delta$.
-Folding through \onBlock{} and \updateJFromVotes{} fires the slot-$k$ honest virtual justification at canonical's $h_c^{(k)} \coloneqq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h \geq \comm{h}$, raising $\Sigma.h_j$ uniformly.
-Hence $\comm{\Sigma}.h_j \geq h_c^{(k)} \geq \comm{h}$; set $\comm{h}' \coloneqq h_c^{(k)}$ when the gate fires at $\vote(k+1)$, and $\comm{h}' \coloneqq \comm{h}$ otherwise.
+\emph{Extending~(iii):}
+the inductive~(iii) gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(K{+}1)}$, and the new lemma instance's conclusion~3 gives $\getConfirmed_v^{\vote(K{+}1)} \preceq \getConfirmed_v^{t'}$;
+chaining yields $\getConfirmed_v^t \preceq \getConfirmed_v^{t'}$.
 
-\emph{Step 4: condition~(1) at slot~$k+1$.}
-If the gate fires at $\vote(k+1)$ ($\comm{\Sigma}.\hmax = \comm{\Sigma}.h_j + 1$), $R_v^{\vote(k+1)} = \comm{\Sigma}.J$ has $\sigma$-height $\comm{\Sigma}.h_j \geq \comm{h}'$.
-If the gate fails, $R_v^{\vote(k+1)} = \comm{\Sigma}.F$ has $\sigma$-height $\geq \comm{h} = \comm{h}'$ by Theorem~\ref{thm:finperm} and condition~(1) at slot~$k$.
+\emph{Extending~(ii):}
+the inductive~(iii) gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(K{+}1)}$, and the new lemma instance's conclusion~2 gives $\getConfirmed_v^{\vote(K{+}1)} \sim \getConfirmed_{v'}^{t'}$.
+In the block tree, $A \preceq B$ and $C \sim B$ imply $A \sim C$:
+either $C \preceq B$, in which case $A$ and $C$ are both ancestors of $B$, hence on the chain to $B$ and pairwise comparable;
+or $C \succeq B$, in which case $A \preceq B \preceq C$.
+Applied with $A = \getConfirmed_v^t$, $B = \getConfirmed_v^{\vote(K{+}1)}$, $C = \getConfirmed_{v'}^{t'}$, this gives $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$.
 
-\emph{Step 5: target-cap at slot~$k+1$.}
-Choose $v_\ell^{(k+1)}$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k+1)}$ on the common chain (well-defined by Step~2).
-For an honest vote~$u$ cast strictly before~$\vote(k+1)$ with $u.\height \geq \comm{h}'$:
-\begin{itemize}
-  \item if $u$ was cast strictly before~$\vote(k)$, condition~(3) at slot~$k$ gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$; Property~\ref{prop:target-dominance} gives $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$;
-  \item if $u$ was cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} places $u.\target$ on the chain at $\getConfirmed_v^{\vote(k+1)}$ for honest~$v$, so $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
-\end{itemize}
-This is condition~(3) at slot~$k+1$ with $v_\ell^{(k+1)}$ and frontier height $\comm{h}'$.
+\emph{Conclusion.}
+By induction, $H(K)$ holds for every $K \geq k$. Conclusions~1 and~2 of the lemma are the union $\bigcup_{K \geq k} H(K)$.
 \end{proof}
 
 \subsection{Card inventory and three-slot advance}\label{sec:card-and-advance}
@@ -1174,11 +1294,11 @@ Let $\ell_d$ be the largest $\ell \in \{k+1, k+2\}$ such that a live card was re
 Set $k_h \coloneqq \ell_d + 1 \in \{k+1, k+2, k+3\}$ when $\ell_d \geq k+1$; and $k_h \coloneqq k+1$ when $\ell_d = k$.
 
 By Step~4, $\comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$, and Step~5 gives gate firing.
-View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$ (condition~(2) of Definition~\ref{def:healed}).
-Set $\comm{h} \coloneqq \comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$ and $R_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}.J$ at $\sigma$-height $\comm{h}$ (condition~(1)).
+View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$ (condition~\ref{rev:def:healed-state:compat} of Definition~\ref{def:healed}).
+Set $\comm{h} \coloneqq \comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$ and $R_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}.J$ at $\sigma$-height $\comm{h}$ (condition~\ref{rev:def:healed-state:h}).
 
 \emph{Condition~(3) at $\vote(k_h)$.}
-Pick $v_\ell$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k_h)}$ on the common chain (well-defined by condition~(2)).
+Pick $v_\ell$ honest with $\preceq$-maximal $\getConfirmed^{\vote(k_h)}$ on the common chain (well-defined by condition~\ref{rev:def:healed-state:compat}).
 For an honest vote~$u$ cast strictly before~$\vote(k_h)$ with $u.\height \geq \comm{h}$:
 \begin{itemize}
   \item $u$ contributes to the justification at $\mathrm{height}(c) \in \{h^0 - 1, h^0\}$ for some absorbed card~$c$: by Lemma~\ref{lem:just-unique-height}, the unique justified target at $\mathrm{height}(c)$ is~$c$ on its chain $\preceq \comm{\Sigma}^{(k_h)}.J$ post-absorption, and freshness of $u$ on its contributing chain forces $u.\target = c$ on canonical at $\vote(k_h)$;
@@ -1188,7 +1308,7 @@ For an honest vote~$u$ cast strictly before~$\vote(k_h)$ with $u.\height \geq \c
   Both $J^*$ and $J^\dagger$ lie on canonical at $\vote(k_h)$: by Step~1, $J^* \preceq J^\dagger$ when both exist, and Lemma~\ref{lem:Rs-key-monotone} together with the per-height uniqueness places the unique justified block of $\comm{\Sigma}^{(k_h)}.h_j$ on canonical via $\Sigma.J$-monotonicity along absorbed-card transitions.
   Hence $u.\target \in \{J^*, J^\dagger\} \preceq \getConfirmed_{v_\ell}^{\vote(k_h)}$.
 \end{itemize}
-This is condition~(3) at slot~$k_h$ with frontier height $\comm{h} \geq h^0 - 1$.
+This is condition~\ref{rev:def:healed-state:cap} at slot~$k_h$ with frontier height $\comm{h} \geq h^0 - 1$.
 \end{proof}
 
 \subsection{Main theorem}\label{sec:healing-main}
