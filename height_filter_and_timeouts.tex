@@ -1045,7 +1045,7 @@ The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}
   \item\label{rev:def:healed-state:h} for every honest~$v$, $\Sigma_v^{\vote(k)}.\hmax \geq \comm{h}+1$;
   \item\label{rev:def:healed-state:compat} for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
   \item\label{rev:def:healed-state:cap} every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
-  \item\label{rev:def:healed-state:vote-h} every honest vote~$u$ cast at any time $\leq \vote(k)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
+  \item\label{rev:def:healed-state:vote-h} every honest vote~$u$ cast at any time strictly before $\vote(k)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
 \end{enumerate}
 \end{definition}
 
@@ -1088,11 +1088,18 @@ Manual sketch proof left for reference.
 \begin{proof}
 
 \emph{Setup.}
-Let $v_\ell$ be the honest validator named by Definition~\ref{def:healed}, and write
+Definition~\ref{def:healed} names some honest $v_\ell^0$ with conditions~\ref{rev:def:healed-state:cap} and~\ref{rev:def:healed-state:vote-h}.
+By condition~\ref{rev:def:healed-state:compat}, the set $\{\getConfirmed_v^{\vote(k)} : v \text{ honest}\}$ is pairwise $\sim$-comparable, hence totally $\preceq$-ordered;
+let $v_\ell$ be an honest $\preceq$-max in this set, and write
 \[
   h^\ast \;\coloneqq\; \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h.
 \]
-By condition~\ref{rev:def:healed-state:vote-h}, every honest vote $u$ cast at any time $\leq \vote(k)$ has $u.\height \leq h^\ast$.
+Since $v_\ell$ is $\preceq$-max, $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, so conditions~\ref{rev:def:healed-state:cap} and~\ref{rev:def:healed-state:vote-h} also hold with $v_\ell$ in place of $v_\ell^0$;
+in particular every honest vote $u$ cast strictly before $\vote(k)$ has $u.\height \leq h^\ast$.
+
+For honest votes cast at $\vote(k)$:
+$\preceq$-maximality plus state-height monotonicity give $\sigma[\getConfirmed_v^{\vote(k)}].h \leq h^\ast$ for every honest $v$, and Lemma~\ref{lem:honest-vote-sets-timeout} identifies an honest vote's height with the casting validator's canonical state-height, so $u.\height \leq h^\ast$ at $\vote(k)$ as well.
+Hence every honest vote $u$ cast at any time $\leq \vote(k)$ has $u.\height \leq h^\ast$.
 
 \emph{Outline.}
 Steps~1--3 establish $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$ for every honest $v$ and $t \in [\vote(k), \vote(k{+}1)]$.
