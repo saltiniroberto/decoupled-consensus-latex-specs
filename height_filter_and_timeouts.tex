@@ -893,6 +893,8 @@ If $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}: 
 \end{lemma}
 
 \begin{proof}
+For $h = 0$, the only ``justification'' is the genesis pre-justification convention ($\sigma[\genesis].J = \genesis$, $h_j = 0$), which is unique by construction; the rest of the proof handles $h \geq 1$, where a $\geq 2n/3$ quorum is required.
+
 Each justification at height~$h$ on a chain yields a quorum $Q_k$ of size $\geq 2n/3$; quorum intersection picks an honest~$v \in Q_1 \cap Q_2$ contributing a non-$\bot$-target vote at height~$h$ to each.
 Per Definition~\ref{def:voterecord} and the target adjustment in \getFinalVote, every non-$\bot$-target vote of~$v$ at height~$h$ has target equal to $\Delta.T(h)$ (set once at $v$'s first such vote and pinned thereafter; subsequent non-$\bot$ votes at~$h$ come from the lock branch, which returns $\Delta.T(h)$).
 Hence both contributions have the same target, $C_1 = C_2$.
@@ -907,7 +909,7 @@ Height advances reset $\targets$ and $\timeouts$ (Section~\ref{sec:model}), so L
 The proof rests on two facts about the canonical chain.
 First, $T = \getConfirmed(\Sigma,\Omega)$ has $\sigma$-height $\geq \Sigma.\hmax - 1$ by the algorithm spec, so $h_c = \sigma[T].h \in \{\Sigma.\hmax - 1,\, \Sigma.\hmax\}$.
 Second, every locally observed justification at height~$h$ is witnessed by some processed block whose post-state advanced to $\sigma$-height~$h+1$, so $h \leq \Sigma.\hmax - 1$.
-Together: at $h_c = \Sigma.\hmax$ no validator has observed a justification at~$h_c$, so the lock branch is unreachable; at $h_c = \Sigma.\hmax - 1$ the lock branch forces the lock target to coincide with~$\Sigma.J$ via Lemma~\ref{lem:just-unique-height}, and $\Sigma.J$ is itself viable (its witnessing block sits at $\sigma$-height~$\Sigma.\hmax$ as a descendant of~$\Sigma.J$).
+Together: at $h_c = \Sigma.\hmax$ this node has not observed a justification at~$h_c$, so the lock branch is unreachable; at $h_c = \Sigma.\hmax - 1$ the lock branch forces the lock target to coincide with~$\Sigma.J$ via Lemma~\ref{lem:just-unique-height}, and $\Sigma.J$ is itself viable (its witnessing block sits at $\sigma$-height~$\Sigma.\hmax$ as a descendant of~$\Sigma.J$).
 
 \begin{lemma}[Honest vote sets the timeout marker]\label{lem:honest-vote-sets-timeout}
 Assume $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rule}.
@@ -918,13 +920,17 @@ Then either $v.\target = \bot$ with $v.\height = h_c$, or $v.\target \preceq T$ 
 
 \begin{proof}
 By Definition~\ref{def:voting-rule}, $v.\height = h_c$ in every branch.
-The fallback branch emits $v.\target = \bot$, satisfying the first disjunct.
+The elif-timeout branch ($\Delta.T(h_c) \neq \bot$ with $\Delta.\lambda(h_c) = \mathtt{false}$) emits $v.\target = \bot$, satisfying the first disjunct.
 The first-vote-at-$h_c$ branch sets $v.\target = T$ with $\sigma[T].h = h_c$ and $T \preceq T$, satisfying the second disjunct.
 
-The remaining branch is the lock branch with $v.\target = T_{\mathrm{lock}}$ fixed by an earlier finalize-bearing vote~$v_0$ of~$i$ with $v_0.\finalizeHeight = h_c$ and $v_0.\finalizeTarget = T_{\mathrm{lock}}$.
-Since $v_0$ is finalize-bearing, \getBaseVote populated its finalize fields from $i$'s then-canonical state, giving $(v_0.\finalizeHeight, v_0.\finalizeTarget) = (h_c, T_{\mathrm{lock}}) = (\sigma[T^0].h_j, \sigma[T^0].J)$ at $v_0$'s firing.
-The justification branch of \processHeight thus fired with target $T_{\mathrm{lock}}$ at pre-state height~$h_c$ inside some \onBlock call on a processed block~$B^\star$, whose post-state has $\sigma[B^\star].h \geq h_c + 1$ (height-advance).
-Hence $\Sigma.\hmax \geq h_c + 1$, i.e., $h_c \leq \Sigma.\hmax - 1$.
+The remaining branch is the lock branch.
+Let $k \coloneqq v_0.\finalizeHeight$ for the earlier finalize-bearing vote~$v_0$ of~$i$ whose \recordVote call set $\Delta.\lambda(k) \gets \mathtt{true}$; the lock-branch firing condition $\Delta.\lambda(h_c) = \mathtt{true}$ at the current slot requires $k = h_c$, so the current vote's $h_c$ equals $v_0$'s finalize-height.
+Write $T_{\mathrm{lock}} \coloneqq v_0.\finalizeTarget$.
+For $v_0$ to retain its finalize fields, the gate inside \getFinalVote had to hold at $v_0$'s firing: $\Delta.T(k) = v_0.\finalizeTarget = T_{\mathrm{lock}}$ (with $\Delta.\tau(k) = \mathtt{false}$).
+Since $\Delta.T(k)$ is pinned once set (cf.\ the target adjustment in \getFinalVote), it remains $T_{\mathrm{lock}}$ at $v$'s firing, and the lock branch returns $v.\target = \Delta.T(h_c) = T_{\mathrm{lock}}$.
+Since $v_0$ is finalize-bearing, \getBaseVote populated its finalize fields from $i$'s then-canonical state, giving $(v_0.\finalizeHeight, v_0.\finalizeTarget) = (k, T_{\mathrm{lock}}) = (\sigma[T^0].h_j, \sigma[T^0].J)$ at $v_0$'s firing, where~$T^0$ is~$i$'s canonical chain at that earlier time.
+The justification branch of \processHeight thus fired with target $T_{\mathrm{lock}}$ at pre-state height~$k$ inside some \onBlock call on a processed block~$B^\star$, whose post-state has $\sigma[B^\star].h \geq k + 1$ (height-advance).
+Hence $\Sigma.\hmax \geq k + 1 = h_c + 1$, i.e., $h_c \leq \Sigma.\hmax - 1$.
 
 Since $T = \getConfirmed(\Sigma, \Omega)$ has $\sigma[T].h \geq \Sigma.\hmax - 1$ (algorithm spec), combining with the previous inequality yields $h_c = \sigma[T].h = \Sigma.\hmax - 1$ and $\sigma[B^\star].h = \Sigma.\hmax$.
 The same height-advance argument applied to $\Sigma.J$'s own justification (its witnessing block has $\sigma$-height $\geq \Sigma.h_j + 1$, and that $\sigma$-height is $\leq \Sigma.\hmax$ by definition of~$\hmax$) gives $\Sigma.h_j \leq \Sigma.\hmax - 1 = h_c$, while Lemma~\ref{lem:no-high-just} applied to $T_{\mathrm{lock}}$'s justification at~$h_c$ gives $h_c \leq \Sigma.h_j$.
@@ -940,7 +946,7 @@ Assume $f < n/3$ and all honest validators follow Definition~\ref{def:voting-rul
 Let~$i$ be an honest validator, $\Sigma$ its local store, $\Omega$ its auxiliary state, $T = \getConfirmed(\Sigma, \Omega)$ its canonical chain, and $h_c = \sigma[T].h$ the current canonical state-height.
 Let $v$ be the vote~$i$ produces at the current slot.
 Let $\Sigma'$ be any store obtained by processing additional blocks and votes on top of~$\Sigma$, with auxiliary state $\Omega'$, such that $T' = \getConfirmed(\Sigma', \Omega')$ is an extension of~$T$ with $\Sigma'.\sigma[T'].h = h_c$, and suppose~$v$ is included on~$T'$.
-Then for every slot processed on~$T'$ from that point onward while canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
+Then for every slot processed on~$T'$ from that point onward, while canonical continues to extend~$T'$ and canonical state-height stays at~$h_c$, the Layer~1 increment to $\sigma.\penalties[i]$ on canonical is zero.
 \end{theorem}
 
 \begin{proof}
@@ -952,7 +958,7 @@ In the timeout sub-case, $v = (i, h_c, \bot, \bot, \bot)$ with $\sigma[T'].h = h
 In the non-timeout sub-case, $v.\target \preceq T \preceq T'$ with $\sigma[v.\target].h = h_c$, so~$v$ is height-fresh on~$T'$ and (b) holds.
 
 Either way, $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
-$\timeouts$ resets only at a height advance, which does not fire while state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists and Layer~1 does not bump~$i$.
+$\timeouts$ is per-state and resets only at a height advance; on any canonical chain extending~$T'$, $\sigma$ at $T'$'s descendants inherits $\timeouts[i] = \mathtt{true}$ from $\sigma[T']$, and no height advance fires while canonical state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists on canonical and Layer~1 does not bump~$i$.
 \end{proof}
 
 \section{Healing from asynchrony}\label{sec:healing}

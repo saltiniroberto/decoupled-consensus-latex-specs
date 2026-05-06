@@ -29,7 +29,7 @@
 % Algorithmic
 \usepackage[noend]{algpseudocode}
 \usepackage{amsthm}
-\usepackage{cleveref}
+\usepackage[nameinlink]{cleveref}
 
 \usepackage{float}
 \floatstyle{ruled}
@@ -116,26 +116,39 @@
 
 \usepackage{boxedminipage}
 
-% Theorem environments
+% Theorem environments. Each env gets its own counter so cleveref can
+% correctly resolve the type (a label inside \begin{definition} is tagged
+% as type "definition", whose counter is also "definition"). Sharing the
+% theorem counter via [theorem] caused \Cref to render every label as
+% "Theorem N" regardless of the actual env.
 \theoremstyle{plain}
 \newtheorem{theorem}{Theorem}
 \newtheorem*{theorem*}{Theorem}
 \newtheorem{corollary}{Corollary}
 \newtheorem{lemma}{Lemma}
 \newtheorem{proposition}{Proposition}
-\newtheorem{property}[theorem]{Property}
+\newtheorem{property}{Property}
 
 \theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
+\newtheorem{definition}{Definition}
 
 \theoremstyle{remark}
-\newtheorem{remark}[theorem]{Remark}
+\newtheorem{remark}{Remark}
 
+\newtheorem{condition}{Condition}
+\newtheorem{assumption}{Assumption}
+
+% cleveref names — each env now has its own counter, so these match.
 \crefname{condition}{condition}{conditions}
+\Crefname{condition}{Condition}{Conditions}
 \crefname{property}{property}{properties}
 \Crefname{property}{Property}{Properties}
-\newtheorem{condition}{Condition}
-\newtheorem{assumption}[theorem]{Assumption}
+\crefname{definition}{definition}{definitions}
+\Crefname{definition}{Definition}{Definitions}
+\crefname{remark}{remark}{remarks}
+\Crefname{remark}{Remark}{Remarks}
+\crefname{assumption}{assumption}{assumptions}
+\Crefname{assumption}{Assumption}{Assumptions}
 \newcommand{\GST}{\ensuremath{\mathsf{GST}}}
 \newcommand{\OHM}{online-honest majority\xspace}
 \newcommand{\HAP}{honest available-chain proposer\xspace}
