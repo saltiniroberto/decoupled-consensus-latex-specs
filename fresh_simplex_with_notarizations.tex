@@ -116,41 +116,39 @@
 
 \usepackage{boxedminipage}
 
-% Theorem environments — declare ALL of them first
+% Theorem environments. Each env gets its own counter so cleveref can
+% correctly resolve the type (a label inside \begin{definition} is tagged
+% as type "definition", whose counter is also "definition"). Sharing the
+% theorem counter via [theorem] caused \Cref to render every label as
+% "Theorem N" regardless of the actual env.
 \theoremstyle{plain}
 \newtheorem{theorem}{Theorem}
 \newtheorem*{theorem*}{Theorem}
 \newtheorem{corollary}{Corollary}
 \newtheorem{lemma}{Lemma}
 \newtheorem{proposition}{Proposition}
-\newtheorem{property}[theorem]{Property}
+\newtheorem{property}{Property}
 
 \theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
+\newtheorem{definition}{Definition}
 
 \theoremstyle{remark}
-\newtheorem{remark}[theorem]{Remark}
+\newtheorem{remark}{Remark}
 
 \newtheorem{condition}{Condition}
-\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{assumption}{Assumption}
 
-% cleveref names — wrapped in \AtBeginDocument because hyperref's
-% own \AtBeginDocument hooks otherwise overwrite the type-name table.
-% Without this, shared-counter envs (property/definition/remark/assumption
-% all share the theorem counter) render as "Theorem N" instead of their
-% proper environment names.
-\AtBeginDocument{%
-  \crefname{condition}{condition}{conditions}%
-  \Crefname{condition}{Condition}{Conditions}%
-  \crefname{property}{property}{properties}%
-  \Crefname{property}{Property}{Properties}%
-  \crefname{definition}{definition}{definitions}%
-  \Crefname{definition}{Definition}{Definitions}%
-  \crefname{remark}{remark}{remarks}%
-  \Crefname{remark}{Remark}{Remarks}%
-  \crefname{assumption}{assumption}{assumptions}%
-  \Crefname{assumption}{Assumption}{Assumptions}%
-}
+% cleveref names — each env now has its own counter, so these match.
+\crefname{condition}{condition}{conditions}
+\Crefname{condition}{Condition}{Conditions}
+\crefname{property}{property}{properties}
+\Crefname{property}{Property}{Properties}
+\crefname{definition}{definition}{definitions}
+\Crefname{definition}{Definition}{Definitions}
+\crefname{remark}{remark}{remarks}
+\Crefname{remark}{Remark}{Remarks}
+\crefname{assumption}{assumption}{assumptions}
+\Crefname{assumption}{Assumption}{Assumptions}
 \newcommand{\GST}{\ensuremath{\mathsf{GST}}}
 \newcommand{\OHM}{online-honest majority\xspace}
 \newcommand{\HAP}{honest available-chain proposer\xspace}
