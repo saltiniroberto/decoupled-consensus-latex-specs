@@ -116,7 +116,7 @@
 
 \usepackage{boxedminipage}
 
-% Theorem environments
+% Theorem environments — declare ALL of them first
 \theoremstyle{plain}
 \newtheorem{theorem}{Theorem}
 \newtheorem*{theorem*}{Theorem}
@@ -131,17 +131,26 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\crefname{condition}{condition}{conditions}
-\crefname{property}{property}{properties}
-\Crefname{property}{Property}{Properties}
-\crefname{definition}{definition}{definitions}
-\Crefname{definition}{Definition}{Definitions}
-\crefname{remark}{remark}{remarks}
-\Crefname{remark}{Remark}{Remarks}
-\crefname{assumption}{assumption}{assumptions}
-\Crefname{assumption}{Assumption}{Assumptions}
 \newtheorem{condition}{Condition}
 \newtheorem{assumption}[theorem]{Assumption}
+
+% cleveref names — wrapped in \AtBeginDocument because hyperref's
+% own \AtBeginDocument hooks otherwise overwrite the type-name table.
+% Without this, shared-counter envs (property/definition/remark/assumption
+% all share the theorem counter) render as "Theorem N" instead of their
+% proper environment names.
+\AtBeginDocument{%
+  \crefname{condition}{condition}{conditions}%
+  \Crefname{condition}{Condition}{Conditions}%
+  \crefname{property}{property}{properties}%
+  \Crefname{property}{Property}{Properties}%
+  \crefname{definition}{definition}{definitions}%
+  \Crefname{definition}{Definition}{Definitions}%
+  \crefname{remark}{remark}{remarks}%
+  \Crefname{remark}{Remark}{Remarks}%
+  \crefname{assumption}{assumption}{assumptions}%
+  \Crefname{assumption}{Assumption}{Assumptions}%
+}
 \newcommand{\GST}{\ensuremath{\mathsf{GST}}}
 \newcommand{\OHM}{online-honest majority\xspace}
 \newcommand{\HAP}{honest available-chain proposer\xspace}
