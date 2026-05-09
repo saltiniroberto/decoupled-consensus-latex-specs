@@ -407,51 +407,46 @@ Immediate from \Cref{lem:finchain}: any two finalized blocks are compatible.
 \section{Fork-choice store}\label{sec:store}
 
 A node may track multiple chains simultaneously; the \emph{store} is the node-local data structure that mediates which chain the node follows.
-It maintains a single \emph{root block} $R$ together with a cached \emph{cert key} $\key_R$ for the event that last set $R$.
-Only \emph{justified} cert events (height-advances fired by \processHeight's justification branch) are compared against $\key_R$ in lex order; whenever such an event's key strictly dominates, $(R, \key_R)$ is updated.
-The key packages height, the justified-bit (always~$1$ for events that reach~$R$), the cert event's slot component, and a block hash, so that among justified events at the same height the more recent (higher vote-slot) one wins.
+It maintains a single \emph{root block} $R$ alongside a tracker $J$ of the highest justified block ever observed (extending the current store-finalized block).
+On each block acceptance, $R$ is recomputed from $J$ and the block tree by the following rule, where $\Sigma.h^\star$ is the highest state-height over the leaves of $\Sigma.\T$ (maintained incrementally by \onBlock).
+\begin{itemize}
+  \item If $\sigma[J].h \geq \Sigma.h^\star - 1$ and $\Sigma.F \preceq J$, set $R \gets J$.
+  \item Otherwise, set $R$ to the block in $\Sigma.\T$ at state-height $\Sigma.h^\star - 1$ extending $\Sigma.F$ with the largest $\hash$ (ties on hash do not occur); if that set is empty, leave $R$ unchanged.
+\end{itemize}
 
-\begin{definition}[Cert event and cert key]\label{def:cert-event}
+\begin{definition}[Cert event]\label{def:cert-event}
 When \processHeight fires a height advance on a chain (\Cref{alg:state-machine}), we call the triggering event a \emph{cert event}, characterized by:
 \begin{itemize}
   \item a \emph{root block} $X$: the justified target~$T$ in the justification branch, and the chain head~$L$ at firing time in the notarization branch;
   \item the height~$h$ at which the advance fires, equal to the pre-advance $\sigma.h$ and to the post-advance $\sigma.h_n$;
-  \item a \emph{slot component} $s \in \mathbb{N}$: the highest slot for which a $2n/3$-quorum of contributing votes all have $\slot \geq s$ (\Cref{def:justification}, \Cref{def:notarization});
   \item a \emph{bit} $b \in \{0, 1\}$: $b = 1$ for a justification, $b = 0$ for a notarization without accompanying justification.
 \end{itemize}
-The associated \emph{cert key} is the lexicographic tuple
-\[
-  \key(X, h, s, b) \;\coloneqq\; \bigl(h,\; b,\; s,\; \hash(X)\bigr).
-\]
 \end{definition}
-
-A justification also notarizes its chain head (the justification branch sets $(J, N) \gets (T, L)$ with shared slot component), but we classify the combined event as a justification with key $\key(T, h, s, 1)$.
-A given chain may therefore fire a bit-$0$ cert event on one occasion and a bit-$1$ cert event on another, with the bit-$1$ key strictly dominating at the same $(h, s)$.
 
 \begin{definition}[Store]\label{def:store}
 A node maintains a \emph{store}
 \[
-  \Sigma \;=\; (\sigma,\; \T,\; F_s,\; R,\; \key_R),
+  \Sigma \;=\; (\sigma,\; \T,\; F,\; R,\; J,\; h^\star),
 \]
 where:
 \begin{itemize}
   \item $\sigma$ is the \emph{state map}, assigning each accepted block its per-chain post-state (\Cref{alg:state-machine});
   \item $\T$ is the \emph{block tree}, the set of accepted blocks;
-  \item $F_s$ is the \emph{store-finalized block};
-  \item $R$ is the \emph{store root}: the block of the highest-key cert event ever observed;
-  \item $\key_R$ is the cached cert key of the event that set $R$.
+  \item $F$ is the \emph{store-finalized block};
+  \item $R$ is the \emph{store root};
+  \item $J$ is the \emph{highest justified block}: a block, extending $\Sigma.F$, with the largest state-height $\sigma[J].h$ among justifications observed on any processed chain;
+  \item $h^\star$ is the highest state-height over the leaves of $\Sigma.\T$, maintained incrementally by \onBlock.
 \end{itemize}
-The genesis store has $\T = \{\genesis\}$, $F_s = R = \genesis$, and $\key_R = (0,\, 1,\, 0,\, \hash(\genesis))$, treating genesis as a bit-$1$ cert event at height~$0$ with slot component~$0$.
+The genesis store has $\T = \{\genesis\}$, $F = R = J = \genesis$, $h^\star = 0$, treating genesis as a justification at height~$0$.
 \end{definition}
 
 The capital~$\Sigma$ distinguishes the store from the per-chain state~$\sigma$.
-We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F_s$, $\Sigma.R$, $\Sigma.\key_R$ for field access, and $\Sigma.\key_R.h$, $\Sigma.\key_R.b$ for the height and justification-bit components of the cached key.
+We write $\Sigma.\sigma$, $\Sigma.\T$, $\Sigma.F$, $\Sigma.R$, $\Sigma.J$, $\Sigma.h^\star$ for field access.
 
-The acceptance routine \onBlock (\Cref{alg:store}) admits $B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F_s \preceq B$.
+The acceptance routine \onBlock (\Cref{alg:store}) admits $B$ only if $B.\parent \in \Sigma.\T$ and $\Sigma.F \preceq B$.
 It runs \processSlot once per slot from $\Sigma.\sigma[B.\parent].s + 1$ up to $B.\slot$ (so any height advance enabled by the accumulated tally fires before~$B$'s votes are folded in), then $\processBlock(\cdot, B)$; the resulting post-state becomes $\Sigma.\sigma[B]$.
-The post-state then offers the justified-checkpoint descriptor $(\sigma[B].h_j,\, 1,\, \sigma[B].s_j,\, \sigma[B].J)$ to \updateForkChoiceRoot; notarization-only events do not update~$R$.
-Each call to \updateForkChoiceRoot first filters out any candidate~$C$ with $C \not\succeq \Sigma.F_s$ and then updates $(\Sigma.R,\, \Sigma.\key_R)$ iff the candidate's cert key strictly exceeds the current $\key_R$; this maintains $R$ incrementally as the lex-max cert event ever observed on a chain extending the current $F_s$, never recomputed.
-Finally, \updateFinalized sets $\Sigma.F_s \gets \sigma[B].F$ iff $\sigma[B].F \succ \Sigma.F_s$ and $\sigma[B].F \preceq \Sigma.R$.
+The post-state then offers the justified-checkpoint descriptor $(\sigma[B].h_j,\, \sigma[B].J)$ to \updateForkChoiceRoot, which (i) raises $\Sigma.J$ to the new justified block if it has a strictly higher state-height than the current $\Sigma.J$ and extends $\Sigma.F$, and (ii) recomputes $\Sigma.R$ by the rule above.
+Finally, \updateFinalized sets $\Sigma.F \gets \sigma[B].F$ iff $\sigma[B].F \succ \Sigma.F$ and $\sigma[B].F \preceq \Sigma.R$.
 
 $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, under synchrony, is safe in the sense that it will not be reverted as long as more than half of the online validators are honest. Here $\Omega$ represents the state of the available chain --- whatever extra information the validator uses to disambiguate among descendants of $\Sigma.R$ in $\Sigma.\T$. The protocol fixes only that the returned block lies in $\Sigma.\T$ and descends from $\Sigma.R$; it does not constrain $\Omega$'s structure or how the choice depends on it. Different validators may pass different~$\Omega$, and a single validator may pass different~$\Omega$ at different call sites.
 
@@ -461,13 +456,12 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
 \begin{boxedminipage}{\textwidth}
 \begin{algorithmic}[1]
 
-\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F_s \gets \genesis,\ \Sigma.R \gets \genesis,\ \Sigma.\key_R \gets (0,\, 1,\, 0,\, \hash(\genesis)),$
-\State \hspace{8.1em}$\Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
+\State \textbf{Genesis store} $\Sigma$:\ $\Sigma.\T \gets \{\genesis\},\ \Sigma.F \gets \genesis,\ \Sigma.R \gets \genesis,\ \Sigma.J \gets \genesis,\ \Sigma.h^\star \gets 0,\ \Sigma.\sigma[\genesis] \gets \sigma_{\mathrm{gen}}$
 \vspace{3pt}
 
 \Function{\onBlock}{$\Sigma,\; B$}
   \State \textbf{assert} $B.\parent \in \Sigma.\T$
-  \State \textbf{assert} $\Sigma.F_s \preceq B$
+  \State \textbf{assert} $\Sigma.F \preceq B$
   \State $\Sigma.\T \gets \Sigma.\T \cup \{B\}$
   \State $\sigma' \gets \Sigma.\sigma[B.\parent]$
   \While{$\sigma'.s < B.\slot$} \Comment{Advance through every intervening slot}
@@ -475,24 +469,29 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
   \EndWhile
   \State $\sigma' \gets \processBlock(\sigma',\; B)$
   \State $\Sigma.\sigma[B] \gets \sigma'$
-  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_j,\; 1,\; \sigma'.s_j,\; \sigma'.J))$ \Comment{Only justified checkpoints update $R$}
+  \State $\Sigma.h^\star \gets \max(\Sigma.h^\star,\; \sigma'.h)$ \Comment{$\sigma'.h$ is $B$'s state-height}
+  \State $\Sigma \gets \updateForkChoiceRoot(\Sigma,\; (\sigma'.h_j,\; \sigma'.J))$
   \State $\Sigma \gets \updateFinalized(\Sigma,\; \sigma'.F)$
   \State \Return $\Sigma$
 \EndFunction
 \vspace{3pt}
 
-\Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, b,\, s,\, C)$} \Comment{Filter by $\Sigma.F_s \preceq C$, then running max}
-  \State $\newKey \gets (h,\; b,\; s,\; \hash(C))$
-  \If{$\newKey > \Sigma.\key_R$ and $\Sigma.F_s \preceq C$}
-    \State $\Sigma.R \gets C$; \;\; $\Sigma.\key_R \gets \newKey$
+\Function{\updateForkChoiceRoot}{$\Sigma,\; (h,\, J)$}
+  \If{$h > \sigma[\Sigma.J].h$ \textbf{and} $\Sigma.F \preceq J$} \Comment{Raise $J$ when dominated and on the $F$-chain}
+    \State $\Sigma.J \gets J$
+  \EndIf
+  \If{$\sigma[\Sigma.J].h \geq \Sigma.h^\star - 1$ \textbf{and} $\Sigma.F \preceq \Sigma.J$}
+    \State $\Sigma.R \gets \Sigma.J$
+  \Else
+    \State $\Sigma.R \gets \arg\max_{B \in \Sigma.\T,\; \sigma[B].h = \Sigma.h^\star - 1,\; B \succeq \Sigma.F} \hash(B)$ \Comment{empty $\Rightarrow$ $\Sigma.R$ unchanged}
   \EndIf
   \State \Return $\Sigma$
 \EndFunction
 \vspace{3pt}
 
 \Function{\updateFinalized}{$\Sigma,\; F_B$}
-  \If{$F_B \succ \Sigma.F_s$ and $F_B \preceq \Sigma.R$}
-    \State $\Sigma.F_s \gets F_B$
+  \If{$F_B \succ \Sigma.F$ and $F_B \preceq \Sigma.R$}
+    \State $\Sigma.F \gets F_B$
   \EndIf
   \State \Return $\Sigma$
 \EndFunction
@@ -507,56 +506,55 @@ $\getConfirmed(\Sigma, \Omega)$ returns a block on the available chain that, und
 \end{center}
 \end{figure}
 
-The $F_s$-filter never discards a key-dominant event: \Cref{thm:fleqr} below shows that $F_s$ advances only to blocks $\preceq R$, so every cert event whose key could beat $R$ remains on the $F_s$-chain.
+The $F$-filter never discards a justified block that should reach $J$: \Cref{thm:fleqr} below shows that $F$ advances only to blocks $\preceq R$, so every justified block that could beat the current $J$ on height remains on the $F$-chain.
 
 \subsection{Store invariants and safety}
 
 \subsubsection*{Unconditional invariants}
 
-\begin{lemma}[Root-key monotonicity]\label{lem:Rs-key-monotone}
-The cached cert key $\Sigma.\key_R$ is non-decreasing over time; in particular, its height component $\Sigma.\key_R.h$ is non-decreasing.
+\begin{lemma}[$J$ height monotonicity]\label{lem:J-monotone}
+The state-height $\sigma[\Sigma.J].h$ is non-decreasing over time.
 \end{lemma}
 
 \begin{proof}
-The cached key changes only inside \updateForkChoiceRoot, whose guard $\newKey > \Sigma.\key_R$ (lex) allows only strict increases; the height coordinate $h$ is the leading component of the key.
+$\Sigma.J$ changes only inside \updateForkChoiceRoot, whose guard $h > \sigma[\Sigma.J].h$ allows only strict increases of the height; $\sigma[\cdot].h$ on a fixed block is invariant once set.
 \end{proof}
 
 \begin{theorem}[Local irreversibility of finality]\label{thm:finperm}
-Once a node sets $F_s = F$, $F_s$ descends from~$F$ at all future times.
+Once a node sets $F = F$, $F$ descends from~$F$ at all future times.
 \end{theorem}
 
 \begin{proof}
-$F_s$ is updated only by \updateFinalized, whose guard $F_B \succ \Sigma.F_s$ forces strict extension along~$\preceq$.
+$F$ is updated only by \updateFinalized, whose guard $F_B \succ \Sigma.F$ forces strict extension along~$\preceq$.
 \end{proof}
 
-\begin{theorem}[$F_s \preceq R$]\label{thm:fleqr}
-The store maintains $F_s \preceq R$ at all times.
+\begin{theorem}[$F \preceq R$]\label{thm:fleqr}
+The store maintains $F \preceq R$ at all times.
 \end{theorem}
 
 \begin{proof}
 By induction on store operations.
-At genesis, $F_s = R = \genesis$, so $F_s \preceq R$.
+At genesis, $F = R = \genesis$, so $F \preceq R$.
 Assume the invariant before a call to either mutator in \Cref{alg:store}.
 
 \emph{\updateForkChoiceRoot.}
-$F_s$ is untouched, and $R$ either stays or is replaced by a candidate~$C$ that passed the $C \succeq \Sigma.F_s$ filter; either way $R \succeq F_s$.
+$F$ is untouched. The recompute sets $R$ to either $\Sigma.J$ (only when $\Sigma.F \preceq \Sigma.J$, by the explicit branch guard) or to a block at state-height $h^\star - 1$ filtered by $\succeq \Sigma.F$; if neither branch fires (the fallback set being empty), $R$ stays unchanged. In all three cases $R \succeq F$ holds, the third by induction.
 
 \emph{\updateFinalized.}
-$R$ is untouched, and the guard $F_B \preceq \Sigma.R$ ensures $F_s \gets F_B \preceq R$.
+$R$ is untouched, and the guard $F_B \preceq \Sigma.R$ ensures $F \gets F_B \preceq R$.
 \end{proof}
 
 \begin{remark}[Store-finalized invariant]\label{rem:fs-invariant}
-At all times $\Sigma.F_s$ is either~$\genesis$ or a block that was finalized on some chain; moreover, whenever a justification $(J, h)$ with slot component $s_j$ has fired on some processed chain, the descriptor $(h,\, 1,\, s_j,\, J)$ was offered to \updateForkChoiceRoot, so $\Sigma.\key_R \geq (h,\, 1,\, s_j,\, \hash(J))$ for every such $(J, h, s_j)$ with $J \succeq \Sigma.F_s$.
-$\Sigma.F_s$ only advances via \updateFinalized to $F_B = \sigma[B].F$, and $\sigma[B].F \neq \genesis$ requires the finality branch of \processHeight to have fired on~$B$'s chain, so $F_B$ is a block finalized on that chain.
-Since only justified (bit-$1$) descriptors reach \updateForkChoiceRoot, $\Sigma.\key_R.b = 1$ at all times.
+At all times $\Sigma.F$ is either~$\genesis$ or a block that was finalized on some chain; moreover, whenever a justification $(J, h)$ has fired on some processed chain, the descriptor $(h,\, J)$ was offered to \updateForkChoiceRoot, so $\sigma[\Sigma.J].h \geq h$ for every such $(J, h)$ with $J \succeq \Sigma.F$ (\Cref{lem:J-monotone}).
+$\Sigma.F$ only advances via \updateFinalized to $F_B = \sigma[B].F$, and $\sigma[B].F \neq \genesis$ requires the finality branch of \processHeight to have fired on~$B$'s chain, so $F_B$ is a block finalized on that chain.
 \end{remark}
 
 \begin{theorem}[Fork-choice consistency]\label{thm:fcconsistency}
-Once a node sets $F_s = F$, $\getConfirmed(\Sigma, \Omega)$ returns a block descending from~$F$ at all future times, for every~$\Omega$.
+Once a node sets $F = F$, $\getConfirmed(\Sigma, \Omega)$ returns a block descending from~$F$ at all future times, for every~$\Omega$.
 \end{theorem}
 
 \begin{proof}
-By \Cref{thm:finperm} and~\Cref{thm:fleqr}, $F \preceq F_s \preceq R$, and $\getConfirmed(\Sigma, \Omega)$ returns a descendant of~$R$ regardless of~$\Omega$.
+By \Cref{thm:finperm} and~\Cref{thm:fleqr}, $F \preceq F \preceq R$, and $\getConfirmed(\Sigma, \Omega)$ returns a descendant of~$R$ regardless of~$\Omega$.
 \end{proof}
 
 \subsubsection*{Further properties under $f < n/3$}
@@ -577,29 +575,34 @@ Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_F$ 
 \end{lemma}
 
 \begin{proof}
-Fix the moment when $\onBlock(B)$ offered the descriptor $(h_F,\, 1,\, s_F,\, F)$ to \updateForkChoiceRoot, and let $F_s^0 = \Sigma.F_s$ at that moment.
-Both $F_s^0$ and $F$ are finalized or genesis (\Cref{rem:fs-invariant}), so \Cref{lem:finchain} gives $F_s^0 \preceq F$ or $F \preceq F_s^0$.
+Fix the moment when $\onBlock(B)$ offered the descriptor $(h_F,\, F)$ to \updateForkChoiceRoot, and let $F^0 = \Sigma.F$ at that moment.
+Both $F^0$ and $F$ are finalized or genesis (\Cref{rem:fs-invariant}), so \Cref{lem:finchain} gives $F^0 \preceq F$ or $F \preceq F^0$.
 
-\emph{Case $F \preceq F_s^0$.}
-$R \succeq F_s^0 \succeq F$ already holds by \Cref{thm:fleqr}; \Cref{thm:finperm} preserves $F_s \succeq F_s^0$ and \Cref{thm:fleqr} preserves $R \succeq F_s$ at all future times, so $R \succeq F$ persists.
+\emph{Case $F \preceq F^0$.}
+$R \succeq F^0 \succeq F$ already holds by \Cref{thm:fleqr}; \Cref{thm:finperm} preserves $F \succeq F^0$ and \Cref{thm:fleqr} preserves $R \succeq F$ at all future times, so $R \succeq F$ persists.
 
-\emph{Case $F_s^0 \preceq F$.}
-The filter passes, so after the call $\Sigma.\key_R \geq (h_F,\, 1,\, s_F,\, \hash(F))$; \Cref{lem:Rs-key-monotone} preserves this bound thereafter.
-Write $h_R \coloneqq \Sigma.\key_R.h$; the bound gives $h_R \geq h_F$, and \Cref{rem:fs-invariant} gives $\Sigma.\key_R.b = 1$.
-If $h_R > h_F$, \Cref{lem:certchain} applied to the cert event $(R,\, h_R,\, \cdot,\, 1)$ gives $F \prec R$.
-If $h_R = h_F$, $R$ was justified at height~$h_F$ on some processed chain, giving a \just-quorum~$Q'$ of size $\geq 2n/3$ with target~$R$ at height~$h_F$.
-Finality of~$F$ at~$h_F$ gives a quorum~$Q_F$ with $\finalizeHeight = h_F$ and $\finalizeTarget = F$.
-By quorum intersection, $|Q' \cap Q_F| \geq n/3$; pick $v \in Q' \cap Q_F$ not slashable.
-E1 (\Cref{def:slashing}) applied to $v$'s votes in~$Q', Q_F$ forces $R = F$.
+\emph{Case $F^0 \preceq F$.}
+The filter $\Sigma.F \preceq F$ passes, so the call sets $\Sigma.J$ to a block of state-height $\geq h_F$; \Cref{lem:J-monotone} preserves $\sigma[\Sigma.J].h \geq h_F$ thereafter.
+Write $h_J \coloneqq \sigma[\Sigma.J].h$.
+If $h_J > h_F$, \Cref{lem:certchain} applied to the justification cert event at $\Sigma.J$ gives $F \prec \Sigma.J$.
+If $h_J = h_F$, $\Sigma.J$ was justified at height~$h_F$ on some processed chain, giving a \just-quorum~$Q'$ of size $\geq 2n/3$ targeting $\Sigma.J$ at height~$h_F$; finality of~$F$ at~$h_F$ gives a quorum~$Q_F$ with $\finalizeHeight = h_F$ and $\finalizeTarget = F$, and quorum intersection plus E1 (as in the proof of \Cref{lem:finchain}) forces $\Sigma.J = F$.
+Either way $\Sigma.J \succeq F$, hence $\sigma[\Sigma.J].h \geq h_F$ and $\Sigma.F \preceq F \preceq \Sigma.J$.
+
+It remains to argue that the \updateForkChoiceRoot recompute in any future call yields $R \succeq F$.
+Let $h^\star$ be the current leaf-height bound, and consider the two branches.
+If the branch $R \gets \Sigma.J$ fires, $R = \Sigma.J \succeq F$.
+Otherwise the fallback fires: $R$ is set to a block at state-height $h^\star - 1$ extending $\Sigma.F$ (or stays unchanged if no such block exists).
+Note $\sigma[F].h = h_F$ and $h^\star \geq h_F + 1$ (since $\Sigma.\T$ contains a block witnessing $F$'s finalization at state-height $\geq h_F + 1$), so $h^\star - 1 \geq h_F$; \Cref{lem:mainsafety} (when $h^\star - 1 > h_F$) and direct identity (when $h^\star - 1 = h_F$, in which case $F$ itself is a candidate) give $R \succeq F$.
+If the fallback set is empty, $R$ is unchanged from its previous value, which by induction was $\succeq F$.
 \end{proof}
 
 \begin{theorem}[Local acceptance of finality updates]\label{thm:finlive}
-Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by \onBlock and its post-state has finalized block~$F_B$, then after processing $F_s \succeq F_B$.
+Unless $\geq n/3$ validators are slashable: if a block~$B$ is processed by \onBlock and its post-state has finalized block~$F_B$, then after processing $F \succeq F_B$.
 \end{theorem}
 
 \begin{proof}
-If $F_s \succeq F_B$ already, the claim holds.
-Otherwise $F_s$ is genesis or finalized (\Cref{rem:fs-invariant}), so \Cref{lem:finchain} gives $F_s \sim F_B$ and hence $F_s \prec F_B$.
+If $F \succeq F_B$ already, the claim holds.
+Otherwise $F$ is genesis or finalized (\Cref{rem:fs-invariant}), so \Cref{lem:finchain} gives $F \sim F_B$ and hence $F \prec F_B$.
 $F_B$ being finalized in~$B$'s post-state requires some ancestor~$B' \preceq B$ to have post-state $(J_{B'},\, h_j^{B'}) = (F_B,\, h_{F_B})$; $B'$ was processed before~$B$ (parent-first), so \Cref{lem:upgrade} gives $R \succeq F_B$, and the \updateFinalized guard passes.
 \end{proof}
 
@@ -619,18 +622,18 @@ Unless $\geq n/3$ validators are slashable: the store state after processing a s
 \begin{proof}
 Each block's post-state is a deterministic function of itself and its parent's post-state, so $\sigma$ depends only on the processed set.
 
-\emph{$F_s$.} By \Cref{lem:finchain}, $\{\sigma[B].F : B \in \T\}$ is a chain with maximum $F_{\max}$, attained at some processed~$B^\ast$.
-\Cref{rem:fs-invariant} forces $F_s$ into this chain, so $F_s \preceq F_{\max}$; once $B^\ast$ has been processed, \Cref{thm:finlive} gives $F_s \succeq F_{\max}$.
+\emph{$F$.} By \Cref{lem:finchain}, $\{\sigma[B].F : B \in \T\}$ is a chain with maximum $F_{\max}$, attained at some processed~$B^\ast$.
+\Cref{rem:fs-invariant} forces $F$ into this chain, so $F \preceq F_{\max}$; once $B^\ast$ has been processed, \Cref{thm:finlive} gives $F \succeq F_{\max}$.
 
-\emph{$R$.} The multiset~$D$ of descriptors offered to \updateForkChoiceRoot is a deterministic function of the processed set: each block contributes one justified-checkpoint descriptor exactly once.
-Write $K_{\max} \coloneqq (h_{F_{\max}},\, 1,\, s_{F_{\max}},\, \hash(F_{\max}))$, where $s_{F_{\max}}$ is the slot component attached to $F_{\max}$'s justification.
-For any $(h, 1, s, C) \in D$ with $h \geq h_{F_{\max}}$, \Cref{lem:certchain} gives $C \succeq F_{\max}$ (strict when $h > h_{F_{\max}}$); at $h = h_{F_{\max}}$, a competing descriptor has bit~$1$, hence a \just-quorum~$Q_C$ of size $\geq 2n/3$ targeting~$C$ at height~$h_{F_{\max}}$, while finality of~$F_{\max}$ gives a quorum~$Q_F$ with $\finalizeHeight = h_{F_{\max}}$ and $\finalizeTarget = F_{\max}$; quorum intersection and E1 (as in \Cref{lem:upgrade}) force $C = F_{\max}$.
-Descriptors with $h < h_{F_{\max}}$ have key strictly below $K_{\max}$ on the leading coordinate, so once $\key_R \geq K_{\max}$ holds they are dominated.
-Hence $R$'s final value is the lex-max over $\{(h, 1, s, C) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
+\emph{$\Sigma.J$.} The multiset~$D$ of justified-checkpoint descriptors $(h, J)$ offered to \updateForkChoiceRoot is a deterministic function of the processed set: each block contributes one such descriptor exactly once.
+By \Cref{lem:just-unique-height}, each height has at most one justified block on any processed chain, so the height-to-block map $h \mapsto J$ over $D$ is well-defined; \Cref{lem:certchain} together with the $\Sigma.F \preceq J$ filter ensures every descriptor admitted into the running max extends $F_{\max}$.
+The final $\Sigma.J$ is therefore the unique block of largest height in $D$ extending $F_{\max}$, a deterministic function of the processed set.
+
+\emph{$R$.} The recompute in \updateForkChoiceRoot is a pure function of $(\Sigma.\T, \sigma, \Sigma.F, \Sigma.J)$: the leaf set, $h^\star$, the $\sigma[B].h$ values, and the $\succeq F$-filtered candidate set at $h^\star - 1$ all depend only on the processed set; the hash-argmax is deterministic. Hence $R$'s final value is order-independent.
 \end{proof}
 
 \begin{corollary}[Cross-node agreement]\label{cor:agreement}
-Unless $\geq n/3$ validators are slashable: two nodes that have processed the same set of blocks have the same $(\sigma,\, \T,\, F_s,\, R,\, \key_R)$.
+Unless $\geq n/3$ validators are slashable: two nodes that have processed the same set of blocks have the same $(\sigma,\, \T,\, F,\, R,\, J)$.
 \end{corollary}
 
 \begin{proof}
@@ -852,22 +855,17 @@ In particular, $v$ is canonical-fresh on every extension $X' \succeq X$ with $\s
 \end{lemma}
 
 \begin{proof}
-Write $h_R \coloneqq \Sigma.\key_R.h$.
-By \Cref{rem:fs-invariant}, $\Sigma.\key_R.b = 1$, i.e., $R$ is justified at height~$h_R$ on some processed chain.
-$X$ descends from~$R$ (\Cref{alg:store}), so state-height monotonicity (\Cref{lem:slotmono}) gives $h_c \geq h_R$ and $\sigma[R].h = h_R$.
-
 By \Cref{def:voting-rule}, $v.\height = h_c$ and $v.\target = T_c$, where $T_c$ is either an ancestor of~$X$ at state-height~$h_c$ (unlocked case, satisfying the claim directly), or a lock target~$L$ from a prior (R1) vote of~$i$ with $\finalizeHeight = h_c$ (locked case).
 
-\emph{Locked case, $h_c > h_R$.}
+\emph{Locked case.}
 The prior (R1) was cast at an earlier moment when~$i$'s then-canonical had $h_j = h_c$, so a justification at height~$h_c$ fired on some processed chain at that moment.
-\Cref{lem:no-finalize-without-just} gives the descriptor $(h_c, 1, s^\star, L)$ offered to \updateForkChoiceRoot at that time.
-The filter $\Sigma.F_s \preceq L$ passes under $f < n/3$ (\Cref{rem:fs-invariant} makes $\Sigma.F_s$ finalized or genesis; \Cref{lem:certchain} with $h_c \geq h_{F_s}$ gives $\Sigma.F_s \preceq L$), so \updateForkChoiceRoot raised $\Sigma.\key_R.h$ to $\geq h_c$; \Cref{lem:Rs-key-monotone} preserves this bound.
-But $\Sigma.\key_R.h = h_R < h_c$, contradiction.
-Hence the locked case does not arise when $h_c > h_R$, and $T_c \preceq X$ with $\sigma[T_c].h = h_c$ from the unlocked branch.
+\Cref{lem:no-finalize-without-just} gives the descriptor $(h_c, L)$ offered to \updateForkChoiceRoot at that time, and the filter $\Sigma.F \preceq L$ passes under $f < n/3$ (\Cref{rem:fs-invariant} makes $\Sigma.F$ finalized or genesis; \Cref{lem:certchain} with $h_c \geq h_{F}$ gives $\Sigma.F \preceq L$).
+Hence \updateForkChoiceRoot raised $\sigma[\Sigma.J].h$ to $\geq h_c$, and \Cref{lem:J-monotone} preserves this bound: currently $\sigma[\Sigma.J].h \geq h_c$.
 
-\emph{Locked case, $h_c = h_R$.}
-\Cref{lem:no-finalize-without-just} gives $L$ justified at~$h_c$ on some processed chain; $\Sigma.\key_R.b = 1$ gives $R$ justified at~$h_R = h_c$ on some processed chain.
-\Cref{lem:just-unique-height} then forces $L = R$, so $T_c = L = R \preceq X$ with $\sigma[T_c].h = \sigma[R].h = h_c$.
+$X$ descends from~$R$ (\Cref{alg:store}), so state-height monotonicity (\Cref{lem:slotmono}) gives $h_c = \sigma[X].h \geq \sigma[R].h$.
+If $R = \Sigma.J$, then $\sigma[\Sigma.J].h \leq h_c$ and the previous bound force $\sigma[\Sigma.J].h = h_c$; \Cref{lem:just-unique-height} then forces $\Sigma.J = L$, so $R = L$.
+If $R$ is the fallback (a block at state-height $h^\star - 1$), $\sigma[R].h = h^\star - 1 \leq h_c$ together with the fallback-branch trigger $\sigma[\Sigma.J].h < h^\star - 1$ would give $\sigma[\Sigma.J].h < h_c$, contradicting the bound above.
+Hence $R = L$ and $T_c = L \preceq X$ with $\sigma[L].h = h_c$.
 \end{proof}
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}

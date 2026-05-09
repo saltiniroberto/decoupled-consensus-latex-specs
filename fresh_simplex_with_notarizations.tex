@@ -1419,11 +1419,139 @@ Assume:
 Then the system is in a healed state at slot $k+2$ with height $h+1$ (\Cref{rev:def:healed-state}).
 \end{lemma}
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  block/.style={draw, rounded corners=2pt, minimum width=1.4cm, minimum height=0.5cm},
+  cert/.style={draw, rounded corners=2pt, fill=yellow!50, inner sep=2pt, font=\scriptsize}
+]
+% chain (vertical, child→parent arrows)
+\node[block]                  (B0) at (0, -1.3) {$\cdots$};
+\node[block, fill=red!15]     (Bh) at (0,  0)   {$\comm{R}^{\vote(k)}$};
+\node[block, dashed, draw=gray] (B1) at (0,  1.1) {};
+\node[block, dashed, draw=gray] (B2) at (0,  2.2) {};
+\draw[-Stealth, thin]         (Bh) -- (B0);
+\draw[-Stealth, thin]         (B1) -- (Bh);
+\draw[-Stealth, thin]         (B2) -- (B1);
+
+% chain-height labels
+\node[anchor=east] at (-1, -1.3) {$\vdots$};
+\node[anchor=east] at (-1, 0)   {$h$};
+\node[anchor=east] at (-1, 1.1) {$h+1$};
+\node[anchor=east] at (-1, 2.2) {$h+2$};
+\node[anchor=east, font=\scriptsize] at (-1, 2.9) {chain-height};
+
+% bit-1 cert (justifies R)
+\node[cert, anchor=west] (cb1) at (1.4, 0) {bit-$1$ cert at $h$ (justifies $R^{\vote(k)}$, hyp.~\ref{rev:hfj:r})};
+
+% no-vote-above-h hypothesis
+\node[anchor=west, align=left, font=\scriptsize, red!70!black] at (1.4, 1.65)
+  {hyp.~\ref{rev:hfj:nh}: \emph{no} honest vote\\ at height $>h$ before $\vote(k)$};
+\draw[red!70!black, decorate, decoration={zigzag, segment length=4pt, amplitude=1.5pt}]
+  (1.0, 1.1) -- (1.3, 1.1);
+\draw[red!70!black, decorate, decoration={zigzag, segment length=4pt, amplitude=1.5pt}]
+  (1.0, 2.2) -- (1.3, 2.2);
+
+\end{tikzpicture}
+\caption{\label{rev:fig:hfj-setup}\textbf{Setup.} Every honest validator's $R$ at $\vote(k)$ is the same block $\comm{R}^{\vote(k)}$ at chain-height $h$, justified by a bit-$1$ cert (hyp.~\ref{rev:hfj:r}). No honest validator has cast any vote at height $>h$ before $\vote(k)$ (hyp.~\ref{rev:hfj:nh}).}
+\end{figure}
+
 \begin{proof}
 Let $h \coloneqq \comm{R}^{\vote(k)}.h$, and write $a^k_v$ for honest~$v$'s slot-$k$ vote (when cast). By \Cref{def:voting-rule} (the $h_c$-clause, accounting for the $R$-shift branch) together with \Cref{rev:cor:processed-height-bound}, $a^k_v.\height \in \{h, h+1\}$ for every honest~$v$, splitting on the vote heights.
 
 \begin{description}
 \item[{Case 1: $a^k_v.\height = h$ for every honest~$v$.}]\hfill
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  x=3.8cm, y=1.5cm, font=\footnotesize,
+  Rmark/.style={circle, draw, fill=red!75!black, inner sep=1.6pt},
+  block/.style={draw, rounded corners=2pt, fill=blue!12, font=\scriptsize, inner sep=2pt, align=center},
+  vblock/.style={block, dashed, fill=blue!4},
+  cert/.style={draw, rounded corners=2pt, fill=yellow!50, inner sep=2pt, font=\scriptsize, align=center},
+  vote/.style={-Stealth, blue!60!black, semithick},
+  trigger/.style={-Stealth, very thick, green!55!black},
+  rtrig/.style={-Stealth, very thick, red!65!black},
+  sh/.style={diamond, draw, fill=green!55!black, inner sep=1.6pt},
+  pipeline/.style={-Stealth, thin, gray!50!black}
+]
+% Axes
+\draw[-Stealth, gray!60] (-0.4, -0.45) -- (2.55, -0.45);
+\foreach \x/\lbl in {0/{$\vote(k)$}, 1/{$\vote(k+1)$}, 2/{$\vote(k+2)$}}
+  \node[font=\scriptsize, anchor=north] at (\x, -0.5) {\lbl};
+\node[font=\scriptsize, anchor=west] at (2.55, -0.45) {time};
+
+\draw[-Stealth, gray!60] (-0.4, -0.45) -- (-0.4, 2.0);
+\foreach \y/\lbl in {0/{$h$}, 1/{$h+1$}}
+  \node[font=\scriptsize, anchor=east] at (-0.45, \y) {\lbl};
+\node[font=\scriptsize, anchor=south] at (-0.4, 2.0) {chain-h.};
+
+% R^vote(k)
+\node[Rmark] (R0) at (0, 0) {};
+\node[font=\scriptsize, anchor=north] at (0, -0.07) {$R^{\vote(k)}$};
+
+% Slot-k block on D' (HAR proposer bundles slot-k votes)
+\node[block, minimum width=0.7cm, minimum height=0.5cm] (Bk) at (0.30, 0) {slot-$k$\\block};
+\draw[pipeline] (R0) -- (Bk);
+\node[font=\tiny, gray!50!black, anchor=west] at (Bk.east) {(HAR)};
+
+% Slot-k votes from individual validators (fan-in to varied points on block top)
+\foreach \sx/\tx in {-0.14/0.21, -0.08/0.25, -0.02/0.28, 0.04/0.32, 0.10/0.36, 0.16/0.39}
+  \draw[vote] ({\sx}, 0.65) -- (\tx, 0.13);
+\node[anchor=south, font=\scriptsize, blue!60!black, align=center] at (0, 0.7)
+  {$\geq 2n/3$ slot-$k$ votes\\(one per honest validator)};
+
+% Cert at h (output of processHeight)
+\node[cert] (Ck) at (0.63, 0) {$(h, 0, k, \ldots)$};
+\draw[pipeline] (Bk) -- (Ck);
+
+% R^vote(k+1) (still at h)
+\node[Rmark] (R1) at (1, 0) {};
+\node[font=\scriptsize, anchor=north] at (1, -0.07) {$R^{\vote(k+1)}$};
+
+% State-h advance marker
+\node[sh] (SH1) at (1, 1) {};
+\node[anchor=east, font=\scriptsize, green!55!black] at (0.93, 1)
+  {state-h.~$=h{+}1$};
+
+% Slot-(k+1) virtual block
+\node[vblock, minimum width=0.7cm, minimum height=0.5cm] (VBk1) at (1.30, 1) {virtual\\block};
+
+% Slot-(k+1) votes from individual validators (fan-in to varied points on virtual block top)
+\foreach \sx/\tx in {-0.14/0.21, -0.08/0.25, -0.02/0.28, 0.04/0.32, 0.10/0.36, 0.16/0.39}
+  \draw[vote] ({1+\sx}, 1.65) -- ({1+\tx}, 1.13);
+\node[anchor=south, font=\scriptsize, blue!60!black, align=center] at (1, 1.7)
+  {$\geq 2n/3$ slot-$(k+1)$ votes\\(one per honest validator)};
+
+% Synchrony note (above virtual block)
+\node[font=\tiny, orange!70!black, anchor=west, align=left] at (1.42, 1.30)
+  {(synchrony:\\votes delivered\\by $\vote(k+2){-}\Delta$)};
+
+% Cert at h+1 (output of processHeight on virtual block)
+\node[cert] (Ck1) at (1.63, 1) {$(h{+}1, 0, k{+}1, \ldots)$};
+\draw[pipeline] (VBk1) -- (Ck1);
+
+% R^vote(k+2)
+\node[Rmark] (R2) at (2, 1) {};
+\node[font=\scriptsize, anchor=south] at (2, 1.07) {$R^{\vote(k+2)}$};
+
+% Causal: block → state-h advances (processHeight is what bumps state-h.; cert is a parallel output)
+\draw[trigger] (Bk.north east) to[bend left=20] (SH1.south west);
+\node[font=\scriptsize, green!55!black, anchor=south west] at (0.42, 0.50)
+  {\processHeight{}};
+
+% Causal: cert at h+1 → R updates (key ≻ κ_R)
+\draw[rtrig] (Ck1.east) -- (R2.west);
+\node[font=\scriptsize, red!65!black, anchor=south] at (1.85, 1.04)
+  {key $\succ \kappa_R$};
+
+\end{tikzpicture}
+\caption{\label{rev:fig:hfj-case1}\textbf{Case 1: every slot-$k$ honest vote at height $h$.}
+\emph{Slot-$k$ side (chain-h.\,$h$):} \HAR{} guarantees an honest proposer bundles the $\geq 2n/3$ slot-$k$ votes into a slot-$k$ block on the common chain $D'$. Each honest processes the block; \processHeight{} sees a same-slot prefix-notarization quorum at canonical state-height, fires a bit-$0$ cert at $h$, and bumps state-h.\ from $h$ to $h+1$ (green arrow). The cert key is dominated by $\kappa_R = (h, 1, 0, \ldots)$, so $R$ does \emph{not} update.
+\emph{Slot-$(k+1)$ side (chain-h.\,$h+1$):} slot-$(k+1)$ honest votes don't go through a chain block — they are delivered by synchrony to every honest by $\vote(k+2) - \Delta$, and each honest's \updateRootFromVotes{} aggregates them into a (local) virtual block extending its canonical. The same prefix-notarization mechanism fires a bit-$0$ cert at $h+1$ whose key dominates $\kappa_R$ on the leading coordinate (red arrow), moving $R$ to chain-height $h+1$ at $\vote(k+2)$.}
+\end{figure}
 
 \emph{Step 1: $R_v^t = \comm{R}^{\vote(k)}$ throughout $[\vote(k),\, \vote(k+1)]$.}
 By hypothesis~\ref{rev:hfj:r}, $R_v^{\vote(k)} = \comm{R}^{\vote(k)}$ is justified at height~$h$ in every honest's view, so $\key_R \geq (h, 1, 0, \comm{R}^{\vote(k)}.\slot, \hash(\comm{R}^{\vote(k)}))$ at $\vote(k)$. Hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest votes at height~$>h$; the case assumption $a^k_v.\height = h$ excludes slot-$k$ honest votes at height~$>h$; no voting event lies in $(\vote(k),\, \vote(k+1))$. Hence honest contributions at height~$>h$ in $[\vote(k),\, \vote(k+1)]$ are zero, dishonest alone are $\leq f < 2n/3$ (hypothesis~\ref{rev:hfj:ohm}), so no cert at height~$>h$ fires. \Cref{lem:Rs-key-monotone} keeps $\key_R.h \leq h$, and the bit-$1$ $\key_R$ dominates any bit-$0$ candidate at the same height. \Cref{lem:just-unique-height} (under $f < n/3$ from hypothesis~\ref{rev:hfj:f}) makes $\comm{R}^{\vote(k)}$ the unique justified block at height~$h$. Hence $R_v^t = \comm{R}^{\vote(k)}$ for every honest~$v$ and every $t \in [\vote(k),\, \vote(k+1)]$.
@@ -1486,6 +1614,46 @@ Pick any honest~$v_h$ with $a^k_{v_h}.\height = h+1$ (case assumption guarantees
 \begin{description}
 \item[{Case 2.A: $\sigma[\getConfirmed_v^{\vote(k+1)}].h = h+1$ for every honest~$v$.}]\hfill
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  x=2.7cm, y=1.0cm, font=\footnotesize,
+  Rmark/.style={circle, draw, fill=red!75!black, inner sep=1.6pt},
+  cert/.style={draw, rounded corners=2pt, fill=yellow!50, inner sep=2pt, font=\scriptsize},
+  vote/.style={-Stealth, thick, blue!70!black},
+  sh/.style={diamond, draw, fill=green!55!black, inner sep=1.2pt}
+]
+\draw[-Stealth, gray!60] (-0.4, -0.4) -- (2.55, -0.4);
+\foreach \x/\lbl in {0/{$\vote(k)$}, 1/{$\vote(k+1)$}, 2/{$\vote(k+2)$}}
+  \node[font=\scriptsize, anchor=north] at (\x, -0.45) {\lbl};
+\node[font=\scriptsize, anchor=west] at (2.55, -0.4) {time};
+
+\draw[-Stealth, gray!60] (-0.4, -0.4) -- (-0.4, 2.05);
+\foreach \y/\lbl in {0/{$h$}, 1/{$h+1$}}
+  \node[font=\scriptsize, anchor=east] at (-0.45, \y) {\lbl};
+\node[font=\scriptsize, anchor=south] at (-0.4, 2.05) {chain-h.};
+
+\node[Rmark, label={[font=\scriptsize, label distance=-2pt]below:{$R^{\vote(k)}$}}] (R0) at (0, 0) {};
+
+\node[cert, anchor=west, font=\tiny] at (-0.4, 1.55) {bit-$1$ cert at $h$ (already in some honest's view)};
+
+\draw[vote] (-0.05, 1.32) -- (-0.05, 0.07);
+\draw[vote] (0.05, 1.32) -- (0.05, 1.07);
+\node[anchor=south, font=\scriptsize, blue!70!black, align=center] at (0, 1.3) {slot-$k$ votes\\split at $h$ and $h+1$};
+
+\node[sh] (SH1) at (1, 1) {};
+\node[anchor=south, font=\scriptsize, green!50!black, align=center] at (1.0, 1.05) {state-h.~$=h+1$\\for \emph{all} honest};
+\node[Rmark, label={[font=\scriptsize, label distance=-2pt]below:{$R^{\vote(k+1)}$}}] (R1) at (1, 0) {};
+
+\draw[vote] (1.05, 1.55) -- (1.05, 1.07);
+\node[anchor=south, font=\scriptsize, blue!70!black] at (1.05, 1.55) {slot-$(k+1)$ votes};
+\node[cert] (Ck1) at (1.5, 1) {cert at $h+1$};
+
+\node[Rmark, label={[font=\scriptsize, label distance=-2pt]above:{$R^{\vote(k+2)},\ h{+}1$}}] (R2) at (2, 1) {};
+\end{tikzpicture}
+\caption{\label{rev:fig:hfj-case2a}\textbf{Case 2.A.} Some honest validator already has canonical state-height $h+1$ at $\vote(k)$ (the bit-$1$ cert at $h$ that justifies $\comm{R}^{\vote(k)}$ has fired on its canonical), and casts its slot-$k$ vote at $h+1$. By $\vote(k+1)$ the bit-$1$ cert at $h$ has propagated to every honest, so canonical state-height is uniformly $h+1$. Slot-$(k+1)$ votes target blocks at $h+1$ on the common chain $D'$, and the resulting cert at $h+1$ leaves $R^{\vote(k+2)}.h = h+1$.}
+\end{figure}
+
 \emph{Step 4: slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.}
 By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The lock check at $h+1$ fails: hypothesis~\ref{rev:hfj:nh} excludes any before-$\vote(k)$ honest vote at height~$>h$, in particular finalize-bearing at $h+1$; slot-$k$ (R1) honest votes have $\finalizeHeight = h_j \leq h < h+1$ (canonical $h_j$ equals~$h$ on chains where the cert-at-$h$ has fired, and is $\leq h-1$ otherwise). Hence the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
 
@@ -1521,6 +1689,42 @@ All four conditions verified, the system is in a healed state at slot~$k+2$ with
 
 
 \item[{Case 2.B: $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$ for some honest~$v_*$.}]\hfill
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  x=2.7cm, y=1.0cm, font=\footnotesize,
+  Rmark/.style={circle, draw, fill=red!75!black, inner sep=1.6pt},
+  cert/.style={draw, rounded corners=2pt, fill=yellow!50, inner sep=2pt, font=\scriptsize},
+  vote/.style={-Stealth, thick, blue!70!black},
+  sh/.style={diamond, draw, fill=green!55!black, inner sep=1.2pt}
+]
+\draw[-Stealth, gray!60] (-0.4, -0.4) -- (2.55, -0.4);
+\foreach \x/\lbl in {0/{$\vote(k)$}, 1/{$\vote(k+1)$}, 2/{$\vote(k+2)$}}
+  \node[font=\scriptsize, anchor=north] at (\x, -0.45) {\lbl};
+\node[font=\scriptsize, anchor=west] at (2.55, -0.4) {time};
+
+\draw[-Stealth, gray!60] (-0.4, -0.4) -- (-0.4, 2.6);
+\foreach \y/\lbl in {0/{$h$}, 1/{$h+1$}, 2/{$h+2$}}
+  \node[font=\scriptsize, anchor=east] at (-0.45, \y) {\lbl};
+\node[font=\scriptsize, anchor=south] at (-0.4, 2.6) {chain-h.};
+
+\node[Rmark, label={[font=\scriptsize, label distance=-2pt]below:{$R^{\vote(k)}$}}] (R0) at (0, 0) {};
+
+\node[cert, anchor=west, font=\tiny] at (0.55, 1) {cert at $h+1$ in $v_*$'s view, before $\vote(k+1)$};
+
+\node[sh] (SH*) at (1, 2) {};
+\node[anchor=west, font=\scriptsize, green!50!black] at (1.05, 2) {$v_*$: state-h.~$=h+2$};
+
+\node[Rmark] (R1) at (1, 1) {};
+\node[anchor=west, font=\scriptsize] at (1.05, 1.0) {$R^{\vote(k+1)}_{v_*}$ at $h+1$};
+
+\node[cert, anchor=west, font=\tiny] at (1.05, 0.55) {same cert reaches every honest by $\vote(k+2)$ (synchrony)};
+
+\node[Rmark, label={[font=\scriptsize, label distance=-2pt]above:{$R^{\vote(k+2)}.h \geq h+1$}}] (R2) at (2, 1.4) {};
+\end{tikzpicture}
+\caption{\label{rev:fig:hfj-case2b}\textbf{Case 2.B.} Beyond Case 2.A, some additional cert event at $h+1$ (bit-$1$ targeting the unique justified $J^*$, or a slot-$k$ same-slot bit-$0$ at $h+1$, all on the common chain $D'$) has fired in $v_*$'s view by $\vote(k+1)$, advancing its canonical state-height to $h+2$. By synchrony (post-GST + slot spacing $\geq 2\Delta$), the underlying block reaches every honest by $\vote(k+2) - \Delta$, the same cert fires there, and $R^{\vote(k+2)}.h \geq h+1$ uniformly.}
+\end{figure}
 
 \emph{Step 4: $v_*$'s view contains a cert event at height~$h+1$ with target on~$D'$, fired during onBlock processing of some block~$B^* \in \Sigma_{v_*}.\T$.}
 \Cref{rev:cor:processed-height-bound} applied to $\Sigma_{v_*}^{\vote(k+1)}$ gives $R_{v_*}^{\vote(k+1)}.h \geq h+1$. Step~1's bound $\key_R.h \leq h+1$ then forces $R_{v_*}^{\vote(k+1)}.h = h+1$. By Step~1's classification of cert events that may dominate $\key_R$, the corresponding cert event has target $T^* \in D'$. Since $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$, the cert event also fired on $v_*$'s canonical chain (the height-advance from $h+1$ to $h+2$ requires processHeight to fire the cert at~$h+1$ on canonical), at processSlot for some block~$B^* \in \Sigma_{v_*}^{\vote(k+1)}.\T$ on canonical.
