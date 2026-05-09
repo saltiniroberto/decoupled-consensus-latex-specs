@@ -1005,7 +1005,7 @@ Under this strengthened slashing definition, $f < n/3$ in the hypotheses of \Cre
 
 \begin{definition}[Slots and voting time]\label{rev:def:slots}
 Physical time is partitioned into an infinite sequence of discrete \emph{slots} indexed by $k \in \mathbb{N}$.
-Slot~$k$ has a \emph{start time} $\start(k) \in \mathbb{R}_{\geq 0}$ with $\start(k+1) \geq \start(k) + 2\Delta$, and a \emph{voting time} $\vote(k) \coloneqq \start(k) + \Delta$ at which every honest validator~$i$ invokes \Cref{def:voting-rule} on its local store~$\Sigma_i$ to produce at most one slot-$k$ vote.
+Slot~$k$ has a \emph{start time} $\start(k) \in \mathbb{R}_{\geq 0}$ with $\start(k+1) \geq \start(k) + 3\Delta$, and a \emph{voting time} $\vote(k) \coloneqq \start(k) + \Delta$ at which every honest validator~$i$ invokes \Cref{def:voting-rule} on its local store~$\Sigma_i$ to produce at most one slot-$k$ vote.
 \end{definition}
 
 \begin{definition}[Syncer]\label{rev:def:syncer}
@@ -1031,6 +1031,7 @@ The \emph{\AHA} condition holds at slot~$k$ iff every honest validator is online
 
 \begin{definition}[Confirmation delay]\label{rev:def:confirmation-delay}
 Let $\delta_c$ denote the time taken to confirm a block proposed by an honest proposer on the available chain.
+We assume $\delta_c < \Delta$.
 \end{definition}
 
 \begin{definition}[Honest available-chain proposer at slot $k$]\label{rev:def:honest-available-chain-proposer}
@@ -1570,7 +1571,7 @@ By Step~2, the chain at $\getConfirmed_v^{\vote(k+1)}$ contains the $\geq 2n/3$ 
 \emph{Step 4: slot-$(k+1)$ honest votes form a same-slot cert at~$h+1$ on~$D'$.}
 By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The (R1) branch fires (no prior honest vote at height~$h+1$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, Step~3 places slot-$k$ at height~$h$ exactly), and the lock check fails (hypothesis~\ref{rev:hfj:nh} also excludes before-$\vote(k)$ honest finalize-bearing at height~$h+1$; slot-$k$ has $\finalizeHeight \leq h - 1 < h+1$). So the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
 
-By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest validators cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the $\geq 2n/3$ slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 3\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest validators cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the $\geq 2n/3$ slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
 
 \emph{Step 5: $R_v^{\vote(k+2)}$ is a uniform bit-$0$ notarization at height~$h+1$ with notarization slot~$k+1$.}
 \updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes (uniform across honest by synchrony) into a virtual block extending its canonical (on~$D'$). The prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star} \in D'$ at state-height~$h+1$, with $\geq 2n/3$ honest contributors having $B^{\star\star} \preceq T_v^{(k+1)}$. The selection depends only on the honest contributions (which dominate the $\geq 2n/3$ count alone) and $D'$'s linear structure, so $B^{\star\star}$ is uniform across honest validators. The cert key $(h+1, 0, k+1, B^{\star\star}.\slot, \hash(B^{\star\star}))$ strictly dominates $\key_R = (h, 1, 0, \ldots)$ on the leading coordinate, so $R_v^{\vote(k+2)} = B^{\star\star}$ for every honest~$v$, with cert-key height~$h+1$ and notarization slot~$k+1 = (k+2) - 1$.
@@ -1579,7 +1580,7 @@ By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), ever
 We verify each condition of \Cref{rev:def:healed-state}.
 \begin{itemize}
   \item \emph{\ref{rev:def:healed-state:sync}.}
-  $\start(k+2) - \Delta \geq \start(k) + 4\Delta - \Delta = \start(k) + 3\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
+  $\start(k+2) - \Delta \geq \start(k) + 6\Delta - \Delta = \start(k) + 5\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
 
   \item \emph{\ref{rev:def:healed-state:R}.}
   Step~5 gives $R_v^{\vote(k+2)}.h = h+1$.
@@ -1657,7 +1658,7 @@ Pick any honest~$v_h$ with $a^k_{v_h}.\height = h+1$ (case assumption guarantees
 \emph{Step 4: slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.}
 By the voting rule, each honest~$v$ casts a slot-$(k+1)$ vote at canonical state-height~$h_c = h+1$. The lock check at $h+1$ fails: hypothesis~\ref{rev:hfj:nh} excludes any before-$\vote(k)$ honest vote at height~$>h$, in particular finalize-bearing at $h+1$; slot-$k$ (R1) honest votes have $\finalizeHeight = h_j \leq h < h+1$ (canonical $h_j$ equals~$h$ on chains where the cert-at-$h$ has fired, and is $\leq h-1$ otherwise). Hence the slot-$(k+1)$ vote target is $T_v^{(k+1)} = \getConfirmed_v^{\vote(k+1)} \in D'$ at state-height~$h+1$.
 
-By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 3\Delta$), every slot-$(k+1)$ honest vote is delivered to every honest by $\vote(k+1) + \Delta \leq \vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfj:aha} (\AHA at slot~$k+1$), all $\geq n - f > 2n/3$ honest cast such a vote. In each honest's $\Sigma.V$ at $\vote(k+2)$, the slot-$(k+1)$ honest votes target blocks on~$D'$ at state-height~$h+1$.
 
 \emph{Step 5: $R_v^{\vote(k+2)}.h = h+1$ for every honest~$v$, with target on~$D'$.}
 \updateRootFromVotes{} on each honest aggregates the slot-$(k+1)$ honest votes into a virtual block extending its canonical chain (on~$D'$); the prefix-notar $\arg\max_\preceq$ over the slot-$(k+1)$ same-slot quorum at height~$h+1$ on~$D'$ selects some $B^{\star\star}_v \in D'$ at state-height~$h+1$, firing a bit-$0$ cert event with key $(h+1, 0, k+1, B^{\star\star}_v.\slot, \hash(B^{\star\star}_v))$. The $\arg\max$ depends on $\Sigma_v.V$ (which has uniform honest content by synchrony) and~$D'$'s linear structure; honest contributions alone form a $\geq n - f > 2n/3$ quorum, so $B^{\star\star}_v$ is uniform across honest validators.
@@ -1674,7 +1675,7 @@ In every case $R_v^{\vote(k+2)}.h = h+1$ and $R_v^{\vote(k+2)} \in D'$ at state-
 We verify each condition of \Cref{rev:def:healed-state}.
 \begin{itemize}
   \item \emph{\ref{rev:def:healed-state:sync}.}
-  $\start(k+2) - \Delta \geq \start(k) + 4\Delta - \Delta = \start(k) + 3\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
+  $\start(k+2) - \Delta \geq \start(k) + 6\Delta - \Delta = \start(k) + 5\Delta \geq \GST$ by hypothesis~\ref{rev:hfj:sync} and slot spacing.
 
   \item \emph{\ref{rev:def:healed-state:R}.}
   Step~5 gives $R_v^{\vote(k+2)}.h = h+1$.
@@ -1730,14 +1731,14 @@ All four conditions verified, the system is in a healed state at slot~$k+2$ with
 \Cref{rev:cor:processed-height-bound} applied to $\Sigma_{v_*}^{\vote(k+1)}$ gives $R_{v_*}^{\vote(k+1)}.h \geq h+1$. Step~1's bound $\key_R.h \leq h+1$ then forces $R_{v_*}^{\vote(k+1)}.h = h+1$. By Step~1's classification of cert events that may dominate $\key_R$, the corresponding cert event has target $T^* \in D'$. Since $\sigma[\getConfirmed_{v_*}^{\vote(k+1)}].h = h+2$, the cert event also fired on $v_*$'s canonical chain (the height-advance from $h+1$ to $h+2$ requires processHeight to fire the cert at~$h+1$ on canonical), at processSlot for some block~$B^* \in \Sigma_{v_*}^{\vote(k+1)}.\T$ on canonical.
 
 \emph{Step 5: every honest validator has $R_v^{\vote(k+2)}.h \geq h+1$ with target on~$D'$.}
-By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 2\Delta$, post-GST), every block in $\Sigma_{v_*}^{\vote(k+1)}.\T$ is delivered to every honest by $\vote(k+2) - \Delta$, and honest validators process received blocks via onBlock in $\preceq$-respecting order. In particular, every honest~$v$ processes~$B^*$ together with all of its ancestors by $\vote(k+2)$. The state map is a deterministic function of the chain (\Cref{thm:orderindep}), so $\sigma_v[B^*.\parent] = \sigma_{v_*}[B^*.\parent]$, and the same processSlot/processHeight that fired the cert at~$h+1$ in $v_*$'s view fires it in $v$'s view; the descriptor offered to \updateForkChoiceRoot raises $\key_R$ to at least $(h+1, b, s_n, T^*.\slot, \hash(T^*))$. \Cref{lem:Rs-key-monotone} preserves the bound, giving $R_v^{\vote(k+2)}.h \geq h+1$.
+By synchrony (hypothesis~\ref{rev:hfj:sync} + slot spacing $\geq 3\Delta$, post-GST), every block in $\Sigma_{v_*}^{\vote(k+1)}.\T$ is delivered to every honest by $\vote(k+2) - \Delta$, and honest validators process received blocks via onBlock in $\preceq$-respecting order. In particular, every honest~$v$ processes~$B^*$ together with all of its ancestors by $\vote(k+2)$. The state map is a deterministic function of the chain (\Cref{thm:orderindep}), so $\sigma_v[B^*.\parent] = \sigma_{v_*}[B^*.\parent]$, and the same processSlot/processHeight that fired the cert at~$h+1$ in $v_*$'s view fires it in $v$'s view; the descriptor offered to \updateForkChoiceRoot raises $\key_R$ to at least $(h+1, b, s_n, T^*.\slot, \hash(T^*))$. \Cref{lem:Rs-key-monotone} preserves the bound, giving $R_v^{\vote(k+2)}.h \geq h+1$.
 
 A subsequent cert in $v$'s view at height~$>h+1$ during $[\vote(k+1),\, \vote(k+2)]$ has height~$\leq h+2$ (no honest votes at height~$>h+2$ exist before $\vote(k+2)$: hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$, \Cref{rev:cor:processed-height-bound} bounds slot-$k$ honest at $\leq h+1$ and slot-$(k+1)$ honest at $\leq h+2$; dishonest alone $\leq f < 2n/3$). Such a cert at~$h+2$ has target $\preceq$ some slot-$(k+1)$ honest contributor's target $a^{k+1}_w.\target$ at $a^{k+1}_w.\height = h+2$ for some honest~$w$; \Cref{def:voting-rule} forces $w$'s $R$-shift branch off ($h_R = R_w^{\vote(k+1)}.h \leq h+1 \neq h+2$, so the branch would set $h_c = h$ or $h+1$, not $h+2$) and the lock branch off (hypothesis~\ref{rev:hfj:nh} excludes before-$\vote(k)$ honest at $>h$, slot-$k$ R1 finalize-bearing votes have $\finalizeHeight \leq h < h+2$), so the default target $a^{k+1}_w.\target = \getConfirmed_w^{\vote(k+1)}$ at state-height $h+2$ on~$D'$. Hence $R_v^{\vote(k+2)} \in D'$.
 
 \emph{Step 6: healed-state conditions at slot~$k+2$ with height~$h+1$.}
 We verify each condition of \Cref{rev:def:healed-state}.
 \begin{itemize}
-  \item \emph{\ref{rev:def:healed-state:sync}.} As in Case~2.A: $\start(k+2) - \Delta \geq \start(k) + 3\Delta \geq \GST$.
+  \item \emph{\ref{rev:def:healed-state:sync}.} As in Case~2.A: $\start(k+2) - \Delta \geq \start(k) + 5\Delta \geq \GST$.
 
   \item \emph{\ref{rev:def:healed-state:R}.} Step~5 gives $R_v^{\vote(k+2)}.h \geq h+1$ for every honest~$v$.
 
@@ -1807,7 +1808,7 @@ The conclusion places the system in a healed state at slot~$k+3$ with height~$h+
 The $R$-shift trigger fires: $\key_R^{\vote(k+1)}.b = 0$ and $s < k = (k+1) - 1$. The $R$-shift branch sets $a^{k+1}_v.\target$ to the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height $h_R = h+1$. Since $\getConfirmed_v^{\vote(k+1)} \succeq R_v^{\vote(k+1)} = B^\star$ (store invariant) and $\sigma[B^\star].h = h+1$ (the slot-$s$ same-slot bit-$0$ cert at $B^\star$ advances state-height from~$h$ to~$h+1$ at $B^\star$), the deepest ancestor of $\getConfirmed_v^{\vote(k+1)}$ at state-height~$h+1$ is $B^\star$. The lock branch fails: $\key_R$ has bit-$0$ at $h+1$, so no bit-$1$ at $h+1$ has fired and canonical $h_j \leq h$ throughout $[\vote(k), \vote(k+1)]$, ruling out any honest R1 vote with $\finalizeHeight = h+1$. Hence $a^{k+1}_v.\height = h+1$ with target $B^\star$ uniformly.
 
 \emph{Slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ slot $k+1$ forms by $\vote(k+2)$.}
-By hypothesis~\ref{rev:hfjm:aha} (\AHA at $k+1$) and synchrony, all $\geq n - f > 2n/3$ slot-$(k+1)$ honest votes targeting $B^\star$ are delivered to every honest by $\vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfjm:har} (\HAR at $k+1$), an honest proposer in $[\vote(k+1), \vote(k+2) - \delta_c)$ proposes a block on the chain through $B^\star$ containing these votes; the extended \updateRootFromVotes{} fires a slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ on the chain through $B^\star$, target $B^{\star\star}$, key $(h+1, 0, k+1, \ldots)$, dominating $\key_R$ on $s_n$ ($k+1 > s$). $\Sigma_v.\hat{R}, \hat{\key}_R$ update to $(B^{\star\star}, (h+1, 0, k+1, \ldots))$ uniformly.
+By hypothesis~\ref{rev:hfjm:aha} (\AHA at $k+1$) and synchrony, all $\geq n - f > 2n/3$ slot-$(k+1)$ honest votes targeting $B^\star$ are delivered to every honest by $\vote(k+2) - \Delta$. By hypothesis~\ref{rev:hfjm:har} (\HAR at $k+1$), an honest proposer in $[\vote(k+1), \vote(k+2) - \delta_c)$ proposes a block on the chain through $B^\star$ containing these votes (the proposer's time $T_p$ lies in $[\vote(k+1) + \Delta,\, \vote(k+2) - \Delta) \subseteq [\vote(k+1),\, \vote(k+2) - \delta_c)$, with the lower bound ensuring inclusion of slot-$(k+1)$ honest votes and the upper bound ensuring propagation of the proposed block to all honest by $\vote(k+2)$; the sub-interval has length $\geq \Delta > 0$ by slot spacing $\geq 3\Delta$, and its containment in the HAR window uses $\delta_c < \Delta$); the extended \updateRootFromVotes{} fires a slot-$(k+1)$ same-slot bit-$0$ cert at $h+1$ on the chain through $B^\star$, target $B^{\star\star}$, key $(h+1, 0, k+1, \ldots)$, dominating $\key_R$ on $s_n$ ($k+1 > s$). $\Sigma_v.\hat{R}, \hat{\key}_R$ update to $(B^{\star\star}, (h+1, 0, k+1, \ldots))$ uniformly.
 
 \emph{$\vote(k+2)$.}
 By view-merge under honest $\syncer(k+2)$ (hypothesis~\ref{rev:hfjm:syncers}) and the pending-commit, $\Sigma_v.R^{\vote(k+2)}$ is uniform.
@@ -2316,7 +2317,7 @@ This appendix details the view-merge mechanism abstracted by \Cref{rev:ass:view-
 Throughout, $\Delta$ denotes the synchronous network-delivery bound.
 
 \begin{definition}[Slot timing]\label{rev:def:slot-timing}
-Each slot~$k$ is anchored at a real-valued slot time $\start(k)$ with $\start(k+1) - \start(k) \geq 2\Delta$ and contains three ordered events:
+Each slot~$k$ is anchored at a real-valued slot time $\start(k)$ with $\start(k+1) - \start(k) \geq 3\Delta$ and contains three ordered events:
 \begin{itemize}
   \item \emph{Freeze time} $\start(k) - \Delta$: every validator~$i$ records its current local store as its slot-$k$ frozen snapshot $\Sigma^k_{\mathrm{frozen},i}$.
   \item \emph{Syncer time} $\start(k)$: $\syncer(k)$ broadcasts its current (unfrozen) local store to every validator; let $\Sigma^k_{\mathrm{sent}}$ be the broadcast content.
