@@ -1047,7 +1047,7 @@ The healing arguments rest on four utility lemmas: pairwise compatibility and in
 All four share the same preamble: pairwise $\sim$-compatible cascade roots at $\vote(k)$ and an honest~$v_\ell$ whose $\getConfirmed_{v_\ell}^{\vote(k)}$ dominates every honest~$R$ throughout $[\vote(k),\, \vote(k{+}1)]$.
 
 \begin{property}[Cross-time, cross-validator target compatibility]\label{prop:getConfirmed-compat}
-Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses (a), (b), and (d) of the standing assumptions (Definition~\ref{def:standing}), and, for any honest validator $v$, there exists blocks $R' \in \V_v^{\vote(k)}$ and $R'' \in \V_v^{\vote(k+1)}$ such that $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$ and $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R''$.
+Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses (a) and (b) of the standing assumptions (Definition~\ref{def:standing}), and, for any honest validator $v$, there exists blocks $R' \in \V_v^{\vote(k)}$ and $R'' \in \V_v^{\vote(k+1)}$ such that $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$ and $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R''$.
 Then $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$ for every honest pair $v, v'$ and times $t, t' \in [\vote(k),\, \vote(k{+}1)]$.
 \end{property}
 
@@ -1056,7 +1056,7 @@ Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every hones
 \end{property}
 
 \begin{property}[Honest-vote inclusion in slot-$(k{+}1)$ canonical]\label{prop:vote-inclusion}
-Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$, the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every vote cast by an honest validator at~$\vote(k)$.
+Under the hypotheses of Property~\ref{prop:getConfirmed-compat} and additionally clause~(d) of the standing assumptions (Definition~\ref{def:standing}), for every honest~$v$, the chain ending at $\getConfirmed_v^{\vote(k+1)}$ contains every vote cast by an honest validator at~$\vote(k)$.
 \end{property}
 
 \begin{property}[Slot-$k$ honest-vote carrier in slot-$(k{+}1)$ trees]\label{prop:vote-carrier}
@@ -1065,7 +1065,7 @@ Then for every honest validator $v$, the block tree $\Sigma_v^{\vote(k+1)}.\T$ c
 \end{property}
 
 \begin{property}[Slot-$(k{+}1)$ canonical extends $v_\ell$'s slot-$k$ canonical]\label{prop:target-dominance}
-Under the hypotheses of Property~\ref{prop:getConfirmed-compat}, for every honest~$v$, $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$.
+Under the hypotheses of Property~\ref{prop:getConfirmed-compat} and additionally clause~(d) of the standing assumptions (Definition~\ref{def:standing}), for every honest~$v$, $\getConfirmed_v^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$.
 \end{property}
 
 \begin{property}[Cross-validator visibility of \getConfirmed]\label{prop:getConfirmed-visible}
@@ -1076,20 +1076,175 @@ That is, every honest validator's slot-$k$ canonical block has already been admi
 
 \subsection{Healed state}\label{sec:healed}
 
-\begin{definition}[Healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:healed}
-The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}$} when there exists an honest validator $v_\ell$ such that:
+\begin{definition}[Semi-healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:semi-healed}
+The system is in a \emph{semi-healed state at slot~$k$ with frontier height~$\comm{h}$} when there exists an honest validator $v_\ell$ such that:
 \begin{enumerate}
   \item\label{rev:def:healed-state:h} for every honest~$v$, $\Sigma_v^{\vote(k)}.\hmax \geq \comm{h}+1$;
   \item\label{rev:def:healed-state:compat} for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
   \item\label{rev:def:healed-state:cap} every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
   \item\label{rev:def:healed-state:vote-h} every honest vote~$u$ cast at any time strictly before $\vote(k)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
-  \item\label{rev:def:healed-state:F-cap} if $\sigma[\Sigma_v^t.F].h < \comm{h}$ for any honest validator $v$ and time $t$, then $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
 \end{enumerate}
 \end{definition}
 
-The standing assumptions of slot~$k$ are not part of the healed-state definition; persistence and advance below pair the healed-state property at slot~$k$ with the standing assumptions of subsequent slots.
+\begin{definition}[Healed state at slot~$k$ with frontier height~$\comm{h}$]\label{def:healed}
+The system is in a \emph{healed state at slot~$k$ with frontier height~$\comm{h}$} when:
+\begin{enumerate}
+  \item it is in a semi-healed state at slot~$k$ with frontier height~$\comm{h}$ (\Cref{def:semi-healed});
+  \item\label{rev:def:healed-state:F-cap} $\sigma[\Sigma_v^{\vote(k)}.F].h \geq \comm{h}$ for any honest validator $v$.
+\end{enumerate}
+\end{definition}
+
+The standing assumptions of slot~$k$ are not part of the (semi-)healed-state definition; persistence and advance below pair the (semi-)healed-state property at slot~$k$ with the standing assumptions of subsequent slots.
 
 \subsection{Persistence}\label{sec:healing-persistence}
+\begin{lemma}[Semi-Healing persistence over one slot]\label{lem:semi-healing-persistence}
+If
+\begin{enumerate}
+  \item $f^{\vote(k+1)}<n/3$.
+  \item honest validators follow \Cref{def:voting-rule};
+  \item the online-honest-majority holds at slot~$k$;
+  \item $\start(k) - \Delta \geq \GST$;
+  \item the system is in a semi-healed state at slot $k$ with frontier $\comm{h}$,
+\end{enumerate}
+then:
+\begin{enumerate}
+  \item the system is in a semi-healed state at slot~$k+1$ with frontier height $\comm{h}' \geq \comm{h}$.
+  \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \in [\vote(k),\, \vote(k+1)]$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+
+\emph{Setup.}
+Definition~\ref{def:semi-healed} names some honest $v_\ell^0$ with conditions~\ref{rev:def:healed-state:cap} and \ref{rev:def:healed-state:vote-h}.
+By condition~\ref{rev:def:healed-state:compat}, the set $\{\getConfirmed_v^{\vote(k)} : v \text{ honest}\}$ is pairwise $\sim$-comparable, hence totally $\preceq$-ordered;
+let $v_\ell$ be an honest $\preceq$-max in this set, and write
+\[
+  h^\ast \;\coloneqq\; \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h.
+\]
+Since $v_\ell$ is $\preceq$-max, $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, so conditions~\ref{rev:def:healed-state:cap} and~\ref{rev:def:healed-state:vote-h} also hold with $v_\ell$ in place of $v_\ell^0$ (each is a $\preceq$-upper-bound statement against $\getConfirmed_{v_\ell^0}^{\vote(k)}$);
+in particular every honest vote $u$ cast strictly before $\vote(k)$ has $u.\height \leq h^\ast$.
+
+For honest votes cast at $\vote(k)$:
+$\preceq$-maximality plus state-height monotonicity give $\sigma[\getConfirmed_v^{\vote(k)}].h \leq h^\ast$ for every honest $v$, and Definition~\ref{def:voting-rule} sets $u.\height = \sigma[\getConfirmed_v^{\vote(k)}].h$ in every branch, so $u.\height \leq h^\ast$ at $\vote(k)$ as well.
+Hence every honest vote $u$ cast at any time $\leq \vote(k)$ has $u.\height \leq h^\ast$.
+Moreover, the target of a non-$\bot$ slot-$k$ honest vote at height $h_c$ is either $\getConfirmed_v^{\vote(k)}$ (first non-$\bot$ vote at $h_c$, which yields $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ by $\preceq$-maximality) or $\Delta.T(h_c)$ (lock branch, which unfolds to $u_0.\target$ for $v$'s first non-$\bot$ vote $u_0$ at height $h_c$ cast strictly before $\vote(k)$; condition~\ref{rev:def:healed-state:cap} (when $h_c \geq \comm{h}$) gives $u_0.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$).
+Hence every non-$\bot$ honest vote $u$ cast at any time $\leq \vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+
+\emph{Outline.}
+Steps~1--3 establish $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$ for every honest $v$ and $t \in [\vote(k), \vote(k{+}1)]$.
+Step~4 applies Properties~\ref{prop:getConfirmed-compat} and~\ref{prop:getConfirmed-monotone}, yielding conclusions~2 and~3 of the lemma directly, and condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$ as a slot-$k{+}1$ specialisation.
+Steps~5--7 verify conditions~\ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:cap}, and~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$, completing conclusion~1.
+
+\medskip
+
+\emph{Step 1: justifications at heights $h \in [\comm{h}, h^\ast]$ have target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and no justification at heights $> h^\ast$ exists.}
+Any justification at height~$h$ targeting some $T^\ast$ has $|\targets[T^\ast]| \geq 2n/3$ on a chain processed by some honest validator.
+Under online-honest majority ($f < n/2$), $\geq 2n/3 - f > n/6 > 0$ honest validators contribute, each with $\targets[i] = T^\ast$ set by \processVote{} on a non-$\bot$ vote at height $h$ with target $T^\ast$.
+For $h > h^\ast$: such a honest vote contradicts the Setup's height bound.
+For $h \in [\comm{h}, h^\ast]$: the Setup's target bound on non-$\bot$ honest votes at heights $\geq \comm{h}$ gives $T^\ast = u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+
+\emph{Step 2: $\Sigma_v^t.\hmax \leq h^\ast + 1$ throughout $[\vote(k), \vote(k{+}1)]$.}
+Growth of $\hmax$ to $\sigma$-height $> h^\ast + 1$ requires a height advance at some height $> h^\ast$, hence a justification or timeout cert at $> h^\ast$.
+Step~1 rules out justifications.
+A timeout cert at height $h > h^\ast$ needs marks at $h$, contributed by $\bot$-votes at $h$ or height-fresh non-$\bot$ votes at $h$;
+both forms of honest contribution have $u.\height = h > h^\ast$ and are ruled out by condition~\ref{rev:def:healed-state:vote-h}.
+The remaining contributors are dishonest, $\leq f < n/2$ under the online-honest majority --- below the $2n/3$ threshold.
+
+\emph{Step 3: $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$.}
+Property~\ref{prop:getConfirmed-visible} (under hypotheses~4 (sync) and~3 (online-honest majority)) places $\getConfirmed_{v_\ell}^{\vote(k)} \in \Sigma_v^{\vote(k)}.\T \subseteq \Sigma_v^t.\T$, with $\sigma$-height $h^\ast$ in $v$'s store (Theorem~\ref{thm:orderindep}).
+By Step~2, $h^\ast \geq \Sigma_v^t.\hmax - 1$, so $\getConfirmed_{v_\ell}^{\vote(k)}$ is its own viable witness in $\T'(\Sigma_v^t)$.
+
+It remains to show $R_v^t \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+Note $\sigma[R_v^t].h \leq \Sigma_v^t.h_j \leq \Sigma_v^t.\hmax - 1 \leq h^\ast$ by Step~2.
+\begin{itemize}
+  \item \emph{Gate fires.} $R_v^t = \Sigma_v^t.J$ at height $\Sigma_v^t.h_j = \Sigma_v^t.\hmax - 1$, which lies in $[\comm{h}, h^\ast]$ by condition~\ref{rev:def:healed-state:h}.
+  Step~1 gives $\Sigma_v^t.J \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+  \item \emph{Gate fails.} $R_v^t = \Sigma_v^t.F$ is finalized (Remark~\ref{rem:fs-invariant}) at some height $h_F \leq h^\ast$.
+  \Cref{lem:mainsafety} under hypothesis~1 ($f^{\vote(k+1)} < n/3$) applied to $\getConfirmed_{v_\ell}^{\vote(k)}$ at $\sigma$-height $h^\ast \geq h_F$ on a chain processed by $v$ gives $F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
+\end{itemize}
+
+\medskip
+
+\emph{Step 4: conclusions 2 and 3, and condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$.}
+Step~3 instantiates the premise of Property~\ref{prop:getConfirmed-compat} with $R' = R'' = \getConfirmed_{v_\ell}^{\vote(k)}$, which lies in both $\V_v^{\vote(k)}$ and $\V_v^{\vote(k+1)}$ (Step~3 covers all $t \in [\vote(k), \vote(k{+}1)]$) and is reflexively $\succeq$ itself.
+The property yields conclusion~2: $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$ for every honest $v, v'$ and $t, t' \in [\vote(k), \vote(k{+}1)]$.
+Property~\ref{prop:getConfirmed-monotone}, which inherits the same premise, yields conclusion~3: $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$ for every honest $v$ and $t \leq t' \in [\vote(k), \vote(k{+}1)]$.
+The $t = t' = \vote(k{+}1)$ specialisation of conclusion~2 is condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$.
+
+\emph{Step 5: condition~\ref{rev:def:healed-state:h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$.}
+$\hmax$ is non-decreasing in $t$, so $\Sigma_v^{\vote(k+1)}.\hmax \geq \Sigma_v^{\vote(k)}.\hmax \geq \comm{h} + 1 = \comm{h}' + 1$.
+
+\emph{Step 6: condition~\ref{rev:def:healed-state:cap} at $\vote(k{+}1)$.}
+By Step~4, the honest canonical blocks at $\vote(k{+}1)$ form a chain; pick $v_\ell^{(k+1)}$ honest achieving the $\preceq$-max.
+Property~\ref{prop:getConfirmed-monotone} gives $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$, so by maximality
+\[
+  \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k)}.
+\]
+For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+
+\emph{Step 7: condition~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$.}
+Write $h^{\ast\prime} \coloneqq \sigma[\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}].h$.
+For any honest vote $u$ cast at any time $\leq \vote(k{+}1)$:
+\begin{itemize}
+  \item if cast at $\leq \vote(k)$, condition~\ref{rev:def:healed-state:vote-h} at slot~$k$ gives $u.\height \leq h^\ast \leq h^{\ast\prime}$ (using Step~6's chain extension and state-height monotonicity);
+  \item if cast at $\vote(k{+}1)$, Definition~\ref{def:voting-rule} gives $u.\height = \sigma[\getConfirmed_{v}^{\vote(k+1)}].h$ for the casting validator $v$, which is $\leq h^{\ast\prime}$ by maximality of $v_\ell^{(k+1)}$.
+\end{itemize}
+\end{proof}
+
+\begin{lemma}[Semi-Healing: persistence over unbounded times]\label{rev:lem:semi-healing-unbounded}
+Let $k$ and $k'$ be any two slots with $k'\geq k$.
+If
+\begin{enumerate}
+  \item\label{rev:shu:hs} the system is in a semi-healed state at slot $k$ with height $\comm{h}$ (\Cref{def:semi-healed});
+  \item\label{rev:shu:f-bound} $f^{\vote(k')}< n/3$;
+  \item\label{rev:shu:f} honest validators follow \Cref{def:voting-rule};
+  \item\label{rev:shu:ohm} the online-honest-majority holds at every slot $\in [k,k']$;
+  \item\label{rev:shu:sync} $\start(K) - \Delta \geq \GST$ for every slot $K \in [k,k']$;
+\end{enumerate}
+then,
+\begin{enumerate}
+  \item for every honest validators~$v,v'$ and times $t, t' \in [\vote(k),\vote(k')]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' [\vote(k),\vote(k')]$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$;
+  \item the system is in a semi-healed state at slot $k'$ with frontier $\geq \comm{h}$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+We induct on $K \in [k, k']$, with inductive claim $H(K)$:
+\begin{enumerate}
+  \item the system is in a semi-healed state at every slot $K' \in [k, K]$ with frontier $\comm{h}$;
+  \item for every honest validators $v, v'$ and times $t, t' \in [\vote(k), \vote(K)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator $v$ and every pair of times $t \leq t' \in [\vote(k), \vote(K)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
+
+\emph{Base ($K = k$).}
+(i) is hypothesis~\ref{rev:shu:hs}.
+(ii), (iii) are trivial since $[\vote(k), \vote(k)] = \{\vote(k)\}$ and $\sim$, $\succeq$ are reflexive.
+
+\emph{Inductive step.}
+Suppose $H(K)$ holds for some $K \in [k, k'-1]$; we show $H(K{+}1)$.
+By~(i) at slot~$K$ and hypotheses~\ref{rev:shu:f}, \ref{rev:shu:ohm}, \ref{rev:shu:sync} at $K$, together with $f^{\vote(K+1)} \leq f^{\vote(k')} < n/3$ from hypothesis~\ref{rev:shu:f-bound} (using monotonicity of $f$ in time, since the adversary set is non-decreasing), \Cref{lem:semi-healing-persistence} applies at slot~$K$, yielding the system semi-healed at $K{+}1$ with frontier $\comm{h}' \geq \comm{h}$ (extending~(i)) and conclusions~2 and~3 over $[\vote(K), \vote(K{+}1)]$.
+
+To extend~(ii) and~(iii) to $[\vote(k), \vote(K{+}1)]$, the only new case is $t \in [\vote(k), \vote(K)]$ and $t' \in [\vote(K), \vote(K{+}1)]$ (or vice versa, handled by symmetry of~$\sim$ and by interchanging the time-ordering).
+
+\emph{Extending~(iii):}
+the inductive~(iii) gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(K)}$, and the new lemma instance's conclusion~3 gives $\getConfirmed_v^{\vote(K)} \preceq \getConfirmed_v^{t'}$;
+chaining yields $\getConfirmed_v^t \preceq \getConfirmed_v^{t'}$.
+
+\emph{Extending~(ii):}
+the inductive~(iii) gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(K)}$, and the new lemma instance's conclusion~2 gives $\getConfirmed_v^{\vote(K)} \sim \getConfirmed_{v'}^{t'}$.
+In the block tree, $A \preceq B$ and $C \sim B$ imply $A \sim C$:
+either $C \preceq B$, in which case $A$ and $C$ are both ancestors of $B$, hence on the chain to $B$ and pairwise comparable;
+or $C \succeq B$, in which case $A \preceq B \preceq C$.
+Applied with $A = \getConfirmed_v^t$, $B = \getConfirmed_v^{\vote(K)}$, $C = \getConfirmed_{v'}^{t'}$, this gives $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$.
+
+\emph{Conclusion.}
+By induction, $H(k')$ holds.
+Conclusions~1 and~2 of the lemma are (ii) and~(iii) of $H(k')$;
+conclusion~3 is the $K' = k'$ specialization of (i).
+\end{proof}
 
 \begin{lemma}[Healing persistence over one slot]\label{lem:healing-persistence}
 If
@@ -1097,7 +1252,6 @@ If
   \item\label{rev:hp:f} honest validators follow \Cref{def:voting-rule};
   \item\label{rev:hp:ohm} the online-honest-majority holds at slot~$k$;
   \item\label{rev:hp:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:hp:relay} the honest-relay condition (Definition~\ref{def:standing}(d)) holds at slot~$k$;
   \item\label{rev:hp:hs} the system is in a healed state at slot $k$ with frontier $\comm{h}$,
 \end{enumerate}
 then:
@@ -1128,13 +1282,13 @@ Manual sketch proof left for reference.
 \begin{proof}
 
 \emph{Setup.}
-Definition~\ref{def:healed} names some honest $v_\ell^0$ with conditions~\ref{rev:def:healed-state:cap}, \ref{rev:def:healed-state:vote-h}, and \ref{rev:def:healed-state:F-cap}.
 By condition~\ref{rev:def:healed-state:compat}, the set $\{\getConfirmed_v^{\vote(k)} : v \text{ honest}\}$ is pairwise $\sim$-comparable, hence totally $\preceq$-ordered;
 let $v_\ell$ be an honest $\preceq$-max in this set, and write
 \[
   h^\ast \;\coloneqq\; \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h.
 \]
-Since $v_\ell$ is $\preceq$-max, $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, so conditions~\ref{rev:def:healed-state:cap}, \ref{rev:def:healed-state:vote-h}, and~\ref{rev:def:healed-state:F-cap} also hold with $v_\ell$ in place of $v_\ell^0$ (each is a $\preceq$-upper-bound statement against $\getConfirmed_{v_\ell^0}^{\vote(k)}$);
+Definition~\ref{def:semi-healed} names some honest $v_\ell^0$ with conditions~\ref{rev:def:healed-state:cap} and \ref{rev:def:healed-state:vote-h};
+since $v_\ell$ is $\preceq$-max, $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, so these conditions also hold with $v_\ell$ in place of $v_\ell^0$ (each is a $\preceq$-upper-bound statement against $\getConfirmed_{v_\ell^0}^{\vote(k)}$);
 in particular every honest vote $u$ cast strictly before $\vote(k)$ has $u.\height \leq h^\ast$.
 
 For honest votes cast at $\vote(k)$:
@@ -1146,7 +1300,8 @@ Hence every non-$\bot$ honest vote $u$ cast at any time $\leq \vote(k)$ with $u.
 \emph{Outline.}
 Steps~1--3 establish $\getConfirmed_{v_\ell}^{\vote(k)} \in \V_v^t$ for every honest $v$ and $t \in [\vote(k), \vote(k{+}1)]$.
 Step~4 applies Properties~\ref{prop:getConfirmed-compat} and~\ref{prop:getConfirmed-monotone}, yielding conclusions~2 and~3 of the lemma directly, and condition~\ref{rev:def:healed-state:compat} at $\vote(k{+}1)$ as a slot-$k{+}1$ specialisation.
-Steps~5--7 verify conditions~\ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:cap}, and~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$, completing conclusion~1.
+Steps~5--7 verify conditions~\ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:cap}, and~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$ with $\comm{h}' \coloneqq \comm{h}$.
+Step~8 verifies condition~\ref{rev:def:healed-state:F-cap} at $\vote(k{+}1)$, completing conclusion~1.
 
 \medskip
 
@@ -1173,8 +1328,8 @@ Note $\sigma[R_v^t].h \leq \Sigma_v^t.h_j \leq \Sigma_v^t.\hmax - 1 \leq h^\ast$
   \item \emph{Gate fires.} $R_v^t = \Sigma_v^t.J$ at height $\Sigma_v^t.h_j = \Sigma_v^t.\hmax - 1$, which lies in $[\comm{h}, h^\ast]$ by condition~\ref{rev:def:healed-state:h}.
   Step~1 gives $\Sigma_v^t.J \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
   \item \emph{Gate fails.} $R_v^t = \Sigma_v^t.F$ is finalized (Remark~\ref{rem:fs-invariant}) at some height $h_F \leq h^\ast$.
-  If $h_F < \comm{h}$, condition~\ref{rev:def:healed-state:F-cap} gives $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
-  Otherwise $h_F \in [\comm{h}, h^\ast]$, and finalization of $F$ at $h_F$ requires $F$ to also be justified at $h_F$ on a chain processed by $v$;
+  By condition~\ref{rev:def:healed-state:F-cap} together with finalization monotonicity (\Cref{lem:finchain}), $h_F \geq \sigma[\Sigma_v^{\vote(k)}.F].h \geq \comm{h}$, so $h_F \in [\comm{h}, h^\ast]$.
+  Finalization of $F$ at $h_F$ requires $F$ to also be justified at $h_F$ on a chain processed by $v$;
   Step~1 then gives $F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
 \end{itemize}
 
@@ -1195,11 +1350,7 @@ Property~\ref{prop:getConfirmed-monotone} gives $\getConfirmed_{v_\ell}^{\vote(k
 \[
   \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k)}.
 \]
-For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$:
-\begin{itemize}
-  \item if cast strictly before $\vote(k)$, condition~\ref{rev:def:healed-state:cap} at slot~$k$ combined with the chain extension above gives $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$;
-  \item if cast at $\vote(k)$, Property~\ref{prop:vote-inclusion} places $u.\target$ on the chain at $\getConfirmed_v^{\vote(k+1)}$ for every honest $v$, hence $\preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
-\end{itemize}
+For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
 
 \emph{Step 7: condition~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$.}
 Write $h^{\ast\prime} \coloneqq \sigma[\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}].h$.
@@ -1209,9 +1360,8 @@ For any honest vote $u$ cast at any time $\leq \vote(k{+}1)$:
   \item if cast at $\vote(k{+}1)$, Definition~\ref{def:voting-rule} gives $u.\height = \sigma[\getConfirmed_{v}^{\vote(k+1)}].h$ for the casting validator $v$, which is $\leq h^{\ast\prime}$ by maximality of $v_\ell^{(k+1)}$.
 \end{itemize}
 
-\emph{Step 8: condition~\ref{rev:def:healed-state:F-cap} at $\vote(k{+}1)$.}
-For any honest validator $v$ and time $t$ with $\sigma[\Sigma_v^t.F].h < \comm{h}' = \comm{h}$:
-condition~\ref{rev:def:healed-state:F-cap} at slot~$k$ (propagated to $v_\ell$ in the Setup) gives $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and Step~6's chain extension $\getConfirmed_{v_\ell}^{\vote(k)} \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$ yields $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+\emph{Step 8: condition~\ref{rev:def:healed-state:F-cap} at $\vote(k{+}1)$ with $\comm{h}' = \comm{h}$.}
+For any honest validator $v$, $\Sigma_v^{\vote(k+1)}.F$ extends $\Sigma_v^{\vote(k)}.F$ on the unique finalized chain (\Cref{lem:finchain}), so $\sigma[\Sigma_v^{\vote(k+1)}.F].h \geq \sigma[\Sigma_v^{\vote(k)}.F].h \geq \comm{h} = \comm{h}'$ by condition~\ref{rev:def:healed-state:F-cap} at slot~$k$.
 \end{proof}
 
 \begin{lemma}[Healing: persistence over unbounded times]\label{rev:lem:healing-unbounded}
@@ -1219,8 +1369,7 @@ If
 \begin{enumerate}
   \item\label{rev:hu:f} honest validators follow \Cref{def:voting-rule};
   \item\label{rev:hu:ohm} the online-honest-majority holds at every slot $k' \geq k$;
-  \item\label{rev:hu:sync} $\start(k') - \Delta \geq \GST$ for every slot $k' \geq k$;
-  \item\label{rev:hu:relay} the honest-relay condition (Definition~\ref{def:standing}(d)) holds at every slot $k' \geq k$;
+  \item\label{rev:hu:sync} $\start(k) - \Delta$
   \item\label{rev:hu:hs} the system is in a healed state at slot $k$ with height $\comm{h}$ (\Cref{def:healed}),
 \end{enumerate}
 then,
@@ -1240,11 +1389,11 @@ We induct on $K \geq k$, with inductive claim $H(K)$:
 
 \emph{Base ($K = k$).}
 Hypothesis~\ref{rev:hu:hs} gives the system healed at slot~$k$.
-Lemma~\ref{lem:healing-persistence} applies at slot~$k$ (its hypotheses follow from~\ref{rev:hu:f}, \ref{rev:hu:ohm}, \ref{rev:hu:sync}, \ref{rev:hu:relay} at $k$, and~\ref{rev:hu:hs}), yielding the system healed at $k+1$ (so~(i)) and conclusions~2 and~3 over $[\vote(k), \vote(k{+}1)]$ (so~(ii) and~(iii)).
+Lemma~\ref{lem:healing-persistence} applies at slot~$k$ (its hypotheses follow from~\ref{rev:hu:f}, \ref{rev:hu:ohm}, \ref{rev:hu:sync} at $k$, and~\ref{rev:hu:hs}), yielding the system healed at $k+1$ (so~(i)) and conclusions~2 and~3 over $[\vote(k), \vote(k{+}1)]$ (so~(ii) and~(iii)).
 
 \emph{Inductive step.}
 Suppose $H(K)$ holds; we show $H(K{+}1)$.
-By~(i) at slot $K{+}1$ together with hypotheses~\ref{rev:hu:f}, \ref{rev:hu:ohm}, \ref{rev:hu:sync}, \ref{rev:hu:relay} at $K{+}1$, Lemma~\ref{lem:healing-persistence} applies at slot $K{+}1$, yielding the system healed at $K{+}2$ (extending~(i)) and conclusions~2 and~3 over $[\vote(K{+}1), \vote(K{+}2)]$.
+By~(i) at slot $K{+}1$ together with hypotheses~\ref{rev:hu:f}, \ref{rev:hu:ohm}, \ref{rev:hu:sync} at $K{+}1$, Lemma~\ref{lem:healing-persistence} applies at slot $K{+}1$, yielding the system healed at $K{+}2$ (extending~(i)) and conclusions~2 and~3 over $[\vote(K{+}1), \vote(K{+}2)]$.
 
 To extend~(ii) and~(iii) to $[\vote(k), \vote(K{+}2)]$, the only new case is $t \in [\vote(k), \vote(K{+}1)]$ and $t' \in [\vote(K{+}1), \vote(K{+}2)]$ (or vice versa, handled by symmetry of~$\sim$ and by interchanging the time-ordering).
 
@@ -1264,6 +1413,78 @@ By induction, $H(K)$ holds for every $K \geq k$. Conclusions~1 and~2 of the lemm
 \end{proof}
 
 
+\begin{lemma}\label{rev:lem:healed-from-fin}
+Let $k$ and $k'$ be two slots with $k' \geq k$.
+If
+\begin{enumerate}
+  \item\label{rev:hsf:hs} the system is in a semi-healed state at slot $k$ with height $\comm{h}$ (\Cref{def:semi-healed}),
+  \item\label{rev:hsf:sync} $\start(K) - \Delta \geq \GST$ for every slot $K \geq k$;
+  \item\label{rev:hsf:f-bound} $f^{\vote(k')}<n/3$;
+  \item\label{rev:hsf:fin} by slot $\vote(k')$, at least one honest validator sees a block for an height $\geq \comm{h}$ as finalized;
+  \item\label{rev:hsf:f} honest validators follow \Cref{def:voting-rule};
+  \item\label{rev:hsf:ohm} the online-honest-majority holds at every slot $\geq k$;
+\end{enumerate}
+then,
+\begin{enumerate}
+  \item the system is in a healed state at slot $k'$ with height $\comm{h}$ (\Cref{def:healed}).
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\emph{Step 1: semi-healed at slot $k'$.}
+\Cref{rev:lem:semi-healing-unbounded} applies, with its hypotheses discharged from~\ref{rev:hsf:hs}, \ref{rev:hsf:f-bound}, \ref{rev:hsf:f}, \ref{rev:hsf:ohm}, \ref{rev:hsf:sync};
+its conclusion~3 gives the system semi-healed at slot $k'$ with frontier $\geq \comm{h}$.
+In particular, conditions \ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:compat}, \ref{rev:def:healed-state:cap}, \ref{rev:def:healed-state:vote-h} of \Cref{def:semi-healed} hold at slot $k'$.
+
+\emph{Step 2: condition \ref{rev:def:healed-state:F-cap} at slot $k'$.}
+By hypothesis~\ref{rev:hsf:fin}, some honest $v_0$ and time $t_0 \leq \vote(k')$ satisfy $\sigma[\Sigma_{v_0}^{t_0}.F].h \geq \comm{h}$;
+finalization monotonicity within $v_0$'s view (\Cref{lem:finchain}) extends this to $\sigma[\Sigma_{v_0}^{\vote(k')}.F].h \geq \comm{h}$.
+
+For any other honest $v$: under hypothesis~\ref{rev:hsf:sync} (post-GST synchrony at every slot $\geq k$) and hypothesis~\ref{rev:hsf:ohm} (online-honest-majority), the certs witnessing $v_0$'s finalization at height $\geq \comm{h}$ propagate to $v$ via available-chain blocks within $\Delta$, hence are present in $\Sigma_v^{\vote(k')}$.
+Since finalized blocks form a unique chain (\Cref{lem:finchain}), $\Sigma_v^{\vote(k')}.F$ has $\sigma$-height at least the height witnessed in $v_0$'s view, so $\sigma[\Sigma_v^{\vote(k')}.F].h \geq \comm{h}$.
+
+Combining Step~1 (conditions \ref{rev:def:healed-state:h}, \ref{rev:def:healed-state:compat}, \ref{rev:def:healed-state:cap}, \ref{rev:def:healed-state:vote-h}) and Step~2 (condition \ref{rev:def:healed-state:F-cap}) at slot $k'$, the system is healed at slot $k'$ with frontier $\comm{h}$.
+\end{proof}
+
+\begin{lemma}\label{rev:lem:full-unbounded-from-fin}
+Let $k$ and $k'$ be two slots with $k' \geq k$.
+If
+\begin{enumerate}
+  \item\label{rev:hfuf:hs} the system is in a semi-healed state at slot $k$ with height $\comm{h}$ (\Cref{def:semi-healed}),
+  \item\label{rev:hfuf:sync} $\start(K) - \Delta \geq \GST$ for every slot $K \geq k$;
+  \item\label{rev:hfuf:f-bound} $f^{\vote(k')}<n/3$;
+  \item\label{rev:hfuf:fin} by slot $\vote(k')$, at least one honest validator sees a block for an height $\geq \comm{h}$ as finalized;
+  \item\label{rev:hfuf:f} honest validators follow \Cref{def:voting-rule};
+  \item\label{rev:hfuf:ohm} the online-honest-majority holds at every slot $\geq k$;
+\end{enumerate}
+then,
+\begin{enumerate}
+  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\emph{Step 1: compat and monotone over $[\vote(k), \vote(k')]$.}
+\Cref{rev:lem:semi-healing-unbounded} applies (hypotheses discharged from~\ref{rev:hfuf:hs}, \ref{rev:hfuf:f-bound}, \ref{rev:hfuf:f}, \ref{rev:hfuf:ohm}, \ref{rev:hfuf:sync}); its conclusions~1 and~2 give pairwise $\sim$-compat and $\succeq$-monotonicity of $\getConfirmed$ across $[\vote(k), \vote(k')]$.
+
+\emph{Step 2: healed at slot $k'$, then compat and monotone over $[\vote(k'), \infty)$.}
+\Cref{rev:lem:healed-from-fin} applies (hypotheses discharged from~\ref{rev:hfuf:hs}, \ref{rev:hfuf:sync}, \ref{rev:hfuf:f-bound}, \ref{rev:hfuf:fin}, \ref{rev:hfuf:f}, \ref{rev:hfuf:ohm}), giving the system healed at slot $k'$ with frontier $\comm{h}$.
+\Cref{rev:lem:healing-unbounded} then applies at slot $k'$ (hypotheses~\ref{rev:hu:f}, \ref{rev:hu:ohm}, \ref{rev:hu:sync} at every slot $\geq k'$ follow from~\ref{rev:hfuf:f}, \ref{rev:hfuf:ohm}, \ref{rev:hfuf:sync}, and~\ref{rev:hu:hs} from the healed state just derived);
+its conclusions give pairwise $\sim$-compat and $\succeq$-monotonicity of $\getConfirmed$ across $[\vote(k'), \infty)$.
+
+\emph{Step 3: bridging to all $t, t' \geq \vote(k)$.}
+For any $t \leq t'$ with $t, t' \geq \vote(k)$:
+\begin{itemize}
+  \item if $t, t' \in [\vote(k), \vote(k')]$, conclusions follow from Step~1;
+  \item if $t, t' \in [\vote(k'), \infty)$, conclusions follow from Step~2;
+  \item if $t \in [\vote(k), \vote(k')]$ and $t' \in [\vote(k'), \infty)$, monotonicity chains via $\vote(k')$:
+    Step~1 gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(k')}$, Step~2 gives $\getConfirmed_v^{\vote(k')} \preceq \getConfirmed_v^{t'}$, so $\getConfirmed_v^t \preceq \getConfirmed_v^{t'}$.
+    Compat: Step~1 gives $\getConfirmed_v^t \preceq \getConfirmed_v^{\vote(k')}$, Step~2 gives $\getConfirmed_v^{\vote(k')} \sim \getConfirmed_{v'}^{t'}$. In the block tree, $A \preceq B$ and $C \sim B$ imply $A \sim C$ (either $C \preceq B$, in which case $A$ and $C$ are both ancestors of $B$ hence pairwise comparable; or $C \succeq B$, in which case $A \preceq B \preceq C$). Applied with $A = \getConfirmed_v^t$, $B = \getConfirmed_v^{\vote(k')}$, $C = \getConfirmed_{v'}^{t'}$, this gives $\getConfirmed_v^t \sim \getConfirmed_{v'}^{t'}$.
+\end{itemize}
+The case $t' \leq t$ is handled symmetrically for compat (since $\sim$ is symmetric); for monotonicity the lemma's conclusion is one-sided ($t \leq t'$).
+\end{proof}
+
 \subsection{Healing after $N$ slots}
 
 \iffalse
@@ -1273,7 +1494,6 @@ If
   \item\label{rev:istcm:f} honest validators follow \Cref{def:voting-rule};
   \item\label{rev:istcm:ohm} the honest-majority holds at slot~$k$;
   \item\label{rev:istcm:sync} $\start(k) - \Delta \geq \GST$;
-  \item\label{rev:istcm:relay} the honest-relay condition (Definition~\ref{def:standing}(d)) holds at slot~$k$;
   \item\label{rev:istcm:hs} the system is in a healed state at slot $k$ with frontier $\comm{h}$
 \end{enumerate}
 then
@@ -1285,10 +1505,11 @@ then
 
 \begin{proof}
 \emph{Setup.}
-By Definition~\ref{def:healed} (hypothesis~\ref{rev:istcm:hs}), there exists an honest $v_\ell^0$ for which conditions \ref{rev:def:healed-state:cap} and \ref{rev:def:healed-state:vote-h} hold.
+By Definition~\ref{def:semi-healed} (hypothesis~\ref{rev:istcm:hs}), there exists an honest $v_\ell^0$ for which conditions \ref{rev:def:healed-state:cap} and \ref{rev:def:healed-state:vote-h} hold.
 By condition \ref{rev:def:healed-state:compat}, $\{\getConfirmed_v^{\vote(k)} : v \text{ honest}\}$ is pairwise $\sim$-comparable, hence totally $\preceq$-ordered;
 let $v_\ell$ be an honest $\preceq$-max in this set, and write $h^\ast \coloneqq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
-$\preceq$-maximality plus $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ propagates conditions \ref{rev:def:healed-state:cap}, \ref{rev:def:healed-state:vote-h}, and \ref{rev:def:healed-state:F-cap} to $v_\ell$ (each is a $\preceq$-upper-bound statement against $\getConfirmed_{v_\ell^0}^{\vote(k)}$, hence remains true with the larger bound $\getConfirmed_{v_\ell}^{\vote(k)}$).
+$\preceq$-maximality plus $\getConfirmed_{v_\ell^0}^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ propagates conditions \ref{rev:def:healed-state:cap} and \ref{rev:def:healed-state:vote-h} to $v_\ell$ (each is a $\preceq$-upper-bound statement against $\getConfirmed_{v_\ell^0}^{\vote(k)}$, hence remains true with the larger bound $\getConfirmed_{v_\ell}^{\vote(k)}$);
+condition~\ref{rev:def:healed-state:F-cap} is independent of $v_\ell$.
 
 We discharge the premise of Property~\ref{prop:getConfirmed-compat} with $R' = R'' \coloneqq \getConfirmed_{v_\ell}^{\vote(k)}$ by showing this block lies in $\V_v^t$ for every honest $v$ and every $t \in [\vote(k), \vote(k+1)]$.
 
@@ -1316,8 +1537,7 @@ $\sigma[R_v^t].h \leq \Sigma_v^t.h_j \leq \Sigma_v^t.\hmax - 1 \leq h^\ast$.
   \item \emph{Gate fails.}
   $R_v^t = \Sigma_v^t.F$ is finalized at some height $h_F$ (Remark~\ref{rem:fs-invariant}).
   Gate failure forces $\Sigma_v^t.\hmax > \Sigma_v^t.h_j + 1$, so $h_F \leq \Sigma_v^t.h_j < \Sigma_v^t.\hmax - 1 \leq h^\ast$, hence $h_F < h^\ast$.
-  If $h_F < \comm{h}$, condition~\ref{rev:def:healed-state:F-cap} gives $F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
-  Otherwise $h_F \in [\comm{h}, h^\ast - 1]$, and finalization of $F$ at $h_F$ requires $F$ to also be justified at $h_F$ on a chain processed by $v$;
+  By condition~\ref{rev:def:healed-state:F-cap} together with finalization monotonicity (\Cref{lem:finchain}), $h_F \geq \comm{h}$, so $h_F \in [\comm{h}, h^\ast - 1]$, and finalization of $F$ at $h_F$ requires $F$ to also be justified at $h_F$ on a chain processed by $v$;
   the corresponding height-$h_F$ justification quorum has $\geq 2n/3 - f > n/6$ honest contributors with $\targets[i] = F$, set by \processVote{} on a non-$\bot$ vote at height $h_F \geq \comm{h}$ with target $F$, processed by $\Sigma_v^t$.
   By Step~1, this contributor's target satisfies $F \preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
   \item \emph{Gate fires.}
@@ -1335,6 +1555,7 @@ Property~\ref{prop:getConfirmed-compat} delivers conclusion~1.
 Property~\ref{prop:getConfirmed-monotone}, inheriting the same premise, delivers conclusion~2.
 \end{proof}
 \fi
+
 
 \begin{lemma}[Two-slot healing from a justification cert]\label{lem:healing-from-cert}
 Assume:
@@ -1412,7 +1633,7 @@ We verify each clause of \Cref{def:healed} at slot~$k+2$ with $\comm{h}' \colone
   \item \emph{\Cref{rev:def:healed-state:compat}.} \Cref{prop:getConfirmed-compat} at slot~$k+1$ gives pairwise $\sim$-compat at $\vote(k+2)$.
   \item \emph{\Cref{rev:def:healed-state:cap}.} An honest vote $u$ cast strictly before $\vote(k+2)$ with $u.\height \geq \comm{h}+1$: by the height bounds, $u$ is cast at $\vote(k)$ or $\vote(k+1)$. By \Cref{def:voting-rule}, $u.\target \preceq \getConfirmed_v^{t}$ for the casting validator $v$ at the casting time $t$. \Cref{prop:target-dominance} at slot~$k+1$ gives $\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)} \succeq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$, applied at slot~$k$ similarly chains $\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \succeq \getConfirmed_{v_\ell}^{\vote(k)}$, and $\preceq$-maximality at each slot pushes $u.\target$ all the way up to $\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$.
   \item \emph{\Cref{rev:def:healed-state:vote-h}.} Max honest vote height before $\vote(k+2)$ is $\comm{h}+1 \leq \sigma[\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}].h$ (which is $\geq \comm{h}+1$ by \Cref{prop:vote-inclusion} at slot~$k+1$ placing $B^{\sharp\sharp}_v$ on the chain to $\getConfirmed_v^{\vote(k+2)}$ plus \Cref{lem:slotmono}).
-  \item \emph{\Cref{rev:def:healed-state:F-cap}.} For honest $v$ and time $t$ with $\sigma[\Sigma_v^t.F].h < \comm{h}+1$: \Cref{lem:mainsafety} (under hypothesis~\ref{rev:hfcert:f}'s $f<n/3$) on $\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$ at $\sigma$-height $\geq \comm{h}+1 > \sigma[\Sigma_v^t.F].h$ gives $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$.
+  \item \emph{\Cref{rev:def:healed-state:F-cap}.} By $\vote(k+2)$, the height-$\comm{h}$ justification cert (hypothesis~\ref{rev:hfcert:hj}) and the height-$(\comm{h}+1)$ justification cert (formed at $\vote(k+1)$ on the common chain) both fire on the chain ending at $B^{\sharp\sharp}_v$; finalization of the block at $\sigma$-height $\comm{h}+1$ on this chain follows (we only finalize justified, two consecutive justification certs on the same chain). Hence $\sigma[\Sigma_v^{\vote(k+2)}.F].h \geq \comm{h}+1 = \comm{h}'$.
 \end{itemize}
 Hence the system is in a healed state at slot~$k+2$ with frontier height $\comm{h}+1$.
 \end{proof}
@@ -1474,7 +1695,7 @@ under $f<n/3$ no $\geq 2n/3$ quorum at height $> \comm{h}$ assembles before $\vo
     \item \emph{\Cref{rev:def:healed-state:compat}.} \Cref{prop:getConfirmed-compat} at slot~$k+1$ gives pairwise $\sim$-compat at $\vote(k+2)$.
     \item \emph{\Cref{rev:def:healed-state:cap}.} An honest vote $u$ cast strictly before $\vote(k+2)$ with $u.\height \geq \comm{h}+1$ must be at $\vote(k+1)$ (by hypothesis~\ref{rev:hfj:nh} and the $\comm{h}$-bound on slot-$k$ votes, no honest votes at $\geq \comm{h}+1$ before $\vote(k+1)$). \Cref{def:voting-rule}'s default branch gives $u.\target = \getConfirmed_v^{\vote(k+1)}$ for the casting validator $v$; \Cref{prop:target-dominance} at slot~$k+1$ gives $\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)} \succeq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$, and $\preceq$-maximality of $v_\ell^{(k+1)}$ gives $\getConfirmed_v^{\vote(k+1)} \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$; chaining yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$.
     \item \emph{\Cref{rev:def:healed-state:vote-h}.} Max honest vote height before $\vote(k+2)$ is $\comm{h}+1 \leq \sigma[\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}].h$ (the latter is $\geq \comm{h}+1$ by \Cref{prop:vote-inclusion} at slot~$k+1$ placing $B^{\sharp\sharp}_v$ on the chain to $\getConfirmed_v^{\vote(k+2)}$ plus \Cref{lem:slotmono}).
-    \item \emph{\Cref{rev:def:healed-state:F-cap}.} For honest $v$ and time $t$ with $\sigma[\Sigma_v^t.F].h < \comm{h}+1$: \Cref{lem:mainsafety} (under hypothesis~\ref{rev:hfj:f}'s $f<n/3$) applied to $\getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$ at $\sigma$-height $\geq \comm{h}+1 > \sigma[\Sigma_v^t.F].h$ gives $\Sigma_v^t.F \preceq \getConfirmed_{v_\ell^{(k+2)}}^{\vote(k+2)}$.
+    \item \emph{\Cref{rev:def:healed-state:F-cap}.} By $\vote(k+2)$, the slot-$k$ height-$\comm{h}$ justification cert (Setup) and the slot-$(k+1)$ height-$(\comm{h}+1)$ justification cert (Case~1's derivation) both fire on the chain ending at $B^{\sharp\sharp}_v$; finalization of the block at $\sigma$-height $\comm{h}+1$ on this chain follows. Hence $\sigma[\Sigma_v^{\vote(k+2)}.F].h \geq \comm{h}+1 = \comm{h}'$.
   \end{itemize}
   Hence the system is in a healed state at slot~$k+2$ with frontier height $\comm{h}+1$.
 
@@ -1773,7 +1994,7 @@ Let $\ell_d$ be the largest $\ell \in \{k+1, k+2\}$ such that a live card was re
 Set $k_h \coloneqq \ell_d + 1 \in \{k+1, k+2, k+3\}$ when $\ell_d \geq k+1$; and $k_h \coloneqq k+1$ when $\ell_d = k$.
 
 By Step~4, $\comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$, and Step~5 gives gate firing.
-View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$ (condition~\ref{rev:def:healed-state:compat} of Definition~\ref{def:healed}).
+View-merge under the honest slot-$k_h$ syncer makes $\Sigma_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}$ uniform across honest, hence $\getConfirmed_v^{\vote(k_h)} \sim \getConfirmed_{v'}^{\vote(k_h)}$ (condition~\ref{rev:def:healed-state:compat} of Definition~\ref{def:semi-healed}).
 Set $\comm{h} \coloneqq \comm{\Sigma}^{(k_h)}.h_j \geq h^0 - 1$ and $R_v^{\vote(k_h)} = \comm{\Sigma}^{(k_h)}.J$ at $\sigma$-height $\comm{h}$ (condition~\ref{rev:def:healed-state:h}).
 
 \emph{Condition~(3) at $\vote(k_h)$.}
