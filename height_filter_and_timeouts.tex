@@ -2024,4 +2024,232 @@ Lemma~\ref{lem:healing-3slot} delivers $k_h \in \{k+1, k+2, k+3\}$ with the syst
 Lemma~\ref{lem:healing-persistence} extends inductively: given the healed state at slot~$\ell \geq k_h$, if slot~$\ell+1$ satisfies the standing assumptions and has an honest syncer, then the system is healed at slot~$\ell+1$ with frontier height non-decreasing.
 \end{proof}
 
+\section{Liveness argument (WIP)}\label{sec:liveness}
+
+Starting from a (semi-)healed state, we show that the protocol produces a fresh on-chain justification within one FG slot and a fresh on-chain finalization within two FG slots, given honest AC-layer participation at the relevant boundary slots.
+The argument is parametric in the available chain (AC) on which \getConfirmed{} depends: we treat the AC as a black box, require only that its slots are aligned with FG voting times, and ask for honest proposers at the AC slots that close each FG round.
+
+The (semi-)healed state of \Cref{thm:healing} (or \Cref{def:semi-healed} taken on its own) is the natural input.
+\Cref{lem:healing-3slot}'s Step~5 establishes the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ at the post-healing slot, which we record separately below as hypothesis~(8$'$) to make explicit what the liveness argument needs.
+
+\medskip
+\noindent\fbox{\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}
+\textbf{Simplifying assumption (AC--FG alignment).} For simplicity, this section assumes AC slots and FG slots are \emph{aligned}: AC slots divide FG slots, with $\Delta_{\mathit{FG}} = (c+1) \cdot \Delta_{\mathit{AC}}$ for some integer $c \geq 1$, so an integer number of AC slots fits in each FG slot, and $\vote(j)$ lands on an AC slot boundary for every~$j$. Without alignment, the timing arguments below need additional padding to absorb worst-case offsets between AC and FG boundaries.
+\end{minipage}}
+\medskip
+
+\subsection{Timing model}\label{sec:liveness-timing}
+
+We extend the FG timing of \Cref{def:slots} (\textit{cf.}~\Cref{def:standing}) with an underlying AC slot structure parametrised by a single constant $\Delta_{\mathit{AC}}$: the duration of one AC slot, taken to include confirmation --- i.e., by the end of the slot, the block proposed in that slot is confirmed in every honest validator's view. We treat the AC's internal structure as a black box; see, e.g., the Goldfish protocol for a concrete instantiation. This $\Delta_{\mathit{AC}}$ supersedes the separate $\delta_c$ of \Cref{def:standing} for this section's purposes.
+
+\paragraph{AC--FG timing alignment.}
+Throughout this section, $\Delta$ denotes the time it takes for all honest votes broadcast at a voting time $\vote(j)$ to reach every honest validator (the synchronous network-delivery bound; see \Cref{def:slots}). Write $\Delta_{\mathit{FG}} \coloneqq \Delta + \Delta_{\mathit{AC}}$ for the FG slot duration. We require $\Delta = c \cdot \Delta_{\mathit{AC}}$ for some integer $c \geq 1$, with $\vote(j)$ landing on an AC slot boundary for every~$j$, and the FG slot duration $\vote(j+1) - \vote(j) \geq \Delta_{\mathit{FG}}$ uniformly across~$j$.
+
+\paragraph{Naming convention for AC slots and their blocks.}
+For each FG slot index~$j$, let
+\[
+  \mathrm{AC}_{\to j} \;\coloneqq\; \text{the AC slot ending exactly at $\vote(j)$, spanning $[\vote(j) - \Delta_{\mathit{AC}},\, \vote(j)]$,}
+\]
+with the arrow subscript reflecting that this AC slot leads into $\vote(j)$ (its block confirmation lands precisely at $\vote(j)$). We write $B_j$ for the block proposed in $\mathrm{AC}_{\to j}$. For round~$j$, two AC slots play distinguished roles:
+\begin{itemize}
+  \item $\mathrm{AC}_{\to j}$ --- \emph{target-uniformity slot} for round~$j$: delivers the canonical AC tip $B_j$ confirmed at $\vote(j)$, on which validators vote at $\vote(j)$.
+  \item $\mathrm{AC}_{\to j+1}$ --- \emph{vote-inclusion slot} for round~$j$: aggregates the slot-$j$ honest votes into a block $B_{j+1}$ confirmed at $\vote(j+1)$.
+\end{itemize}
+Note that $\mathrm{AC}_{\to j+1}$ is also the target-uniformity slot for round~$j+1$: a single AC slot serves both the vote-inclusion role for one round and the target-uniformity role for the next, so per-round AC honesty requirements chain across consecutive rounds.
+
+\begin{figure}[H]
+\caption{Timing for one FG round under AC--FG alignment, illustrated for $c = 2$ ($\Delta = 2\Delta_{\mathit{AC}}$). Boxes are the AC slots within FG slot~$k$; $\mathrm{AC}_{\to k}$ delivers the uniform tip $B_k$ confirmed at $\vote(k)$; the dashed region covers slot-$k$ vote propagation, spanning $c = 2$ AC slots (dotted boundary); $\mathrm{AC}_{\to k+1}$ aggregates the slot-$k$ honest votes into $B_{k+1}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k+1)$.}\label{fig:per-round-timing}
+\begin{center}
+\begin{tikzpicture}[scale=0.85, every node/.style={font=\small}]
+  \draw[->, thick] (-1.7, 0) -- (12.5, 0) node[right] {time};
+  \foreach \x/\lbl in {0/{$\GST$}, 1/{$\start(k)$}, 5/{$\vote(k)$}, 9/{$\vote(k){+}\Delta$}, 11/{$\vote(k{+}1)$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt] at (\x, -0.15) {\lbl};
+  }
+  \draw[thick, fill=xblue] (3, 0.45) rectangle (5, 1.0);
+  \node at (4, 0.725) {$\mathrm{AC}_{\to k}$};
+  \draw[thick, fill=xlightgray, dashed] (5, 0.45) rectangle (9, 1.0);
+  \draw[thick, dotted] (7, 0.45) -- (7, 1.0);
+  \node at (7, 0.725) {(votes propagating)};
+  \draw[thick, fill=xgreen] (9, 0.45) rectangle (11, 1.0);
+  \node at (10, 0.725) {$\mathrm{AC}_{\to k+1}$};
+  \begin{scope}[yshift=1.35cm]
+    \draw[<->, thick] (3, 0) -- (5, 0);
+    \node[above] at (4, 0) {$\Delta_{\mathit{AC}}$};
+    \draw[<->, thick] (5, 0) -- (9, 0);
+    \node[above] at (7, 0) {$\Delta = c \cdot \Delta_{\mathit{AC}}$};
+    \draw[<->, thick] (9, 0) -- (11, 0);
+    \node[above] at (10, 0) {$\Delta_{\mathit{AC}}$};
+  \end{scope}
+  \draw[<-, thick, red!75] (5, -0.85) -- (5, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (5, -0.85) {$B_k$ confirmed\\ in every honest's view};
+  \draw[<-, thick, red!75] (11, -0.85) -- (11, -0.18);
+  \node[below, red!75, align=center, font=\footnotesize] at (11, -0.85) {$B_{k+1}$ confirmed,\\ cert event fired};
+\end{tikzpicture}
+\end{center}
+\end{figure}
+
+\subsection{Per-round justification lemma}\label{sec:liveness-just}
+
+\begin{lemma}[Per-round justification on-chain]\label{lem:per-round-justification}
+Assume:
+\begin{enumerate}
+  \item\label{rev:hpj:f} $f^{\vote(k+1)} < n/3$ and honest validators follow \Cref{def:voting-rule}.
+  \item\label{rev:hpj:healed} The system is in a semi-healed state at slot~$k$ with frontier height $\comm{h}$ (\Cref{def:semi-healed}).
+  \item\label{rev:hpj:gst} $\start(k) - \Delta_{\mathit{AC}} \geq \GST$.
+  \item\label{rev:hpj:online} Every honest validator is online throughout $[\start(k) - \Delta_{\mathit{AC}},\, \vote(k+1)]$.
+  \item\label{rev:hpj:ack-honest} \emph{($\mathrm{AC}_{\to k}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\to k}$ is honest, producing block~$B_k$, with $\getConfirmed_v$ at $\vote(k) = B_k$ for every honest~$v$.
+  \item\label{rev:hpj:ack1-honest} \emph{($\mathrm{AC}_{\to k+1}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\to k+1}$ is honest and receives every slot-$k$ honest vote (which it then includes in its block), producing a block $B_{k+1} \succeq B_k$.
+  \item\label{rev:hpj:align} \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{\mathit{AC}}$ for some integer $c \geq 1$, $\vote(k)$ lies on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta_{\mathit{FG}}$ for every~$j$.
+  \item\label{rev:hpj:gate} \emph{(Cascade-gate frontier):} at $\vote(k)$, every honest store satisfies $\Sigma.\hmax = \Sigma.h_j + 1$ with $\Sigma.h_j = \comm{h}$, so the cascade gate of \getConfirmed{} fires, and $h_c \coloneqq \sigma[B_k].h = \comm{h} + 1$.
+\end{enumerate}
+
+\begin{remark}[Discharging hypothesis~\ref{rev:hpj:gate}]
+When the (semi-)healed state arises from \Cref{lem:healing-3slot}, hypothesis~\ref{rev:hpj:gate} is automatic: Step~5 of that lemma's proof (the cascade-gate analysis) establishes $\Sigma.\hmax = \Sigma.h_j + 1$ at the post-healing slot, with both admissible $(\hmax, h_j)$ pairs satisfying the gate. Under \Cref{lem:semi-healing-persistence} the cascade gate is preserved across subsequent semi-healed slots.
+For a standalone single-slot use of this lemma, hypothesis~\ref{rev:hpj:gate} must be supplied separately.
+\end{remark}
+
+\begin{remark}[Semi-healed suffices]
+None of the Step~1--5 of the proof below uses condition~\ref{rev:def:healed-state:F-cap} of \Cref{def:healed} (i.e.\ $\sigma[\Sigma_v.F].h \geq \comm{h}$). The lemma's hypothesis~\ref{rev:hpj:healed} therefore asks only for a \emph{semi-healed} state. The full healed state of \Cref{thm:healing} is strictly stronger and discharges this hypothesis a fortiori; the weaker form is what survives the iteration of \Cref{thm:on-chain-range} below (where finalization at the new frontier lags one slot behind justification, so F-cap fails post-cert).
+\end{remark}
+
+Then by time $\vote(k+1)$, in every honest validator's local view:
+\begin{enumerate}
+  \item[\textnormal{(C1)}] $\Sigma_v.J = B_k$ and $\Sigma_v.h_j = h_c$.
+  \item[\textnormal{(C2)}] Every justification vote ($v.\target \neq \bot$) cast at $\vote(k+1)$ by an honest validator commits finalize-fields $(h_c,\, B_k)$, i.e., $v.\finalizeHeight = h_c$ and $v.\finalizeTarget = B_k$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\textcolor{red}{\textbf{TODO --- Skeleton (five steps):}}
+\begin{description}
+\item[Step 1.] Honest validators cast unanimous (non-$\bot$) justification votes for $B_k$ at $h_c$. Use~\ref{rev:hpj:online},~\ref{rev:hpj:ack-honest},~\ref{rev:hpj:gate} to show $\Delta_i.T(h_c) = \bot$ and $\Delta_i.\tau(h_c) = \mathtt{false}$ at $\vote(k)$ for every honest~$i$, ruling out the lock and elif-timeout branches of \getFinalVote{} (\Cref{def:voterecord}); the first-vote branch fires with target~$B_k$. Honest count $\geq n - f > 2n/3$.
+\item[Step 2.] $\mathrm{AC}_{\to k+1}$'s proposer receives every honest slot-$k$ vote by $\vote(k) + \Delta$ via post-GST synchrony~\ref{rev:hpj:gst} and alignment~\ref{rev:hpj:align}.
+\item[Step 3.] $B_{k+1}$ is processed and confirmed in every honest's view by $\vote(k+1)$ via $\Delta_{\mathit{AC}}$ confirmation and~\ref{rev:hpj:ack1-honest},~\ref{rev:hpj:align}.
+\item[Step 4.] The justification cert event fires inside $\onBlock(B_{k+1})$: \processVote{} sets $\sigma.\targets[i] \gets B_k$ for $\geq 2n/3$ honest contributors (freshness via \Cref{rem:fresh-equiv}); the next \processSlot{} tick at $\vote(k+1)$ runs \processHeight{}, whose justification branch fires with $T = B_k$, advancing $\sigma.J \gets B_k$, $\sigma.h_j \gets h_c$, $\sigma.h \gets h_c + 1$. The $F$-filter and lex-test in \updateJustified{} pass, so $\Sigma_v.J \gets B_k$, $\Sigma_v.h_j \gets h_c$.
+\item[Step 5.] (C1) follows from Step~4 plus \Cref{prop:target-dominance}. (C2) follows from inspecting the gate inside \getFinalVote{} at $\vote(k+1)$: \getBaseVote{} reads $(h_f, T_f) = (h_c, B_k)$; $\Delta_i.T(h_c) = B_k$ (set by Step~1's \recordVote{}) and $\Delta_i.\tau(h_c) = \mathtt{false}$ pass the gate, keeping the finalize-fields.
+\end{description}
+\end{proof}
+
+\subsection{Per-round finalization lemma}\label{sec:liveness-fin}
+
+The justification cert event from \Cref{lem:per-round-justification} is observed in every honest's view at $\vote(k+1)$, but \emph{finality} of $B_k$ at height $h_c$ requires the slot-$(k+1)$ honest finalize-bearing votes (which carry finalize-fields $(h_c,\, B_k)$ by conclusion~(C2)) to be aggregated on-chain.
+One additional honest AC slot suffices, namely $\mathrm{AC}_{\to k+2}$ (\Cref{fig:per-round-finality-timing}).
+
+\begin{figure}[H]
+\caption{Timing for finality of $B_k$ over two FG rounds, illustrated for $c = 2$. Three honest AC slots ($\mathrm{AC}_{\to k}$, $\mathrm{AC}_{\to k+1}$, $\mathrm{AC}_{\to k+2}$) suffice: $\mathrm{AC}_{\to k}$ delivers the uniform tip; $\mathrm{AC}_{\to k+1}$ aggregates the slot-$k$ justification votes (firing the cert event for $B_k$); $\mathrm{AC}_{\to k+2}$ aggregates the slot-$(k+1)$ finalize-bearing votes (firing the finality cert event at $\vote(k+2)$). Dashed regions are vote-propagation periods.}\label{fig:per-round-finality-timing}
+\begin{center}
+\begin{tikzpicture}[scale=0.65, every node/.style={font=\small}]
+  \draw[->, thick] (-1, 0) -- (20, 0) node[right] {time};
+  \foreach \x/\lbl in {2/{$\vote(k)$}, 8/{$\vote(k{+}1)$}, 14/{$\vote(k{+}2)$}} {
+    \draw[thick] (\x, -0.15) -- (\x, 0.15);
+    \node[below=2pt] at (\x, -0.18) {\lbl};
+  }
+  \draw[thick, fill=xblue] (0, 0.5) rectangle (2, 1.1);
+  \node at (1, 0.8) {$\mathrm{AC}_{\to k}$};
+  \draw[thick, fill=xlightgray, dashed] (2, 0.5) rectangle (6, 1.1);
+  \node at (4, 0.8) {(propagating)};
+  \draw[thick, fill=xgreen] (6, 0.5) rectangle (8, 1.1);
+  \node at (7, 0.8) {$\mathrm{AC}_{\to k{+}1}$};
+  \draw[thick, fill=xlightgray, dashed] (8, 0.5) rectangle (12, 1.1);
+  \node at (10, 0.8) {(propagating)};
+  \draw[thick, fill=xpurple] (12, 0.5) rectangle (14, 1.1);
+  \node at (13, 0.8) {$\mathrm{AC}_{\to k{+}2}$};
+  \draw[<-, thick, red!75] (2, -1.0) -- (2, -0.22);
+  \node[below, red!75, align=center, font=\footnotesize] at (2, -1.0) {$B_k$\\ confirmed};
+  \draw[<-, thick, red!75] (8, -1.0) -- (8, -0.22);
+  \node[below, red!75, align=center, font=\footnotesize] at (8, -1.0) {$B_k$\\ justified};
+  \draw[<-, thick, red!75] (14, -1.0) -- (14, -0.22);
+  \node[below, red!75, align=center, font=\footnotesize] at (14, -1.0) {$B_k$\\ finalized};
+\end{tikzpicture}
+\end{center}
+\end{figure}
+
+\begin{lemma}[Per-round finalization on-chain]\label{lem:per-round-finalization}
+Assume hypotheses~\ref{rev:hpj:f}--\ref{rev:hpj:gate} of \Cref{lem:per-round-justification}, with~\ref{rev:hpj:f} and~\ref{rev:hpj:online} extended to $\vote(k+2)$, plus:
+\begin{itemize}
+  \item[\textnormal{(9)}]\label{rev:hpf:ack2-honest} \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and receives every slot-$(k+1)$ honest vote (which it then includes in its block), producing a block $B_{k+2} \succeq B_{k+1}$.
+\end{itemize}
+
+Then by time $\vote(k+2)$, in every honest validator's local view, $\Sigma_v.F \succeq B_k$ --- i.e., $B_k$ is finalized at height $h_c$.
+\end{lemma}
+
+\begin{proof}
+\textcolor{red}{\textbf{TODO --- Skeleton:}}
+By \Cref{lem:per-round-justification}~(C2), every honest validator's slot-$(k+1)$ justification vote commits finalize-fields $(h_c,\, B_k)$.
+By~(9), $\mathrm{AC}_{\to k+2}$'s proposer aggregates these into $B_{k+2} \succeq B_{k+1}$, confirmed in every honest's view by $\vote(k+2)$.
+Inside $\onBlock(B_{k+2})$: \processBlock{} folds in the slot-$(k+1)$ honest votes; the chain has $\sigma.h_j = h_c$ and $\sigma.J = B_k$ at this point (from Step~4 of the previous lemma), so the $P$-gate of \processVote{} matches for every honest finalize-bearing vote, giving $|\sigma.P| \geq n - f > 2n/3$.
+The next \processSlot{} tick at $\vote(k+2)$ runs \processHeight{}: the finality branch fires \emph{first}, setting $\sigma.F \gets \sigma.J = B_k$.
+\updateFinalized{} is offered with $F' = B_k$; its three guards pass: $F' \succ \Sigma.F$ by monotonicity (\Cref{thm:finperm}), $F' \preceq \Sigma.J$ by \Cref{thm:fleqr} together with~(C1), and $F' \in \viableTree(\Sigma)$ by \Cref{lem:viable-finalized}.
+Hence $\Sigma_v.F \gets B_k$.
+\end{proof}
+
+\subsection{Liveness over a slot range}\label{sec:liveness-range}
+
+Iterating the per-round lemmas across a contiguous range of FG slots with honest AC slots gives chained justification and finality.
+
+\begin{theorem}[Justification and finality over a slot range]\label{thm:on-chain-range}
+Fix $k' \geq k$ and assume:
+\begin{enumerate}
+  \item $f^{\vote(k'+1)} < n/3$ and honest validators follow \Cref{def:voting-rule}.
+  \item The system is in a semi-healed state at slot~$k$ with frontier height~$\comm{h}$ (\Cref{def:semi-healed}).
+  \item $\start(k) - \Delta_{\mathit{AC}} \geq \GST$.
+  \item Every honest validator is online throughout $[\start(k) - \Delta_{\mathit{AC}},\, \vote(k'+1)]$.
+  \item\label{rev:thm:ac-chain} For every $j \in [k,\, k'+1]$, $\mathrm{AC}_{\to j}$ is honest, and for $j > k$ its proposer receives every slot-$(j-1)$ honest vote (and includes them).
+  \item AC--FG timing alignment as in~\ref{rev:hpj:align} of \Cref{lem:per-round-justification}.
+  \item Cascade-gate frontier at slot $k$ as in~\ref{rev:hpj:gate} of \Cref{lem:per-round-justification}.
+\end{enumerate}
+
+Then for every $j \in [k,\, k']$:
+\begin{enumerate}
+  \item[\textnormal{(T1)}] A justification cert event at some block $B_j$ with $\sigma[B_j].h = h_c + (j - k)$ has fired in every honest's view by $\vote(j+1)$ (with $h_c = \comm{h} + 1$).
+  \item[\textnormal{(T2)}] If $j \leq k' - 1$, $B_j$ is finalized in every honest's view by $\vote(j+2)$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+\textcolor{red}{\textbf{TODO --- Skeleton (induction on $j$):}}
+
+\emph{Base case $j = k$.} Hypotheses~(1)--(7) of the theorem supply hypotheses~\ref{rev:hpj:f}--\ref{rev:hpj:gate} of \Cref{lem:per-round-justification} at slot~$k$ ($\mathrm{AC}_{\to k}$ honest with uniform tip from~\ref{rev:thm:ac-chain} and the healed state, vote inclusion at $\mathrm{AC}_{\to k+1}$ from~\ref{rev:thm:ac-chain}). The lemma yields (T1) at $j = k$. If $k \leq k' - 1$,~\ref{rev:thm:ac-chain} at $j = k+2$ supplies the additional hypothesis~(9) of \Cref{lem:per-round-finalization}, yielding (T2) at $j = k$.
+
+\emph{Inductive step $j \to j+1$ (when $j+1 \leq k'$).} Assume (T1) at all $i \in [k, j]$.
+By (T1) at $j$, the cert event at $B_j$ has fired by $\vote(j+1)$ in every honest's view, advancing $\Sigma.h_j$ to $h_c + (j - k)$ and $\sigma$-height to $h_c + (j - k) + 1$. The hypotheses of \Cref{lem:per-round-justification} at slot $j+1$ are met:
+\begin{itemize}
+  \item Semi-healed state at $j+1$: by \Cref{lem:semi-healing-persistence}, the semi-healed state persists across slots with standing assumptions and an honest syncer (subsumed in~\ref{rev:thm:ac-chain}). The full healed state does \emph{not} persist through the iteration --- after the slot-$j$ cert event, the new frontier height is $h_c + (j-k)$ but $\Sigma.F$ has only advanced one step behind, to height $h_c + (j-k-1)$, so condition~\ref{rev:def:healed-state:F-cap} of \Cref{def:healed} fails at $\vote(j+1)$. The semi-healed state is all the per-round-justification lemma needs.
+  \item Hypothesis~\ref{rev:hpj:ack-honest} at $j+1$: $\mathrm{AC}_{\to j+1}$ honest from~\ref{rev:thm:ac-chain}; uniform tip follows from (T1) at $j$ (its block $B_j$ is the canonical AC tip at $\vote(j+1)$ for every honest validator).
+  \item Hypothesis~\ref{rev:hpj:ack1-honest} at $j+1$: $\mathrm{AC}_{\to j+2}$ honest with vote inclusion from~\ref{rev:thm:ac-chain} at $j+2$.
+  \item Hypothesis~\ref{rev:hpj:gate} at $j+1$: the cert at slot $j$ fires precisely at $\vote(j+1)$, restoring $\Sigma.\hmax = \Sigma.h_j + 1$ at slot $j+1$.
+\end{itemize}
+Invoking \Cref{lem:per-round-justification} at slot $j+1$ yields (T1) at $j+1$. If $j+1 \leq k' - 1$,~\ref{rev:thm:ac-chain} at $j+3$ supplies $\mathrm{AC}_{\to j+3}$ honest, yielding (T2) at $j+1$ via \Cref{lem:per-round-finalization}.
+\end{proof}
+
+\medskip
+\noindent\fbox{\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}
+\textbf{Disclaimer (last-AC-slot honesty per round is strong).} Hypothesis~\ref{rev:thm:ac-chain} requires the \emph{last} AC slot of each FG round in the range --- formally, $\mathrm{AC}_{\to j}$ for every $j \in [k,\, k'+1]$ --- to be honest. To be precise: the $c$ intermediate AC slots within each FG round (those strictly between $\vote(j)$ and $\vote(j+1) - \Delta_{\mathit{AC}}$) need not be honest; only the boundary AC slot $\mathrm{AC}_{\to (j+1)}$, which closes round $j$ by landing its votes on-chain, strictly requires honesty. Even so, requiring last-AC-slot honesty in \emph{every} round is a substantially stronger assumption than the protocol relies on for safety. The theorem here should be read as a clean baseline; weakening further --- so that scattered honest last-AC-slots over a longer window suffice --- is the subject of separate liveness analysis.
+\end{minipage}}
+\medskip
+
+\subsection{Remarks}\label{sec:liveness-remarks}
+
+\paragraph{State-height alignment falls out.}
+Hypothesis~\ref{rev:hpj:ack-honest} gives uniform $B_k$ across honest, and combined with~\ref{rev:hpj:healed} and~\ref{rev:hpj:gst} every honest's $\sigma$ map agrees at the canonical tip; hence $h_c = \sigma[B_k].h$ is well-defined and uniform without separate hypothesis.
+
+\paragraph{Lock-clean falls out.}
+Hypothesis~\ref{rev:hpj:gate} (cascade-gate frontier with $h_c = \comm{h} + 1$) combined with \Cref{def:semi-healed}~(\ref{rev:def:healed-state:vote-h}) (every prior honest vote has height $\leq \sigma[\getConfirmed_{v_\ell}].h \leq h_c - 1$ when the gate holds) implies $\Delta_i.T(h_c) = \bot$ for every honest~$i$ at $\vote(k)$. Hence both the lock branch ($\Delta_i.\lambda(h_c) = \mathtt{true}$ requires a prior finalize-bearing vote at $h_c$) and the elif-timeout branch ($\Delta_i.T(h_c) \neq \bot$ requires a prior non-$\bot$ vote at $h_c$) of \getFinalVote{} are unreachable, leaving only the first-vote branch.
+
+\paragraph{Chained slots and AC honesty re-use.}
+Under uniform FG slot duration~\ref{rev:hpj:align}, $\mathrm{AC}_{\to j+1}$ plays double duty: it is the vote-inclusion slot for round~$j$ and the target-uniformity slot for round~$j+1$. Iterating across slots, the per-round AC honesty requirement is therefore one slot per round, with adjacent rounds sharing the boundary AC slot. Likewise hypothesis~\ref{rev:hpj:gate} for the next slot's $h_c' = h_c + 1$ is automatic: the cert at $h_c$ in this slot establishes the height advance at $\vote(j+1)$, restoring the cascade gate.
+
+\paragraph{Finality slot need not be successive.}
+\Cref{lem:per-round-finalization} states $\mathrm{AC}_{\to k+2}$ as the additional honest slot for finality, but this is not strictly necessary. What the proof requires is that the slot-$(k+1)$ honest finalize-bearing votes land on a chain whose state still has $\sigma.h_j = h_c$ at the time of processing --- i.e., before any later justification at $h_c + 1$ has fired in that view, which would advance $\sigma.h_j$ past $h_c$ and break the $P$-gate match. If $\mathrm{AC}_{\to k+2}$ is dishonest but no later justification at $h_c + 1$ fires (because dishonest blocks alone cannot form a $\geq 2n/3$ quorum at $h_c + 1$, by~\ref{rev:hpj:f}), a subsequent honest AC slot can still aggregate the commits and trigger finality. The lemma is stated with $\mathrm{AC}_{\to k+2}$ for cleanness; the more general statement requires tracking which AC slot first aggregates the commits.
+
+\paragraph{Discharging hypothesis~\ref{rev:thm:ac-chain}.}
+The ``honest $\mathrm{AC}_{\to j}$ with vote inclusion'' condition is an AC-level safety/liveness property. Different ACs satisfy it differently --- Simplex-style ACs do under sync $+$ honest $\mathrm{AC}_{\to k}$; longest-chain ACs require stronger conditions. The lemmas are parametric in this discharge.
+
+\paragraph{Discharging hypothesis~\ref{rev:hpj:gate}.}
+For a standalone single-slot lemma, hypothesis~\ref{rev:hpj:gate} must be assumed explicitly. Under chained iterations from a healed state, it is automatic for every slot $j > k$: the cert event at slot~$j-1$ fires precisely at $\vote(j)$, restoring $\Sigma.\hmax = \Sigma.h_j + 1$. The base case (slot~$k$) is paid for by the healed state's cascade-gate analysis (\Cref{lem:healing-3slot}, Step~5).
+
+\paragraph{Required changes to existing sections.}
+The justification lemma, finalization lemma, and theorem are self-contained and additive: they use existing definitions (\Cref{def:voting-rule}, \Cref{def:voterecord}, \Cref{def:semi-healed}, \Cref{def:standing}) and existing lemmas/properties (\Cref{lem:just-unique-height}, \Cref{lem:no-high-just}, \Cref{lem:viable-finalized}, \Cref{lem:semi-healing-persistence}, \Cref{thm:fleqr}, \Cref{thm:finperm}, \Cref{prop:target-dominance}). The new constant $\Delta_{\mathit{AC}}$ is local to this section and supersedes $\delta_c$ (\Cref{def:standing}) for these results' purposes; the spec's existing $\delta_c$ uses elsewhere remain valid as long as $\Delta_{\mathit{AC}}$ subsumes one AC slot operation plus $\delta_c$ confirmation. No edits to other sections are required.
+
 \end{document}
