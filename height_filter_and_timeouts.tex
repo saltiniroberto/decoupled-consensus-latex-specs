@@ -204,9 +204,9 @@ the chain is at~$v$'s height, $T$ lies on this chain, and $T$'s slot is no earli
 A timeout vote ($v.\target = \bot$) is fresh on the chain iff $\sigma[L].h = v.\height$.
 Intuitively, a fresh justification vote attests that its signer saw~$T$ as a chain of height~$v.\height$.
 
-\begin{remark}[Freshness via $T$'s own chain]\label{rem:fresh-equiv}
-For a justification vote with target $T \preceq L$, the constraint $T.\slot \geq \sigma[L].s_h$ is equivalent to $\sigma[T].h = \sigma[L].h$.
-State-height is $\preceq$-monotone (Lemma~\ref{lem:slotmono}), equals $\sigma[L].h$ on~$L$, and advanced to its current value at the block whose slot is $\sigma[L].s_h$; so the ancestors of~$L$ at that state-height are exactly those with slot $\geq \sigma[L].s_h$.
+\begin{remark}[Freshness via $T$'s own chain]
+For a justification vote with target $T \preceq L$, the constraint $T.\slot \geq \sigma[L].s_h$ says that~$T$ lies in the current state-height interval of~$L$.
+Equivalently, it means $\sigma[T].h = \sigma[L].h$; this equivalence is proved as Lemma~\ref{lem:fresh-equiv}.
 \end{remark}
 
 Freshness ensures that every justification at height~$h$ is witnessed by targets whose own chains reached state-height~$h$, and pins both timeout and justification contributions to the chain's current height.
@@ -365,10 +365,26 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
 The only assignments to~$h$ are $h \gets h + 1$ in the justification and timeout-cert branches of \processHeightEvents, each guarded by its $\geq 2n/3$ quorum and followed by a return or function exit, so at most one fires per call.
 \end{proof}
 
+\begin{lemma}[Freshness via target state-height]\label{lem:fresh-equiv}
+For any chain head~$L$ and ancestor $T \preceq L$,
+\[
+  T.\slot \geq \sigma[L].s_h
+  \qquad\Longleftrightarrow\qquad
+  \sigma[T].h = \sigma[L].h .
+\]
+\end{lemma}
+
+\begin{proof}
+Let $h \coloneqq \sigma[L].h$.
+Along a chain, state-height only increases, and whenever a height-advance fires, \processHeightEvents sets $s_h$ to the slot boundary at which that advance fires.
+Thus $\sigma[L].s_h$ is exactly the boundary where $L$'s chain entered state-height~$h$.
+Any ancestor of~$L$ with slot before that boundary has state-height $< h$, while any ancestor at or after that boundary has state-height~$h$.
+Applying this to $T \preceq L$ gives the equivalence.
+\end{proof}
+
 \begin{lemma}[Checkpoint monotonicity]\label{lem:slotmono}
 On any chain, the fields $s$, $h$, $h_j$, $s_h$, $F$, $J$ are non-decreasing along~$\preceq$, with $F \preceq J$ at all times.
 $J$ and $h_j$ advance only on justification events, and $s_h$ only on height-advances, with $s_h$ set to the slot boundary where the height advance fires.
-Consequently, when $\sigma[Y].h = h$, the ancestors of~$Y$ at state-height~$h$ are $\{B' \preceq Y : B'.\slot \geq \sigma[Y].s_h\}$.
 \end{lemma}
 
 \begin{proof}
@@ -376,13 +392,9 @@ Reading off Figure~\ref{alg:state-machine}: $s$ only increases (in \processSlot)
 Slots strictly increase along~$\preceq$ (Definition~\ref{def:block}), so $s_h$ is non-decreasing.
 $F$ updates only via $F \gets J$, so $F \preceq J$ reduces to $J$-monotonicity.
 
-\emph{Height-$h$ interval.}
-Along any chain, $h$ increases monotonically; when $\sigma[Y].h = h$, the value $s_h$ was set at the slot boundary that advanced state-height to~$h$.
-By strict slot increase along~$\preceq$ and the monotonicity of $(h, s_h)$, the ancestors $B' \preceq Y$ with $\sigma[B'].h = h$ are exactly those with $B'.\slot \geq s_h$.
-
 \emph{Block field $J$.}
 At a justification advance on chain~$Y$ firing at target~$T$ with pre-state height~$h$, freshness forces $T.\slot \geq s_h$, since every contributing justification vote has target~$T$ and was processed only when fresh.
-By the height-$h$ interval claim, $\sigma[T].h = h$, so the previous justified block $J_{\mathrm{old}}$ with $\sigma[J_{\mathrm{old}}].h \leq h-1$ and $J_{\mathrm{old}} \preceq Y$ satisfies $T \succ J_{\mathrm{old}}$ by state-height monotonicity.
+By Lemma~\ref{lem:fresh-equiv}, $\sigma[T].h = h$, so the previous justified block $J_{\mathrm{old}}$ with $\sigma[J_{\mathrm{old}}].h \leq h-1$ and $J_{\mathrm{old}} \preceq Y$ satisfies $T \succ J_{\mathrm{old}}$ by state-height monotonicity.
 Hence $J$ strictly advances along~$\preceq$ at every justification event.
 \end{proof}
 
@@ -410,8 +422,8 @@ By quorum intersection, $|Q_F \cap Q'| \geq n/3$; pick $v \in Q_F \cap Q'$ not s
 E1 (Definition~\ref{def:slashing}) applied to $v$'s votes in~$Q_F, Q'$ forces $C = C'$.
 
 \emph{Case $h < h'$.}
-Let~$Z$ be the chain on which~$C'$ was finalized, at the post-state where the finalize-quorum closed; then $\sigma[Z].h \geq h' > h$, $C' \preceq Z$, and $\sigma[C'].h = h'$ (Remark~\ref{rem:fresh-equiv}).
-Lemma~\ref{lem:mainsafety} at~$Z$ gives $C \preceq Z$; Remark~\ref{rem:fresh-equiv} on~$C$'s own finalizing chain gives $\sigma[C].h = h$.
+Let~$Z$ be the chain on which~$C'$ was finalized, at the post-state where the finalize-quorum closed; then $\sigma[Z].h \geq h' > h$, $C' \preceq Z$, and $\sigma[C'].h = h'$ (Lemma~\ref{lem:fresh-equiv}).
+Lemma~\ref{lem:mainsafety} at~$Z$ gives $C \preceq Z$; Lemma~\ref{lem:fresh-equiv} on~$C$'s own finalizing chain gives $\sigma[C].h = h$.
 Both~$C, C'$ lie on~$Z$, so comparable; with $\sigma[C].h = h < h' = \sigma[C'].h$, state-height monotonicity (Lemma~\ref{lem:slotmono}) forces $C \prec C'$.
 \end{proof}
 
@@ -601,7 +613,7 @@ For every store~$\Sigma$ and auxiliary~$\Omega$, $\getConfirmed(\Sigma, \Omega)$
 \end{corollary}
 
 \begin{proof}
-If the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ holds, $R = \Sigma.J$ with $\sigma[\Sigma.J].h = \Sigma.h_j = \Sigma.\hmax - 1$ (Remark~\ref{rem:fresh-equiv}); state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) gives every descendant of~$\Sigma.J$ in $\Sigma.\T$ a $\sigma$-height $\geq \Sigma.\hmax - 1$, so any leaf of $\Sigma.\T$ above $\Sigma.J$ is a viable leaf and witnesses $\Sigma.J \in \viableTree(\Sigma)$.
+If the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ holds, $R = \Sigma.J$ with $\sigma[\Sigma.J].h = \Sigma.h_j = \Sigma.\hmax - 1$ (Lemma~\ref{lem:fresh-equiv}); state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) gives every descendant of~$\Sigma.J$ in $\Sigma.\T$ a $\sigma$-height $\geq \Sigma.\hmax - 1$, so any leaf of $\Sigma.\T$ above $\Sigma.J$ is a viable leaf and witnesses $\Sigma.J \in \viableTree(\Sigma)$.
 Otherwise $R = \Sigma.F$, and Lemma~\ref{lem:F-viable} gives a viable leaf descending from~$\Sigma.F$ in $\Sigma.\T$.
 \end{proof}
 
@@ -624,7 +636,7 @@ Unless $\geq n/3$ validators are slashable: if~$F$ is finalized at height~$h_f$ 
 If $h_f = 0$ then $F = \genesis$ and compatibility is trivial; assume $h_f \geq 1$.
 The justification fired at the post-state of some processed block~$B$ whose \onBlock call triggered the justification branch of \processHeightEvents with $(\sigma[B].J,\, \sigma[B].h_j) = (C,\, h)$, so $C \preceq B$ and $\sigma[B].h \geq h + 1$ (justification advances height).
 Lemma~\ref{lem:mainsafety} at $\sigma[B].h > h_f$ gives $F \preceq B$, and with $C \preceq B$ this yields $F \sim C$.
-For $h > h_f$: $\sigma[F].h = h_f < h = \sigma[C].h$ by Remark~\ref{rem:fresh-equiv}, and state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) forces $F \prec C$ on the comparable pair.
+For $h > h_f$: $\sigma[F].h = h_f < h = \sigma[C].h$ by Lemma~\ref{lem:fresh-equiv}, and state-height monotonicity along $\preceq$ (Lemma~\ref{lem:slotmono}) forces $F \prec C$ on the comparable pair.
 \end{proof}
 
 \begin{lemma}[Upgrade property]\label{lem:upgrade}
@@ -667,7 +679,7 @@ Unless $\geq n/3$ validators are slashable: if block~$F$ is finalized at height~
 \end{theorem}
 
 \begin{proof}
-$\Sigma.J \succeq F$ by Lemma~\ref{lem:upgrade}, so $\sigma[\Sigma.J].h = \Sigma.h_j \geq h_f$ by state-height monotonicity along $F \preceq \Sigma.J$ (using $\sigma[F].h = h_f$ from Remark~\ref{rem:fresh-equiv}); $F \in \viableTree(\Sigma)$ by Lemma~\ref{lem:viable-finalized}.
+$\Sigma.J \succeq F$ by Lemma~\ref{lem:upgrade}, so $\sigma[\Sigma.J].h = \Sigma.h_j \geq h_f$ by state-height monotonicity along $F \preceq \Sigma.J$ (using $\sigma[F].h = h_f$ from Lemma~\ref{lem:fresh-equiv}); $F \in \viableTree(\Sigma)$ by Lemma~\ref{lem:viable-finalized}.
 If $\Sigma.\hmax = \Sigma.h_j + 1$, $\getConfirmed$'s first branch fires and returns a descendant of $\Sigma.J \succeq F$.
 Otherwise $\Sigma.\hmax \geq \Sigma.h_j + 2 \geq h_f + 2$, and \getConfirmed's second branch returns a block~$T$ with $\sigma[T].h \geq \Sigma.\hmax - 1 \geq h_f + 1 > h_f$, so Lemma~\ref{lem:mainsafety} gives $F \preceq T$.
 \end{proof}
@@ -697,8 +709,8 @@ Unless $\geq n/3$ validators are slashable, every justification $(C, h)$ that ha
 \begin{proof}
 The justification fires inside an \onBlock call on some processed block~$B$, at which point Remark~\ref{rem:fs-invariant} gives the descriptor $(C, h)$ offered to \updateJustified.
 $C$ lies on $B$'s chain (it is the justified target), and so does $\Sigma.F$ (by $\Sigma.F \preceq B$), so $\Sigma.F$ and~$C$ are comparable.
-If $\Sigma.F \not\preceq C$, then $\Sigma.F \succ C$, so $h_f = \sigma[\Sigma.F].h \geq \sigma[C].h = h$ by state-height monotonicity (Lemma~\ref{lem:slotmono}, applied along $C \prec \Sigma.F$, using $\sigma[C].h = h$ from Remark~\ref{rem:fresh-equiv}).
-Combining $\Sigma.F \preceq \Sigma.J$ (Theorem~\ref{thm:fleqr}) with $\sigma[\Sigma.J].h = \Sigma.h_j$ (Remark~\ref{rem:fresh-equiv}) and the same state-height monotonicity along $\Sigma.F \preceq \Sigma.J$ gives $\Sigma.h_j \geq h_f \geq h$.
+If $\Sigma.F \not\preceq C$, then $\Sigma.F \succ C$, so $h_f = \sigma[\Sigma.F].h \geq \sigma[C].h = h$ by state-height monotonicity (Lemma~\ref{lem:slotmono}, applied along $C \prec \Sigma.F$, using $\sigma[C].h = h$ from Lemma~\ref{lem:fresh-equiv}).
+Combining $\Sigma.F \preceq \Sigma.J$ (Theorem~\ref{thm:fleqr}) with $\sigma[\Sigma.J].h = \Sigma.h_j$ (Lemma~\ref{lem:fresh-equiv}) and the same state-height monotonicity along $\Sigma.F \preceq \Sigma.J$ gives $\Sigma.h_j \geq h_f \geq h$.
 Otherwise the $F$-filter passes and \updateJustified's lex test forces $\Sigma.h_j \geq h$ after the call.
 Lemma~\ref{lem:Rs-key-monotone} preserves the bound at all later times.
 \end{proof}
@@ -960,7 +972,7 @@ Hence $\Sigma.h_j = h_c$, and Lemma~\ref{lem:just-unique-height} forces $\Sigma.
 
 $\Sigma.h_j = h_c = \Sigma.\hmax - 1$ gives $\Sigma.\hmax = \Sigma.h_j + 1$, satisfying the cascade gate, so \getConfirmed{} walks from~$\Sigma.J$.
 The return descends from~$\Sigma.J = T_{\mathrm{lock}}$ (existence: $B^\star \succeq \Sigma.J$ with $\sigma[B^\star].h = \Sigma.\hmax$ provides the required witness in $\viableTree(\Sigma)$ at $\sigma$-height~$\Sigma.\hmax$, since any leaf $L \succeq B^\star$ inherits $\sigma[L].h = \Sigma.\hmax$ by state-height monotonicity).
-Hence $T \succeq \Sigma.J = T_{\mathrm{lock}}$, with $\sigma[T_{\mathrm{lock}}].h = h_c$ by Remark~\ref{rem:fresh-equiv} on the chain witnessing $T_{\mathrm{lock}}$'s justification.
+Hence $T \succeq \Sigma.J = T_{\mathrm{lock}}$, with $\sigma[T_{\mathrm{lock}}].h = h_c$ by Lemma~\ref{lem:fresh-equiv} on the chain witnessing $T_{\mathrm{lock}}$'s justification.
 \end{proof}
 
 \begin{theorem}[Layer~1 leak fairness]\label{thm:fairness}
@@ -973,7 +985,7 @@ Then for every slot processed on~$T'$ from that point onward, while canonical co
 
 \begin{proof}
 We show that processing~$v$ on~$T'$ sets $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
-By Section~\ref{sec:model}, $\timeouts[i]$ is set at processing time iff either (a)~$v$ is a timeout vote at the current state-height ($v.\target = \bot$ and $v.\height = \sigma[T'].h = h_c$), or (b)~$v$'s target is height-fresh on~$T'$ ($v.\target \preceq T'$ with $\sigma[v.\target].h = h_c$, equivalently $v.\target.\slot \geq \sigma[T'].s_h$ via Remark~\ref{rem:fresh-equiv}).
+By Section~\ref{sec:model}, $\timeouts[i]$ is set at processing time iff either (a)~$v$ is a timeout vote at the current state-height ($v.\target = \bot$ and $v.\height = \sigma[T'].h = h_c$), or (b)~$v$'s target is height-fresh on~$T'$ ($v.\target \preceq T'$ with $\sigma[v.\target].h = h_c$, equivalently $v.\target.\slot \geq \sigma[T'].s_h$ via Lemma~\ref{lem:fresh-equiv}).
 
 Lemma~\ref{lem:honest-vote-sets-timeout} gives the dichotomy.
 In the timeout sub-case, $v = (i, h_c, \bot, \bot, \bot)$ with $\sigma[T'].h = h_c$ satisfies (a) directly.
@@ -2137,7 +2149,7 @@ Then by time $\vote(k+1)$, in every honest validator's local view:
 \item[Step 1.] Honest validators cast unanimous (non-$\bot$) justification votes for $B_k$ at $h_c$. Use~\ref{rev:hpj:online},~\ref{rev:hpj:ack-honest},~\ref{rev:hpj:gate} to show $\Delta_i.T(h_c) = \bot$ and $\Delta_i.\tau(h_c) = \mathtt{false}$ at $\vote(k)$ for every honest~$i$, ruling out the lock and elif-timeout branches of \getFinalVote{} (\Cref{def:voterecord}); the first-vote branch fires with target~$B_k$. Honest count $\geq n - f > 2n/3$.
 \item[Step 2.] $\mathrm{AC}_{\to k+1}$'s proposer receives every honest slot-$k$ vote by $\vote(k) + \Delta$ via post-GST synchrony~\ref{rev:hpj:gst} and alignment~\ref{rev:hpj:align}.
 \item[Step 3.] $B_{k+1}$ is processed and confirmed in every honest's view by $\vote(k+1)$ via $\Delta_{\mathit{AC}}$ confirmation and~\ref{rev:hpj:ack1-honest},~\ref{rev:hpj:align}.
-\item[Step 4.] The justification cert event fires inside $\onBlock(B_{k+1})$: \processVote{} sets $\sigma.\targets[i] \gets B_k$ for $\geq 2n/3$ honest contributors (freshness via \Cref{rem:fresh-equiv}); the next \processSlot{} tick at $\vote(k+1)$ runs \processHeight{}, whose justification branch fires with $T = B_k$, advancing $\sigma.J \gets B_k$, $\sigma.h_j \gets h_c$, $\sigma.h \gets h_c + 1$. The $F$-filter and lex-test in \updateJustified{} pass, so $\Sigma_v.J \gets B_k$, $\Sigma_v.h_j \gets h_c$.
+\item[Step 4.] The justification cert event fires inside $\onBlock(B_{k+1})$: \processVote{} sets $\sigma.\targets[i] \gets B_k$ for $\geq 2n/3$ honest contributors (freshness via \Cref{lem:fresh-equiv}); the next \processSlot{} tick at $\vote(k+1)$ runs \processHeight{}, whose justification branch fires with $T = B_k$, advancing $\sigma.J \gets B_k$, $\sigma.h_j \gets h_c$, $\sigma.h \gets h_c + 1$. The $F$-filter and lex-test in \updateJustified{} pass, so $\Sigma_v.J \gets B_k$, $\Sigma_v.h_j \gets h_c$.
 \item[Step 5.] (C1) follows from Step~4 plus \Cref{prop:target-dominance}. (C2) follows from inspecting the gate inside \getFinalVote{} at $\vote(k+1)$: \getBaseVote{} reads $(h_f, T_f) = (h_c, B_k)$; $\Delta_i.T(h_c) = B_k$ (set by Step~1's \recordVote{}) and $\Delta_i.\tau(h_c) = \mathtt{false}$ pass the gate, keeping the finalize-fields.
 \end{description}
 \end{proof}
