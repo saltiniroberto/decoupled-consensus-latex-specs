@@ -152,7 +152,7 @@ Slots strictly increase along parent links: $B.\slot > B.\parent.\slot$ for ever
 \begin{definition}[Chain]\label{def:chain}
 A \emph{chain} is a path from~$\genesis$ to some block~$B$ via parent links.
 Chains are in bijection with their tips, and we identify the two.
-Blocks form a tree rooted at~$\genesis$; we write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), and $B \sim B'$ (\emph{compatible}) when $B \preceq B'$ or $B' \preceq B$.
+Blocks form a tree rooted at~$\genesis$; we write $B \preceq B'$ when $B$ is an ancestor of~$B'$ (or $B = B'$), $B \prec B'$ for strict ancestry, and $B \sim B'$ (\emph{compatible}) when $B \preceq B'$ or $B' \preceq B$.
 Two chains \emph{conflict} when their tips are not compatible.
 \end{definition}
 
@@ -164,7 +164,7 @@ A \emph{vote} is a signed tuple
 where $\validator$ is the signer, $\height$ is a height, and $\target \in \{\bot\} \cup \mathrm{Blocks}$.
 A vote with $\target = \bot$ is a \emph{timeout vote}; a vote with $\target \neq \bot$ is a \emph{justification vote}.
 The pair $(\finalizeHeight,\, \finalizeTarget)$ is either both~$\bot$ or a commitment to finalize a block at a height.
-A vote included on a chain must reference a target (and finalize target, when present) that exists on that chain when non-$\bot$.
+A vote included on a chain must reference a target (and finalize target, when present) that already exists on that chain when non-$\bot$; in particular, a block cannot include a vote that names the block itself, since naming it requires its hash.
 \end{definition}
 
 \paragraph{State.}
@@ -198,14 +198,14 @@ The \emph{state-height} of a block~$B$ is $\sigma[B].h$: the height after proces
 \paragraph{Height freshness.}
 A justification vote~$v$ (i.e., $v.\target = T \neq \bot$) is \emph{fresh} on a chain with head state $\sigma[L]$ iff
 \[
-  \sigma[L].h = v.\height \;\wedge\; T \preceq L \;\wedge\; T.\slot \geq \sigma[L].s_h:
+  \sigma[L].h = v.\height \;\wedge\; T \prec L \;\wedge\; T.\slot \geq \sigma[L].s_h:
 \]
-the chain is at~$v$'s height, $T$ lies on this chain, and $T$'s slot is no earlier than where the chain's current height began.
+the chain is at~$v$'s height, $T$ is a strict ancestor on this chain, and $T$'s slot is no earlier than where the chain's current height began.
 A timeout vote ($v.\target = \bot$) is fresh on the chain iff $\sigma[L].h = v.\height$.
 Intuitively, a fresh justification vote attests that its signer saw~$T$ as a chain of height~$v.\height$.
 
 \begin{remark}[Freshness via $T$'s own chain]
-For a justification vote with target $T \preceq L$, the constraint $T.\slot \geq \sigma[L].s_h$ says that~$T$ lies in the current state-height interval of~$L$.
+For a justification vote with target $T \prec L$, the constraint $T.\slot \geq \sigma[L].s_h$ says that~$T$ lies in the current state-height interval of~$L$.
 Equivalently, it means $\sigma[T].h = \sigma[L].h$; this equivalence is proved as Lemma~\ref{lem:fresh-equiv}.
 \end{remark}
 
@@ -225,7 +225,7 @@ On a chain with head state $\sigma[L]$ at height~$h$, a \emph{timeout} fires iff
   \bigl|\{i : \timeouts[i] = \mathtt{true}\}\bigr| \;\geq\; 2n/3.
 \]
 A timeout has no associated target block.
-Both timeout votes and height-fresh justification votes (with target $\preceq L$ at the chain's current height) set $\timeouts[i] = \mathtt{true}$, so a justification quorum implies a timeout quorum.
+Both timeout votes and height-fresh justification votes (with target $\prec L$ at the chain's current height) set $\timeouts[i] = \mathtt{true}$, so a justification quorum implies a timeout quorum.
 The two height-advance branches are checked in order, justification first (Figure~\ref{alg:state-machine}).
 \end{definition}
 
@@ -302,7 +302,7 @@ The $P$-gate adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$ and $v.\finali
       \State $\sigma.\timeouts[i] \gets \mathtt{true}$
     \EndIf
   \Else \Comment{Justification vote: apply height freshness}
-    \State $\fresh \gets (v.\height = \sigma.h) \land (v.\target \preceq \sigma.L) \land (v.\target.\slot \geq \sigma.s_h)$
+    \State $\fresh \gets (v.\height = \sigma.h) \land (v.\target \prec \sigma.L) \land (v.\target.\slot \geq \sigma.s_h)$
     \If{$\fresh$}
       \State $\sigma.\targets[i] \gets v.\target$
       \State $\sigma.\timeouts[i] \gets \mathtt{true}$
