@@ -685,21 +685,38 @@ Otherwise $\Sigma.\hmax \geq \Sigma.h_j + 2 \geq h_f + 2$, and \getConfirmed's s
 \end{proof}
 
 \begin{theorem}[Order independence]\label{thm:orderindep}
-Unless $\geq n/3$ validators are slashable: the store state after processing a set of blocks depends only on which blocks have been processed, not on their order.
-Consequently, two nodes that have processed the same set of blocks agree on $(\sigma,\, \T,\, F,\, J,\, h_j,\, \hmax)$, and hence on $\viableTree$.
+Unless $\geq n/3$ validators are slashable: the observable store view after folding the same available set of blocks through \onBlock in any parent-first order depends only on that set, not on the order.
+In particular, two nodes with the same available blocks agree on $(F,\,J,\,h_j,\,\hmax)$, on the accepted subtree rooted at~$F$, and hence on the possible outputs of~\getConfirmed.
+They need not agree on blocks outside the subtree of~$F$: a block conflicting with the final~$F$ may have been accepted before finality moved at one node, while another node that first moved~$F$ would reject it.
 \end{theorem}
 
 \begin{proof}
-Each block's post-state is a deterministic function of itself and its parent's post-state, so $\sigma$ depends only on the processed set; in particular $\Sigma.\hmax$ and $\viableTree(\Sigma)$ depend only on the set.
+Fix a common input set~$\mathcal B$ and consider any parent-first processing order.
+For every block whose ancestors are in~$\mathcal B$, its post-state is a deterministic function of itself and its parent's post-state; write this state as~$\sigma[B]$.
 
-\emph{$F$.} By Lemma~\ref{lem:finchain}, $\{\sigma[B].F : B \in \T\}$ is a chain with maximum $F_{\max}$, attained at some processed~$B^\ast$.
-Remark~\ref{rem:fs-invariant} forces $\Sigma.F$ into this chain, so $\Sigma.F \preceq F_{\max}$; once $B^\ast$ has been processed, Theorem~\ref{thm:finlive} gives $\Sigma.F \succeq F_{\max}$.
+\emph{$F$.} By Lemma~\ref{lem:finchain}, $\{\sigma[B].F : B \in \mathcal B\}$ is a chain with maximum $F_{\max}$, attained at some~$B^\ast \in \mathcal B$.
+At all times, $\Sigma.F \preceq F_{\max}$.
+When $B^\ast$ is processed, Theorem~\ref{thm:finlive} gives $\Sigma.F \succeq F_{\max}$; monotonicity of~$\Sigma.F$ then gives final value $\Sigma.F=F_{\max}$ in every order.
 
-\emph{$J$.} The multiset~$D$ of cert descriptors offered to \updateJustified is a deterministic function of the processed set: each block contributes its post-state's justified checkpoint exactly once.
+\emph{$\hmax$.} Let $B_{\max}$ maximize $\sigma[B].h$ over~$\mathcal B$.
+If $\sigma[B_{\max}].h > h_{F_{\max}}$, Lemma~\ref{lem:mainsafety} gives $F_{\max} \preceq B_{\max}$.
+If $\sigma[B_{\max}].h = h_{F_{\max}}$, then $F_{\max}$ itself attains the same maximum height.
+Thus some maximum-height block descends from~$F_{\max}$.
+Since every intermediate finalized root is below~$F_{\max}$, the \onBlock finality-ancestor assertion accepts such a maximum-height block whenever it is reached in a parent-first order.
+Thus $\Sigma.\hmax$ reaches the maximum $\sigma$-height over~$\mathcal B$, and no processed block can raise it further.
+
+\emph{$J$.} For determining the final justified root, only cert descriptors with height at least~$h_{F_{\max}}$ can matter.
+Such descriptors are deterministic from~$\mathcal B$: if a block's descriptor is $(C,h)$ with $h\geq h_{F_{\max}}$, then the argument below shows $F_{\max}\preceq C$, and since $C$ is an ancestor of the block producing the descriptor, that block lies in the live subtree and is accepted in every order.
+Let~$D$ be this deterministic high-descriptor multiset.
 Write $K_{\max} \coloneqq (h_{F_{\max}},\, \hash(F_{\max}))$.
 For any $(C, h) \in D$ with $h \geq h_{F_{\max}}$: if $h > h_{F_{\max}}$, Lemma~\ref{lem:certchain} gives $C \succ F_{\max}$; if $h = h_{F_{\max}}$, finality of $F_{\max}$ at $h_{F_{\max}}$ provides a finality quorum~$Q_F$ of size $\geq 2n/3$ with $\finalizeHeight = h_{F_{\max}}$ and $\finalizeTarget = F_{\max}$, while the descriptor's existence gives a justification quorum~$Q'$ at height~$h_{F_{\max}}$ targeting~$C$; quorum intersection picks a non-slashable $v \in Q' \cap Q_F$, and E1 (as in Lemma~\ref{lem:upgrade}) forces $C = F_{\max}$.
 Descriptors with $h < h_{F_{\max}}$ have key strictly below $K_{\max}$ on the leading coordinate, so once $\Sigma.h_j \geq h_{F_{\max}}$ holds they are dominated.
 Hence $\Sigma.J$'s final value is the lex-max over $\{(C, h) \in D : h \geq h_{F_{\max}}\}$, a deterministic function of the processed set.
+
+\emph{Live subtree and outputs.} If $B \in \mathcal B$ and $F_{\max} \preceq B$, then every ancestor of~$B$ above~$F_{\max}$ also descends from every intermediate~$\Sigma.F$.
+Thus $B$ is accepted in every parent-first order.
+Conversely, blocks outside the subtree of~$F_{\max}$ may differ across nodes, but \getConfirmed only returns descendants of the confirmation root, which is either~$F_{\max}$ or~$J \succeq F_{\max}$, and applies the same height threshold~$\hmax-1$.
+Therefore the possible outputs of~\getConfirmed are order-independent.
 \end{proof}
 
 \begin{lemma}[Justifications stay at or below~$\Sigma.h_j$]\label{lem:no-high-just}
