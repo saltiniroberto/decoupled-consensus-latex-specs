@@ -8,9 +8,33 @@
 \maketitle
 
 This repository contains notes and specifications for finality gadgets.
-Each document is a self-contained \LaTeX{} file.
+Each protocol spec lives under \texttt{full/} as a standalone \LaTeX{} file
+and produces two PDFs:
+\begin{itemize}
+  \item a \emph{full} version (e.g.\ \texttt{full/\textit{name}.pdf}) including
+    lemmas, corollaries, propositions, properties, proofs, remarks, and
+    assumptions;
+  \item a \emph{lite} version (\texttt{\textit{name}\_lite.pdf}) built from a
+    thin wrapper at the repository root which sets a flag and \texttt{\textbackslash input}s the full
+    file. The lite build drops the theorem-like environments above and keeps
+    only algorithms, definitions, theorem statements, and surrounding prose;
+    its title is annotated with ``(Lite)''.
+\end{itemize}
+The shared exclusion logic lives in \texttt{full/lite\_full\_setup.tex}.
 
 \begin{description}
+
+\item[\texttt{height\_filter\_and\_timeouts.tex}]
+  \textbf{Fresh Simplex with Height Filter and Timeouts.}
+  Uses a finality-gadget height counter (separate from slot) with two
+  height-advancing mechanisms -- fixed-target justification and timeouts --
+  both gated by a height-freshness rule on vote targets.
+  Covers accountable safety, the fork-choice store
+  (with local irreversibility, lock-in, and order independence),
+  the inactivity leak (penalty units, leak tightness, honest voting rule,
+  leak fairness), healing from asynchrony with view-merge,
+  and a per-round liveness argument over slot ranges (WIP).
+  \textbf{Closest to the current candidate protocol.}
 
 \item[\texttt{finalization\_as\_notarization.tex}] \textbf{Finalization as Notarization.}
   Defines a finality gadget with three vote types (notarize, justify, finalize)
