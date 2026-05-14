@@ -2064,6 +2064,43 @@ Lemma~\ref{lem:healing-3slot} delivers $k_h \in \{k+1, k+2, k+3\}$ with the syst
 Lemma~\ref{lem:healing-persistence} extends inductively: given the healed state at slot~$\ell \geq k_h$, if slot~$\ell+1$ satisfies the standing assumptions and has an honest syncer, then the system is healed at slot~$\ell+1$ with frontier height non-decreasing.
 \end{proof}
 
+\subsection{Variation: sparse syncers with broadcast timeouts}\label{sec:healing-sparse}
+
+We study a variation of the protocol in which honest syncers occur only periodically rather than at every slot, and the voting rule is adjusted at syncer slots and their immediate successors to compensate for the longer asynchrony windows between syncers.
+
+\paragraph{Sparse syncer cadence.}
+Fix an integer $S \geq 1$, the \emph{syncer period}. A slot $k$ is a \emph{syncer slot} when $k \equiv 0 \pmod{S}$ (equivalently, syncers occur at slots $0, S, 2S, \dots$).
+
+\paragraph{Voting rule at a syncer slot.}
+Let $k$ be a syncer slot. An honest validator $v$ at $\vote(k)$ casts:
+\begin{enumerate}
+  \item its usual vote at height $h_c \coloneqq \sigma[\getConfirmed_v^{\vote(k)}].h$ as prescribed by \Cref{def:voting-rule} (this may be non-$\bot$ or $\bot$, depending on which branch fires);
+  \item additional \emph{timeout} votes at every height $h \in [h_c+1,\, \Sigma_v^{\vote(k)}.\hmax + 1]$, each with target $\bot$.
+\end{enumerate}
+The timeout votes accumulate the timeouts marker at the corresponding heights without committing to any chain.
+
+\paragraph{Voting rule at the post-syncer slot.}
+Let $k+1$ immediately follow a syncer slot $k$. An honest validator $v$ at $\vote(k+1)$ votes for the \emph{anchor} of $\getConfirmed_v^{\vote(k+1)}$, defined as the unique block $A$ on the chain $\genesis \preceq \cdots \preceq \getConfirmed_v^{\vote(k+1)}$ with
+\[
+  \sigma[A].h \;=\; \sigma[\getConfirmed_v^{\vote(k+1)}].h
+  \qquad\text{and}\qquad
+  A.\mathrm{parent} \prec A \text{ has } \sigma[A.\mathrm{parent}].h \;<\; \sigma[A].h.
+\]
+$A$ is the shortest prefix of $\getConfirmed_v^{\vote(k+1)}$ at the same $\sigma$-height as $\getConfirmed_v^{\vote(k+1)}$ --- i.e., the block on the chain at which the state-height most recently advanced to its current value.
+The vote height is $\sigma[A].h$ and the target is $A$.
+
+\paragraph{Motivation.}
+The broadcast timeouts at the syncer slot ensure that the timeouts marker is set at every height $\leq \hmax+1$ uniformly across honest, so subsequent timeout certs at any such height require only adversary contribution at the missing-vote heights (which $f < n/3$ rules out).
+The anchor vote at the post-syncer slot reduces the chain-target diversity that can arise from honest validators having different \emph{leaves} but the same state-height: by voting for the height-advancing block on the chain rather than the leaf, all honest converge on a uniquely-determined target whenever their state-heights agree.
+
+\paragraph{Open: healing analysis.}
+The healing arguments of the previous subsections need adaptation for sparse syncers:
+\begin{itemize}
+  \item The persistence step (\Cref{lem:healing-persistence}, \Cref{lem:semi-healing-persistence}) assumes an honest syncer at every slot. The sparse variant has them every $S$ slots.
+  \item The anchor-vote rule changes the slot-$(k+1)$ vote-target argument used in \Cref{lem:healing-from-cert} and \Cref{lem:healing-2slot-flat-frontier}.
+  \item The broadcast-timeouts rule changes which heights can carry timeout certs, affecting Case~2.A of \Cref{lem:healing-from-compat} (timeout-cert escalation at $\comm{\hmax}$) flagged previously.
+\end{itemize}
+
 \section{Liveness argument (WIP)}\label{sec:liveness}
 
 Starting from a (semi-)healed state, we show that the protocol produces a fresh on-chain justification within one FG slot and a fresh on-chain finalization within two FG slots, given honest AC-layer participation at the relevant boundary slots.
