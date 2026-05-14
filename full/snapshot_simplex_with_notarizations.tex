@@ -1,4 +1,4 @@
-\documentclass{article}
+\ifx\litemode\undefined\documentclass{article}\fi
 \usepackage[margin=3cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{mathtools}
@@ -39,6 +39,8 @@
 \newtheorem{remark}[theorem]{Remark}
 
 \title{Simplex with Notarizations}
+
+\IfFileExists{lite_full_setup.tex}{\input{lite_full_setup.tex}}{\input{full/lite_full_setup.tex}}
 
 \begin{document}
 \maketitle

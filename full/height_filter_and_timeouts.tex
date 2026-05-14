@@ -132,22 +132,7 @@
 \newtheorem{remark}[theorem]{Remark}
 \newtheorem{assumption}[theorem]{Assumption}
 
-% Lite/full conditional compilation.
-% Define \litemode (e.g. via a wrapper file) to produce the lite version
-% which drops lemmas, corollaries, propositions, properties, proofs,
-% remarks, and assumptions. The full version is the default.
-\newif\iffull
-\ifx\litemode\undefined\fulltrue\else\fullfalse\fi
-\iffull\else
-  \usepackage{comment}
-  \excludecomment{lemma}
-  \excludecomment{corollary}
-  \excludecomment{proposition}
-  \excludecomment{property}
-  \excludecomment{proof}
-  \excludecomment{remark}
-  \excludecomment{assumption}
-\fi
+\IfFileExists{lite_full_setup.tex}{\input{lite_full_setup.tex}}{\input{full/lite_full_setup.tex}}
 
 \title{Fresh Simplex with Height Filter and Timeouts}
 

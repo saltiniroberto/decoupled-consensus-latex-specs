@@ -1,4 +1,4 @@
-\documentclass{article}
+\ifx\litemode\undefined\documentclass{article}\fi
 \usepackage[margin=3cm]{geometry}
 
 \usepackage{graphicx}
@@ -124,6 +124,8 @@
 
 
 \title{Fresh Simplex with Timeouts}
+
+\IfFileExists{lite_full_setup.tex}{\input{lite_full_setup.tex}}{\input{full/lite_full_setup.tex}}
 
 \begin{document}
 \maketitle

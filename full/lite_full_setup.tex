@@ -1,0 +1,32 @@
+% Shared lite/full setup for protocol-spec .tex files.
+%
+% Files under full/ that include this snippet compile in two modes:
+%   - Full (default): all content rendered.
+%   - Lite: when \litemode is defined before \documentclass (typically by a
+%     wrapper .tex file at the repo root), lemmas, corollaries, propositions,
+%     properties, proofs, remarks, assumptions, and conditions are dropped
+%     via the comment package. Algorithms, theorem statements, definitions,
+%     and surrounding prose remain.
+%
+% Place \input of this file in each spec's preamble AFTER all \newtheorem
+% declarations (or just before \begin{document}). The exclusions use
+% \@ifundefined so it's safe even when a file defines only a subset.
+%
+% Path resolution: \IfFileExists tries the local copy first (when cwd is
+% full/), then falls back to full/lite_full_setup.tex (when cwd is the repo
+% root, e.g. while compiling a top-level _lite.tex wrapper).
+\newif\iffull
+\ifx\litemode\undefined\fulltrue\else\fullfalse\fi
+\iffull\else
+  \usepackage{comment}
+  \makeatletter
+  \@ifundefined{lemma}{}{\excludecomment{lemma}}
+  \@ifundefined{corollary}{}{\excludecomment{corollary}}
+  \@ifundefined{proposition}{}{\excludecomment{proposition}}
+  \@ifundefined{property}{}{\excludecomment{property}}
+  \@ifundefined{proof}{}{\excludecomment{proof}}
+  \@ifundefined{remark}{}{\excludecomment{remark}}
+  \@ifundefined{assumption}{}{\excludecomment{assumption}}
+  \@ifundefined{condition}{}{\excludecomment{condition}}
+  \makeatother
+\fi
