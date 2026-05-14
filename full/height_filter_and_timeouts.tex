@@ -1018,7 +1018,7 @@ Either way, $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
 $\timeouts$ is per-state and resets only at a height advance; on any canonical chain extending~$T'$, $\sigma$ at $T'$'s descendants inherits $\timeouts[i] = \mathtt{true}$ from $\sigma[T']$, and no height advance fires while canonical state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists on canonical and Layer~1 does not bump~$i$.
 \end{proof}
 
-\section{Healing from asynchrony}\label{sec:healing}
+\section{Healing from asynchrony (WIP)}\label{sec:healing}
 
 This section shows that, after a prolonged period of asynchrony during which the gate $\Sigma.\hmax = \Sigma.h_j + 1$ may have failed and validators may have been driven into divergent local stores, three consecutive honest syncer slots --- under standard synchrony, online-honest-majority, available-chain-relay, and all-honest-awake assumptions --- restore a healed state in which all honest validators agree on the canonical chain and on a fresh justification at the new frontier.
 
