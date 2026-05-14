@@ -28,5 +28,8 @@
   \@ifundefined{remark}{}{\excludecomment{remark}}
   \@ifundefined{assumption}{}{\excludecomment{assumption}}
   \@ifundefined{condition}{}{\excludecomment{condition}}
+  % Append " (Lite)" to the title at \begin{document} time, after the
+  % spec's \title{...} has populated \@title.
+  \AtBeginDocument{\g@addto@macro\@title{ (Lite)}}
   \makeatother
 \fi
