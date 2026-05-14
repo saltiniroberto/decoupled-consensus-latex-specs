@@ -1,4 +1,8 @@
-\documentclass{article}
+% This file compiles standalone (full version) and is also \input by
+% height_filter_and_timeouts_lite.tex with \litemode defined (lite version).
+% The guard below skips \documentclass when the lite wrapper has already
+% invoked it -- otherwise TeX would error on duplicate \documentclass.
+\ifx\litemode\undefined\documentclass{article}\fi
 \usepackage[margin=3cm]{geometry}
 
 \usepackage{graphicx}
@@ -127,6 +131,23 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 \newtheorem{assumption}[theorem]{Assumption}
+
+% Lite/full conditional compilation.
+% Define \litemode (e.g. via a wrapper file) to produce the lite version
+% which drops lemmas, corollaries, propositions, properties, proofs,
+% remarks, and assumptions. The full version is the default.
+\newif\iffull
+\ifx\litemode\undefined\fulltrue\else\fullfalse\fi
+\iffull\else
+  \usepackage{comment}
+  \excludecomment{lemma}
+  \excludecomment{corollary}
+  \excludecomment{proposition}
+  \excludecomment{property}
+  \excludecomment{proof}
+  \excludecomment{remark}
+  \excludecomment{assumption}
+\fi
 
 \title{Fresh Simplex with Height Filter and Timeouts}
 
@@ -1302,9 +1323,10 @@ then:
 \end{enumerate}
 \end{lemma}
 
+\iffull
 \footnote{
 Manual sketch proof left for reference.
-\begin{proof}  
+\begin{proof}
   Let $v_\ell$ by an honest validator such that $\getConfirmed_{v_\ell}^{\vote(k)}\succeq \getConfirmed_v^{\vote(k)}$ for any honest validator $v$.
   By \Cref{rev:def:healed-state:cap}, any vote sent by any honest at any time $\leq \vote(k)$ for an height $\geq \comm{h}$ have target $\preceq \getConfirmed_{v_\ell}^{\vote(k)}$.
   This means that any vote sent by any honest at any time $\leq \vote(k)$ is for an height $\leq $ the height of $\getConfirmed_{v_\ell}^{\vote(k)}$.
@@ -1318,6 +1340,7 @@ Manual sketch proof left for reference.
   Then, by \Cref{prop:getConfirmed-compat}, we can conclude \Cref{rev:def:healed-state:compat} for $\vote(k+1)$.
   Then, by \Cref{prop:getConfirmed-monotone}, there exists a validator $v'$, such that $\getConfirmed_{v'}^{\vote(k+1)}\succeq \getConfirmed_{v_\ell}^{\vote(k+1)}\succeq \getConfirmed_{v_\ell}^{\vote(k)}$ proving \Cref{rev:def:healed-state:cap}.
 \end{proof}}
+\fi
 
 \begin{proof}
 
@@ -1611,6 +1634,7 @@ Assume:
 Then the system is in a healed state at slot $k+2$ with frontier $\comm{h}+1$.
 \end{lemma}
 
+\iffull
 \footnote{
 Sketch proof left for reference.
 \begin{proof}(Sketch)
@@ -1628,6 +1652,7 @@ Given that justified for height $\comm{h}$ is unique and votes for height $\comm
 A $\geq 2n/3$ height-$(\comm{h}+1)$ quorum forms at $\vote(k+1)$, fires a cert, and the slot-$(k+1)$ carrier reaches $\sigma$-height $\comm{h}+2$, so $\Sigma_v^{\vote(k+2)}.\hmax = \comm{h}+2$ uniformly.
 The healed-state clauses are then verified at slot $k+2$ with frontier $\comm{h}+1$.
 \end{proof}}
+\fi
 
 \begin{proof}[Filled proof of \Cref{lem:healing-from-cert}]
 \emph{Setup.}
@@ -1767,6 +1792,7 @@ Assume:
 Then the system is in a healed state at some slot $k_h \leq k+5$ with some frontier height $\comm{h} \geq \comm{\hmax}+1$, where $\comm{\hmax}$ denotes the common value of $\Sigma_v^{\vote(k)}.\hmax$ across honest $v$ (well-defined by the slot-$k$ honest syncer).
 \end{lemma}
 
+\iffull
 \footnote{
 Sketch proof left for reference.
 \begin{proof}(Sketch)
@@ -1827,6 +1853,7 @@ Sketch proof left for reference.
     \end{description}
   \end{description}
 \end{proof}}
+\fi
 
 \begin{proof}[Filled proof of \Cref{lem:healing-from-compat}]
 \emph{Setup.}
