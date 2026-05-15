@@ -37,6 +37,8 @@
 \usepackage{cleveref}
 \crefname{property}{property}{properties}
 \Crefname{property}{Property}{Properties}
+\crefname{assumption}{assumption}{assumptions}
+\Crefname{assumption}{Assumption}{Assumptions}
 
 \usepackage{float}
 \floatstyle{ruled}
@@ -1038,7 +1040,7 @@ A publicly known function $\syncer \colon \mathbb{N} \to \{1, \ldots, n\}$ assig
 \end{definition}
 
 \begin{assumption}[View-merge guarantee]\label{ass:view-merge}
-If $\syncer(k)$ is honest, every honest validator~$i$ has $\Sigma_i = \comm{\Sigma}^{\vote(k)}$ at $\vote(k)$ for some store $\comm{\Sigma}^{\vote(k)}$.
+If $\syncer(k)$ is honest, every honest validator~$i$ has seen the same set of blocks and votes.
 \end{assumption}
 
 \begin{definition}[Time-dependent dishonest count]\label{rev:def:f-t}
@@ -1056,10 +1058,10 @@ For an honest validator~$v$ and time~$t$, write $\Sigma_v^t,\, \Omega_v^t$ for $
 \paragraph{Virtual-block cert events.}
 For this section, the store admits cert-event candidates not only from on-chain block processing but also from \emph{virtual extensions} of canonical: using the votes in the local pool, a routine~\updateJFromVotes hypothesizes a virtual block with parent~$\getConfirmed(\Sigma,\Omega)$ that carries the height-fresh subset of pool votes and offers the resulting cert-key descriptor to \updateJustified.
 Virtual blocks are never inserted into $\Sigma.\T$ and the hypothetical states are discarded; only $(\Sigma.J,\, \Sigma.h_j)$ may change.
-We further extend $\Sigma$ with a \emph{vote pool} $\Sigma.\mathcal{V}$ populated by view-merge --- a fresh field, distinct from the per-validator vote record $\Delta$ of Definition~\ref{def:voterecord}.
+We further extend $\Sigma$ with a \emph{vote pool} $\Sigma.V$ populated by view-merge --- a fresh field, distinct from the per-validator vote record $\Delta$ of Definition~\ref{def:voterecord}.
 
 \paragraph{View-merge processing.}
-When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.\mathcal{V}$, then invokes \updateJFromVotes{}.
+When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.V$, then invokes \updateJFromVotes{}.
 
 \paragraph{Voting-time snapshot for \getConfirmed{}.}
 Between consecutive voting times, $\getConfirmed_v$ reads from the store snapshot taken at the most recent voting time: for any time $t \in [\vote(k),\, \vote(k{+}1))$, $\getConfirmed_v^t = \getConfirmed(\Sigma_v^{\vote(k)},\, \Omega_v^t)$.
@@ -1127,7 +1129,7 @@ The system is in a \emph{semi-healed state at slot~$k$ with frontier height~$\co
 \begin{enumerate}
   \item\label{rev:def:healed-state:h} for every honest~$v$, $\Sigma_v^{\vote(k)}.\hmax \geq \comm{h}+1$;
   \item\label{rev:def:healed-state:compat} for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$;
-  \item\label{rev:def:healed-state:cap} every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
+  \item\label{rev:def:healed-state:cap} every honest vote~$u$ cast at any time strictly before~$\vote(k)$ with $u.\height \geq \comm{h}$ and $u.\target \neq \bot$  has $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$;
   \item\label{rev:def:healed-state:vote-h} every honest vote~$u$ cast at any time strictly before $\vote(k)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$.
 \end{enumerate}
 \end{definition}
@@ -1228,7 +1230,7 @@ Property~\ref{prop:getConfirmed-monotone} gives $\getConfirmed_{v_\ell}^{\vote(k
 \[
   \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k)}.
 \]
-For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$ and $u.\target \neq \bot$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
 
 \emph{Step 7: condition~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$.}
 Write $h^{\ast\prime} \coloneqq \sigma[\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}].h$.
@@ -1398,7 +1400,7 @@ Property~\ref{prop:getConfirmed-monotone} gives $\getConfirmed_{v_\ell}^{\vote(k
 \[
   \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k+1)} \;\succeq\; \getConfirmed_{v_\ell}^{\vote(k)}.
 \]
-For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
+For any honest vote $u$ cast strictly before $\vote(k{+}1)$ with $u.\height \geq \comm{h}' = \comm{h}$ and $u.\target \neq \bot$, $u$ is cast at some time $\leq \vote(k)$ (no honest votes are cast in $(\vote(k), \vote(k{+}1))$, and $\vote(k{+}1)$-votes are excluded by ``strictly before''), so the Setup's slot-$k$ vote-target bound gives $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k)}$, and the chain extension above yields $u.\target \preceq \getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}$.
 
 \emph{Step 7: condition~\ref{rev:def:healed-state:vote-h} at $\vote(k{+}1)$.}
 Write $h^{\ast\prime} \coloneqq \sigma[\getConfirmed_{v_\ell^{(k+1)}}^{\vote(k+1)}].h$.
@@ -2101,17 +2103,107 @@ Let $k+1$ immediately follow a syncer slot $k$. An honest validator $v$ at $\vot
 $A$ is the shortest prefix of $\getConfirmed_v^{\vote(k+1)}$ at the same $\sigma$-height as $\getConfirmed_v^{\vote(k+1)}$ --- i.e., the block on the chain at which the state-height most recently advanced to its current value.
 The vote height is $\sigma[A].h$ and the target is $A$.
 
+\paragraph{Per-vote height closure inside \processBlock{}.}
+\processBlock{} is modified to invoke \processHeight{} after each \processVote{} call rather than only once at the end of the block's vote loop. Under the original rule, \processHeightEvents{} fires at most one height-advance per invocation, so a block can close at most one event regardless of how many votes it carries. Under per-vote closure, votes at the current state-height close one event, state-height advances, and subsequent votes in the same block are then processed at the new state-height and may close further events; consequently a single \processBlock{} call can advance state-height by more than one height. This is needed in conjunction with the broadcast-timeouts rule, which can enable timeout certs at several consecutive heights to fire from a single block.
+
 \paragraph{Motivation.}
 The broadcast timeouts at the syncer slot ensure that the timeouts marker is set at every height $\leq \hmax+1$ uniformly across honest, so subsequent timeout certs at any such height require only adversary contribution at the missing-vote heights (which $f < n/3$ rules out).
 The anchor vote at the post-syncer slot reduces the chain-target diversity that can arise from honest validators having different \emph{leaves} but the same state-height: by voting for the height-advancing block on the chain rather than the leaf, all honest converge on a uniquely-determined target whenever their state-heights agree.
 
-\paragraph{Open: healing analysis.}
-The healing arguments of the previous subsections need adaptation for sparse syncers:
-\begin{itemize}
-  \item The persistence step (\Cref{lem:healing-persistence}, \Cref{lem:semi-healing-persistence}) assumes an honest syncer at every slot. The sparse variant has them every $S$ slots.
-  \item The anchor-vote rule changes the slot-$(k+1)$ vote-target argument used in \Cref{lem:healing-from-cert} and \Cref{lem:healing-2slot-flat-frontier}.
-  \item The broadcast-timeouts rule changes which heights can carry timeout certs, affecting Case~2.A of \Cref{lem:healing-from-compat} (timeout-cert escalation at $\comm{\hmax}$) flagged previously.
-\end{itemize}
+
+\begin{property}[Canonical dominance of an honest slot-$k$ vote-carrying block]\label{prop:vote-carrier-dominance}
+Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses~(a), (b), and~(d) of the standing assumptions (Definition~\ref{def:standing}), and, for every honest validator $v$, there exists a block $R' \in \V_v^{\vote(k)}$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$ for some honest validator $v_\ell$.
+Let $B$ be a block proposed by an honest validator before $\vote(k+1) - \delta_c$ including all the votes sent by honest validators in slot $k$.
+If $B \in \V_v^{\vote(k+1)}$ for some honest validator $v$, then $\getConfirmed_{v'}^{\vote(k+1)} \succeq B\succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for every honest validator $v'$.
+% Also, $\getConfirmed_v^{\vote(k+1)}\sim \getConfirmed_{v'}^{\vote(k+1)}$ for any two honest validators $v$ and $v'$.
+\end{property}
+
+\begin{lemma}[Uniform $\hmax$ at an honest-syncer slot]\label{lem:uniform-hmax-at-syncer}
+If $k$ is a syncer slot and $\syncer(k)$ is honest, then $\Sigma_v^{\vote(k)}.\hmax$ takes the same value for every honest validator~$v$; denote this common value by $\comm{\hmax}^{\vote(k)}$.
+\end{lemma}
+
+\iffull
+\footnote{
+Manual sketch proof left for reference.
+\begin{proof}(Sketch)
+  Combine \Cref{lem:mainsafety,ass:view-merge,thm:orderindep}.
+\end{proof}}
+\fi
+
+\begin{proof}
+  \Cref{ass:view-merge}, under the honest slot-$k$ syncer, gives that every honest validator has received the same set of blocks and votes by $\vote(k)$; let $\mathcal{B}$ denote this common received set, and let $F$ be the $\preceq$-maximum finalized block reachable from $\mathcal{B}$. By \Cref{lem:mainsafety} (under $f < n/3$), every block with $\sigma$-height strictly greater than $\sigma[F].h$ descends from $F$; equivalently, no block conflicting with $F$ can have $\sigma$-height exceeding $\sigma[F].h$, and therefore no such block can carry $\hmax$ in any honest's view. Consequently, the maximum-$\sigma$-height block in $\mathcal{B}$ lies in the accepted subtree rooted at $F$ in every parent-first processing order; \Cref{thm:orderindep} then yields that $\Sigma.\hmax$ is a deterministic function of $\mathcal{B}$, so $\Sigma_v^{\vote(k)}.\hmax$ is the same for every honest~$v$. Set $\comm{\hmax}^{\vote(k)}$ to this common value.  
+\end{proof}
+
+\begin{lemma}
+Assume:
+\begin{enumerate}
+  \item $k$ is a syncer slot with an honest syncer
+  \item $f^{\vote(k)} < n/3$ and honest validators follow \Cref{def:voting-rule};
+  \item $\start(k) - \Delta \geq \GST$;
+  \item standing assumptions are satisfied by slot $k$;
+  % \item for every honest pair $v, v'$, $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$.
+  % \item for every honest validators $v, v'$, $\Sigma_{v'}^{\vote(k)}.\hmax = \Sigma_{v'}^{\vote(k)}.\hmax$; denote this common value by $\comm{h}$;
+  % \item no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$.
+\end{enumerate}
+Then the system is in a semi-healed state at slot $k+1$ with frontier height $\comm{\hmax}+1$, where $\comm{\hmax}$ denotes the common value of $\Sigma_v^{\vote(k)}.\hmax$ across honest $v$ (well-defined by the slot-$k$ honest syncer).
+\end{lemma}
+
+\iffull
+\footnote{
+Manual sketch proof left for reference.
+\begin{proof}(Sketch)
+  The premises of \Cref{prop:vote-carrier}  should hold.
+  Let $B$ be the block that includes all the votes send by honest validators in slot $k$.
+  Also the premises of \Cref{prop:getConfirmed-compat} to show that the $\getConfirmed^{\vote(k)}$ of any honest validators are compatible should be satisfied.
+  From \Cref{lem:uniform-hmax-at-syncer}, then $\Sigma_v^{\vote(k)}.\hmax$ takes the same value for every honest validator~$v$; denote this common value by $\comm{\hmax}^{\vote(k)}$.
+
+  $\vote(k+1)$
+  Due to the voting rule and the fact that we can process more than one height per block, $\Sigma^{\vote(k+1)}\hmax= \comm{\hmax}+2 = \sigma[B].h$.
+
+
+
+
+  Then the system is in a semi-healed state at slot $k$ with frontier height $\comm{\hmax}+1$ as
+  \begin{enumerate}
+    \item condition 1 is obvious
+    \item condition 2. is given by \Cref{prop:vote-carrier-dominance,prop:getConfirmed-compat}.
+    \item condition 3 is vacuously  true as all honest have sent a timeout vote for height $\comm{\hmax}+1$.
+    \item condition 4 holds by \Cref{prop:vote-carrier-dominance}
+  \end{enumerate}
+\end{proof}}
+\fi
+
+\begin{proof}
+We instantiate the sketch with $k_h \coloneqq k+1$ and frontier $\comm{h} \coloneqq \comm{\hmax}+1$.
+
+\emph{Step 1: Uniform $\hmax$ at $\vote(k)$.}
+By \Cref{lem:uniform-hmax-at-syncer} (hypothesis~1: honest $\syncer(k)$), $\Sigma_v^{\vote(k)}.\hmax$ takes a common value $\comm{\hmax}$ across honest~$v$.
+
+\emph{Step 2: Discharging the premises of \Cref{prop:getConfirmed-compat,prop:vote-carrier-dominance}.}
+Both properties require the voting-rule clause (hypothesis~2), synchrony and online-honest-majority (clauses (a),(b) of the standing assumptions, hypothesis~4), and \Cref{prop:vote-carrier-dominance} additionally requires the honest-relay clause~(d) (also in hypothesis~4). The $v_\ell$-premise is discharged via the honest slot-$k$ syncer: by \Cref{ass:view-merge} every honest's $\Sigma^{\vote(k)}$ is identical, so picking any honest $v_\ell$ makes $\getConfirmed_{v_\ell}^{\vote(k)}$ uniform across honest; the store invariant gives $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R^{\vote(k)} \in \V_v^{\vote(k)}$, supplying the required $R'$ for every honest~$v$.
+
+\emph{Step 3: An honest slot-$k$ block carries every slot-$k$ honest vote and reaches every honest by $\vote(k+1)$.}
+Clause~(d) of the standing assumptions provides an honest proposer that receives every slot-$k$ honest vote and ships an available-chain block $B$ before $\vote(k+1) - \delta_c$; under synchrony (clause~(a)) and $\delta_c \geq \Delta$, $B$ reaches every honest by $\vote(k+1)$. $B$ contains, for each of the $\geq n - f$ honest validators~$v$, the slot-$k$ usual vote at height $h_c^v \coloneqq \sigma[\getConfirmed_v^{\vote(k)}].h$ and the broadcast timeout votes at every height in $[h_c^v+1,\, \comm{\hmax}+1]$. Note that $h_c^v$ may differ across honest, since $\getConfirmed_v$ depends on the auxiliary state $\Omega_v$ which view-merge does not constrain (\Cref{ass:view-merge} only fixes $\Sigma_v$). However, $h_c^v \leq \Sigma_v^{\vote(k)}.\hmax = \comm{\hmax}$ for every honest~$v$, so at each of the heights $\comm{\hmax}$ and $\comm{\hmax}+1$ every honest contributes a vote in $B$: a usual vote when $h_c^v$ equals the target height, and a broadcast timeout otherwise.
+
+\emph{Step 4: Processing $B$ advances state-height from $\comm{\hmax}$ to $\comm{\hmax}+2$.}
+Each honest processes $B$ before $\vote(k+1)$, starting at state-height $\Sigma^{\vote(k)}.\hmax = \comm{\hmax}$. Under the per-vote height-closure rule (Section~\ref{sec:healing-sparse}), \processHeight{} runs after each \processVote{}. Choose $v_\ell$ to be an honest validator whose $\getConfirmed_{v_\ell}^{\vote(k)}$ is the $\preceq$-maximum among honest $\getConfirmed^{\vote(k)}$ (well-defined by \Cref{prop:getConfirmed-compat}); set $h_\ell \coloneqq \sigma[\getConfirmed_{v_\ell}^{\vote(k)}].h$. By the choice of $v_\ell$, $\getConfirmed_v^{\vote(k)} \preceq \getConfirmed_{v_\ell}^{\vote(k)}$ for every honest~$v$; combined with the strengthened conclusion of \Cref{prop:vote-carrier-dominance} that $B \succeq \getConfirmed_{v_\ell}^{\vote(k)}$, we get $\getConfirmed_v^{\vote(k)} \preceq B$ for every honest~$v$. This is what makes the slot-$k$ usual votes pass the chain-prefix freshness check during $B$'s processing: their targets are ancestors of $\sigma.L = B$.
+
+The key observation is that every honest validator contributes a vote at every height $h \in [h_\ell,\, \comm{\hmax}+1]$ in $B$: the usual vote when $h = h_c^v$, or a broadcast timeout when $h_c^v < h \leq \comm{\hmax}+1$ (since $h_c^v \leq \comm{\hmax}$ from Step~3). Honest votes at heights $h < h_\ell$ — the slot-$k$ usual vote of any honest~$v$ with $h_c^v < h_\ell$ and that validator's broadcast timeouts at heights $h_c^v+1, \ldots, h_\ell-1$ — are dropped by the $v.\height = \sigma.h$ check in \processVote{} since the state-height we ever traverse during $B$'s processing is $\geq \comm{\hmax} \geq h_\ell$; they do not matter.
+
+\emph{At state-height $\comm{\hmax}$:} every honest contributes at $\comm{\hmax}$, and in every case the contribution sets $\sigma.\timeouts[i]$ — whether it is a broadcast timeout (target $\bot$, $h_c^v < \comm{\hmax}$), a $\bot$ usual vote (timeout at $h_c^v = \comm{\hmax}$), or a fresh non-$\bot$ usual vote (a justify at $h_c^v = \comm{\hmax}$, fresh by the chain-prefix bound above; both $\sigma.\targets[i]$ and $\sigma.\timeouts[i]$ are set). Whether different honest send justifies or timeouts at $\comm{\hmax}$ is immaterial — the resulting cert fires either way: with $\geq n - f > 2n/3$ entries of $\sigma.\timeouts$ true, branch~(iii) of \processHeightEvents{} fires a timeout cert at $\comm{\hmax}$ (branch~(ii) may fire a justification cert first if enough justify-target entries in $\sigma.\targets$ aggregate to a $\geq 2n/3$ quorum). Either branch advances state-height to $\comm{\hmax}+1$.
+
+\emph{At state-height $\comm{\hmax}+1$:} every honest has a broadcast timeout vote at $\comm{\hmax}+1$ in $B$. As these are processed at the new state-height, $\geq n - f$ honest entries refill $\sigma.\timeouts$, and branch~(iii) fires a timeout cert at $\comm{\hmax}+1$, advancing state-height to $\comm{\hmax}+2$. Hence $\sigma_v[B].h = \comm{\hmax}+2$ in every honest's view and $\Sigma_v^{\vote(k+1)}.\hmax \geq \comm{\hmax}+2$.
+
+\emph{Step 5: Semi-healing at slot $k+1$ with frontier $\comm{\hmax}+1$.}
+By \Cref{prop:vote-carrier-dominance} (premises in Step~2; with $B$ in some honest's view at $\vote(k+1)$ from Step~3), $\getConfirmed_{v'}^{\vote(k+1)} \succeq B$ for every honest~$v'$. Take any honest~$v_\ell$ as the semi-healed witness; we verify each clause of \Cref{def:semi-healed}:
+\begin{enumerate}
+  \item $\Sigma_v^{\vote(k+1)}.\hmax \geq \comm{\hmax}+2 = \comm{h}+1$: Step~4.
+  \item $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for every honest pair: both extend $B$, hence pairwise $\sim$-compatible.
+  \item For every honest~$u$ cast before $\vote(k+1)$ with $u.\height \geq \comm{h} = \comm{\hmax}+1$ and $u.\target \neq \bot$, $u.\target \preceq \getConfirmed_{v_\ell}^{\vote(k+1)}$: pre-$\vote(k)$ honest votes have height $\leq \comm{\hmax}$ (the $\hmax$ cap propagated by view-merge); the slot-$k$ usual vote is at $h_c \leq \comm{\hmax} < \comm{h}$; slot-$k$ broadcast timeouts at $\comm{\hmax}+1$ have $\target = \bot$, so they fall outside the condition. Hence the condition is vacuous.
+  \item Every honest~$u$ cast before $\vote(k+1)$ has $u.\height \leq \sigma[\getConfirmed_{v_\ell}^{\vote(k+1)}].h$: pre-$\vote(k)$ honest votes at $\leq \comm{\hmax}$; slot-$k$ honest votes at $\leq \comm{\hmax}+1$; by $\preceq$-monotonicity of $\sigma$-height (\Cref{lem:slotmono}), $\sigma[\getConfirmed_{v_\ell}^{\vote(k+1)}].h \geq \sigma[B].h = \comm{\hmax}+2$, dominating both.
+\end{enumerate}
+Hence the system is in a semi-healed state at $k_h = k+1 \leq k+5$ with frontier $\comm{h} = \comm{\hmax}+1$, establishing the conclusion.
+\end{proof}
 
 \section{Liveness argument (WIP)}\label{sec:liveness}
 
