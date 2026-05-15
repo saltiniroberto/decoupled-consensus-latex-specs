@@ -25,6 +25,7 @@ The shared exclusion logic lives in \texttt{full/lite\_full\_setup.tex}.
 \begin{description}
 
 \item[\texttt{height\_filter\_and\_timeouts.tex}]
+  \fbox{\textbf{\large Closest to become the candidate protocol.}}\\
   \textbf{Fresh Simplex with Height Filter and Timeouts.}
   Uses a finality-gadget height counter (separate from slot) with two
   height-advancing mechanisms -- fixed-target justification and timeouts --
@@ -34,7 +35,6 @@ The shared exclusion logic lives in \texttt{full/lite\_full\_setup.tex}.
   the inactivity leak (penalty units, leak tightness, honest voting rule,
   leak fairness), healing from asynchrony with view-merge,
   and a per-round liveness argument over slot ranges (WIP).
-  \textbf{Closest to the current candidate protocol.}
 
 \item[\texttt{finalization\_as\_notarization.tex}] \textbf{Finalization as Notarization.}
   Defines a finality gadget with three vote types (notarize, justify, finalize)
