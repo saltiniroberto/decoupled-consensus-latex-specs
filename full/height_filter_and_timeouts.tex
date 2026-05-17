@@ -1555,11 +1555,11 @@ The case $t' \leq t$ is handled symmetrically for compat (since $\sim$ is symmet
 
 \subsection{Semi-healing from an honest syncer}\label{sec:healing-sparse}
 
-Under the protocol modifications of \Cref{sec:protocol-mods}, an honest syncer at a syncer slot $k$ semi-heals the system at slot $k+1$. We state two auxiliary properties about $\getConfirmed^{\vote(k)}$ and a uniform-$\hmax$ lemma, then the main lemma and its proof.
+Under the protocol modifications of \Cref{sec:protocol-mods}, an honest syncer at a syncer slot $k$ semi-heals the system at slot $k+1$. We state four auxiliary properties about $\getConfirmed^{\vote(k)}$ and a uniform-$\hmax$ lemma, then the main lemma and its proof.
 
 \begin{property}[Pairwise $\getConfirmed^{\vote(k)}$ compatibility under uniform uviable sets]\label{prop:getConfirmed-pairwise-from-V}
 Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses (a) and (b) of the standing assumptions (Definition~\ref{def:standing}), and, for any honest validators $v,v'$, $\V_v^{\vote(k)}=\V_{v'}^{\vote(k)}$.
-Then $\getConfirmed_v^{\vote(k)} \sim \getConfirmed_{v'}^{\vote(k)}$ for every honest pair $v, v'$.
+Then $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$ for every honest pair $v, v'$ and times $t,t' \in [\vote(k),\vote(k+1))$.
 \end{property}
 
 
@@ -1569,6 +1569,21 @@ Let $B$ be a block proposed by an honest validator before $\vote(k+1) - \delta_c
 If $B \in \V_v^{\vote(k+1)}$ for some honest validator $v$, then $\getConfirmed_{v'}^{\vote(k+1)} \succeq B\succeq \getConfirmed_{v_\ell}^{\vote(k)}$ for every honest validator $v'$.
 % Also, $\getConfirmed_v^{\vote(k+1)}\sim \getConfirmed_{v'}^{\vote(k+1)}$ for any two honest validators $v$ and $v'$.
 \end{property}
+
+\begin{property}[Snapshot dominance of an honest slot-$(k+1)$ canonical]\label{prop:vote-carrier-dominance-snapshot}
+Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses~(a), (b), and~(d) of the standing assumptions (Definition~\ref{def:standing}), and, for every honest validator $v$, there exists a block $R' \in \V_v^{\vote(k)}$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$ for some honest validator $v_\ell$.
+Let $B$ be a block proposed by an honest validator before $\vote(k+1) - \delta_c$ including all the votes sent by honest validators in slot $k$.
+If $B \in \V_v^{\vote(k+1)}$ for some honest validator $v$, then there exists an honest validator $v_\ell$ such that $\getConfirmed_{v_\ell}^{\vote(k+1)} \succeq \getConfirmed_{v'}^{t}$ for every honest validator $v'$ and time $t\in [\vote(k),\vote(k+1))$.
+% Also, $\getConfirmed_v^{\vote(k+1)}\sim \getConfirmed_{v'}^{\vote(k+1)}$ for any two honest validators $v$ and $v'$.
+\end{property}
+
+\begin{property}[Intra-snapshot $\getConfirmed$ monotonicity at a syncer slot]\label{prop:vote-carrier-monotone-snapshot}
+Assume all honest follow Definition~\ref{def:voting-rule}, slot~$k$ satisfies clauses~(a), (b), and~(d) of the standing assumptions (Definition~\ref{def:standing}), and, for every honest validator $v$, there exists a block $R' \in \V_v^{\vote(k)}$ with $\getConfirmed_{v_\ell}^{\vote(k)} \succeq R'$ for some honest validator $v_\ell$.
+Let $B$ be a block proposed by an honest validator before $\vote(k+1) - \delta_c$ including all the votes sent by honest validators in slot $k$.
+If $B \in \V_v^{\vote(k+1)}$ for some honest validator $v$, then $\getConfirmed_v^{t'} \succeq \getConfirmed_v^{t}$ for every honest $v$ and $t \leq t' \in [\vote(k), \vote(k+1))$.
+% Also, $\getConfirmed_v^{\vote(k+1)}\sim \getConfirmed_{v'}^{\vote(k+1)}$ for any two honest validators $v$ and $v'$.
+\end{property}
+
 
 \begin{lemma}[Uniform $\hmax$ at an honest-syncer slot]\label{lem:uniform-hmax-at-syncer}
 If $k$ is a syncer slot and $\syncer(k)$ is honest, then $\Sigma_v^{\vote(k)}.\hmax$ takes the same value for every honest validator~$v$; denote this common value by $\comm{\hmax}^{\vote(k)}$.
@@ -1597,10 +1612,12 @@ Assume:
   % \item for every honest validators $v, v'$, $\Sigma_{v'}^{\vote(k)}.\hmax = \Sigma_{v'}^{\vote(k)}.\hmax$; denote this common value by $\comm{h}$;
   % \item no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$.
 \end{enumerate}
-Then 
+Then
 \begin{enumerate}
   \item the system is in a semi-healed state at slot $k+1$ with frontier height $\comm{\hmax}+1$, where $\comm{\hmax}$ denotes the common value of $\Sigma_v^{\vote(k)}.\hmax$ across honest $v$ (well-defined by the slot-$k$ honest syncer).
   \item $\getConfirmed_v^{\vote(k+1)}.h = \comm{\hmax}+2$ for any honest validator $v$.
+  \item for every honest validators~$v, v'$ and times $t, t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$.
+  \item for every honest validator~$v$ and every pair of times $t \leq t' \in [\vote(k),\, \vote(k+1)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^{t}$.
 \end{enumerate}
 \end{lemma}
 
@@ -1689,6 +1706,37 @@ The upper bound is the Step~3.5(i) argument re-run in $v$'s view: no honest vote
   \sigma[\getConfirmed_v^{\vote(k+1)}].h \;\leq\; \comm{\hmax}+2.
 \]
 Combining both bounds yields equality, establishing the second conclusion.
+
+\emph{Step 7: Cross-validator/cross-time compat and intra-validator monotonicity over $[\vote(k),\, \vote(k+1)]$.}
+Premises of \Cref{prop:vote-carrier-dominance-snapshot,prop:vote-carrier-monotone-snapshot} match those of \Cref{prop:vote-carrier-dominance}, already discharged in Steps~2 and~3.5; the premise of \Cref{prop:getConfirmed-pairwise-from-V} (voting rule, clauses~(a),(b), uniform $\V^{\vote(k)}$) was also discharged in Step~2.
+
+\emph{Within the open interval $[\vote(k), \vote(k+1))$.}
+For $t, t' \in [\vote(k),\, \vote(k+1))$, \Cref{prop:getConfirmed-pairwise-from-V} gives $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$ for every honest pair $v, v'$, and \Cref{prop:vote-carrier-monotone-snapshot} gives $\getConfirmed_v^{t'} \succeq \getConfirmed_v^{t}$ for every honest $v$ and $t \leq t'$.
+
+\emph{At the right boundary $t = t' = \vote(k+1)$.}
+Pairwise compatibility $\getConfirmed_v^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ is condition~\ref{rev:def:healed-state:compat} of \Cref{def:semi-healed} at $\vote(k+1)$ (Step~5); intra-validator monotonicity is reflexive.
+
+\emph{Across the boundary: $t \in [\vote(k),\, \vote(k+1))$ and $t' = \vote(k+1)$.}
+\Cref{prop:vote-carrier-dominance-snapshot} yields an honest $v_\ell^{\ast}$ with $\getConfirmed_{v_\ell^{\ast}}^{\vote(k+1)} \succeq \getConfirmed_{v''}^{u}$ for every honest $v''$ and $u \in [\vote(k),\, \vote(k+1))$; in particular, for every honest $v$,
+\[
+  \getConfirmed_v^{t} \;\preceq\; \getConfirmed_{v_\ell^{\ast}}^{\vote(k+1)}.
+\]
+By Step~5's condition~\ref{rev:def:healed-state:compat} at $\vote(k+1)$, $\getConfirmed_{v_\ell^{\ast}}^{\vote(k+1)} \sim \getConfirmed_{v'}^{\vote(k+1)}$ for every honest $v'$.
+
+\emph{Cross-validator compat (conclusion~3 across the boundary).}
+The composition $a \preceq b \sim c \Rightarrow a \sim c$ is ironclad: if $b \preceq c$ then $a \preceq b \preceq c$ gives $a \preceq c$, so $a \sim c$; if $c \preceq b$ then $a$ and $c$ both lie on the chain $\genesis \preceq \cdots \preceq b$, which is linear, so $a$ and $c$ are $\preceq$-comparable, hence $a \sim c$. Applying with $a = \getConfirmed_v^{t}$, $b = \getConfirmed_{v_\ell^{\ast}}^{\vote(k+1)}$, $c = \getConfirmed_{v'}^{\vote(k+1)}$:
+\[
+  \getConfirmed_v^{t} \;\sim\; \getConfirmed_{v'}^{\vote(k+1)}.
+\]
+
+\emph{Intra-validator monotonicity (conclusion~4 across the boundary, $v = v'$).}
+The composition above with $v = v'$ gives $\getConfirmed_v^{t} \sim \getConfirmed_v^{\vote(k+1)}$. The $\sigma$-heights are strictly ordered:
+\[
+  \sigma[\getConfirmed_v^{t}].h \;\leq\; \Sigma_v^{\vote(k)}.\hmax \;=\; \comm{\hmax} \;<\; \comm{\hmax}+1 \;\leq\; \Sigma_v^{\vote(k+1)}.\hmax - 1 \;\leq\; \sigma[\getConfirmed_v^{\vote(k+1)}].h,
+\]
+where the leftmost bound uses $\getConfirmed_v^{t} \in \V_v^{\vote(k)} \subseteq \Sigma_v^{\vote(k)}.\T$ (voting-time snapshot) and the rightmost uses $\getConfirmed_v^{\vote(k+1)} \in \V_v^{\vote(k+1)}$. By \Cref{lem:slotmono}, $\preceq$ on the block order implies $\leq$ on $\sigma$-height, so strict $\sigma$-height ordering combined with $\sim$ pins direction: $\getConfirmed_v^{t} \preceq \getConfirmed_v^{\vote(k+1)}$.
+
+This establishes conclusions~3 and~4.
 \end{proof}
 
 \begin{lemma}[Three-slot healing from an honest syncer]\label{lem:healing-3slot}
@@ -1702,7 +1750,12 @@ Assume:
   % \item for every honest validators $v, v'$, $\Sigma_{v'}^{\vote(k)}.\hmax = \Sigma_{v'}^{\vote(k)}.\hmax$; denote this common value by $\comm{h}$;
   % \item no honest validator has cast any vote at height $> \comm{h}$ at any time strictly before $\vote(k)$.
 \end{enumerate}
-Then the system is in a healed state at slot $k+3$ with frontier height $\comm{\hmax}+1$, where $\comm{\hmax}$ denotes the common value of $\Sigma_v^{\vote(k)}.\hmax$ across honest $v$ (well-defined by the slot-$k$ honest syncer).
+Then
+\begin{enumerate}
+  \item the system is in a healed state at slot $k+3$ with frontier height $\comm{\hmax}+1$, where $\comm{\hmax}$ denotes the common value of $\Sigma_v^{\vote(k)}.\hmax$ across honest $v$ (well-defined by the slot-$k$ honest syncer).
+  \item for every honest validators~$v, v'$ and times $t, t' \in [\vote(k),\, \vote(k+3)]$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$.
+  \item for every honest validator~$v$ and every pair of times $t \leq t' \in [\vote(k),\, \vote(k+3)]$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^{t}$.
+\end{enumerate}
 \end{lemma}
 
 \iffull
@@ -1780,7 +1833,27 @@ The first four conditions establish the semi-healed state at slot $k+3$ with fro
 \setcounter{enumi}{4}
   \item ($F$-cap) $\sigma[\Sigma_v^{\vote(k+3)}.F].h = \sigma[T].h = \comm{\hmax}+2 \geq \comm{h}$ for every honest~$v$: from Phase~C.
 \end{enumerate}
-Hence the system is in a healed state at slot $k+3$ with frontier $\comm{h} = \comm{\hmax}+1$.
+The system is therefore in a healed state at slot $k+3$ with frontier $\comm{h} = \comm{\hmax}+1$, establishing conclusion~1 of this lemma.
+
+\medskip
+\noindent\emph{Phase D: Cross-validator/cross-time compat and intra-validator monotonicity over $[\vote(k),\, \vote(k+3)]$.}
+
+The three sub-intervals are covered by three lemma applications:
+\begin{itemize}
+  \item $[\vote(k),\, \vote(k+1)]$: \Cref{lem:semi-healing-from-syncer}'s conclusions~3 and~4 (Phase~A).
+  \item $[\vote(k+1),\, \vote(k+2)]$: \Cref{lem:semi-healing-persistence} applied at slot~$k+1$. Its hypotheses discharge as follows: its hypothesis~1 ($f^{\vote(k+2)} < n/3$) from this lemma's hypothesis~2 plus monotonicity of $f$ ($f^{\vote(k+2)} \leq f^{\vote(k+3)} < n/3$); its hypothesis~2 (voting rule) from this lemma's hypothesis~2; its hypothesis~3 (online-honest majority at $k+1$) from this lemma's hypothesis~4; its hypothesis~4 ($\start(k+1) - \Delta \geq \GST$) from this lemma's hypothesis~3 since $\start(k+1) \geq \start(k)$; its hypothesis~5 (semi-healed at $k+1$) from Phase~A.
+  \item $[\vote(k+2),\, \vote(k+3)]$: \Cref{lem:semi-healing-persistence} applied at slot~$k+2$, identically except its hypothesis~5 (semi-healed at $k+2$) is discharged by the previous application's conclusion~1.
+\end{itemize}
+
+\emph{Conclusion~3 (intra-validator monotonicity over $[\vote(k),\, \vote(k+3)]$).}
+For honest~$v$ and $t \leq t' \in [\vote(k),\, \vote(k+3)]$, pick $j \leq j' \in \{0, 1, 2\}$ with $t \in [\vote(k+j),\, \vote(k+j+1)]$ and $t' \in [\vote(k+j'),\, \vote(k+j'+1)]$. Chaining the per-sub-interval monotonicity conclusions (conclusion~4 of \Cref{lem:semi-healing-from-syncer} for the first sub-interval; conclusion~3 of \Cref{lem:semi-healing-persistence} for the other two) along $v$'s history through the shared boundary times $\vote(k+j+1), \ldots, \vote(k+j')$ (each boundary lies in both adjacent sub-intervals' closed coverage):
+\[
+  \getConfirmed_v^{t} \;\preceq\; \getConfirmed_v^{\vote(k+j+1)} \;\preceq\; \cdots \;\preceq\; \getConfirmed_v^{\vote(k+j')} \;\preceq\; \getConfirmed_v^{t'},
+\]
+and $\preceq$ is transitive.
+
+\emph{Conclusion~2 (cross-validator/cross-time compatibility over $[\vote(k),\, \vote(k+3)]$).}
+For honest~$v, v'$ and $t, t' \in [\vote(k),\, \vote(k+3)]$, WLOG $t \leq t'$ (the $\sim$ relation is symmetric). By conclusion~3 just established, $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$. The cross-validator compat conclusion of \Cref{lem:semi-healing-from-syncer} (its conclusion~3) or \Cref{lem:semi-healing-persistence} (its conclusion~2), at the sub-interval containing $t'$, specialised to both times equal to~$t'$, yields $\getConfirmed_v^{t'} \sim \getConfirmed_{v'}^{t'}$. The composition $a \preceq b \sim c \Rightarrow a \sim c$ (verified in \Cref{lem:semi-healing-from-syncer}'s Step~7) yields $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$.
 \end{proof}
 
 \subsection{Main theorem}\label{sec:healing-main}
@@ -1796,13 +1869,14 @@ Assume:
 \end{enumerate}
 then,
 \begin{enumerate}
-  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k+3)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
-  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k+3)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
+  \item for every honest validators~$v,v'$ and times $t, t' \geq \vote(k)$, $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$;
+  \item for every honest validator~$v$ and every pair of times $t, t' \geq \vote(k)$ with $t \leq t'$, $\getConfirmed_v^{t'} \succeq \getConfirmed_v^t$.
 \end{enumerate}
 \end{theorem}
 
 \begin{proof}
-\Cref{lem:healing-3slot} delivers a healed state at slot $k+3$ with frontier $\comm{h} \coloneqq \comm{\hmax}+1$: its four hypotheses transfer verbatim from hypotheses~\ref{thm:healing:syncer}, \ref{thm:healing:f}, \ref{thm:healing:sync}, \ref{thm:healing:standing} of this theorem.
+\Cref{lem:healing-3slot} delivers a healed state at slot $k+3$ with frontier $\comm{h} \coloneqq \comm{\hmax}+1$ and its conclusions~2 (cross-validator/cross-time compat) and~3 (intra-validator monotonicity) over $[\vote(k),\, \vote(k+3)]$: its four hypotheses transfer verbatim from hypotheses~\ref{thm:healing:syncer}, \ref{thm:healing:f}, \ref{thm:healing:sync}, \ref{thm:healing:standing} of this theorem.
+
 For every slot $j \geq k+3$, \Cref{lem:healing-persistence} applies: its hypothesis~\ref{rev:hp:f} from hypothesis~\ref{thm:healing:f}; its hypothesis~\ref{rev:hp:ohm} at slot $j$ from hypothesis~\ref{thm:healing:ohm} (which covers all $j \geq k$); its hypothesis~\ref{rev:hp:sync} at slot $j$ from hypothesis~\ref{thm:healing:sync} ($\start(j) \geq \start(k) \geq \GST + \Delta$); its hypothesis~\ref{rev:hp:hs} by induction from the healed state at $j = k+3$.
 The lemma preserves the healed state at $j+1$ (with non-decreasing frontier) and yields, over $[\vote(j),\, \vote(j{+}1)]$:
 \[
@@ -1812,16 +1886,18 @@ The lemma preserves the healed state at $j+1$ (with non-decreasing frontier) and
 Iterating from $j = k+3$ upwards, the healed state and the per-slot conclusions hold at every $j \geq k+3$.
 
 \medskip
-\emph{Intra-validator monotonicity across slots.}
-Fix an honest~$v$ and times $t \leq t'$ with $t, t' \geq \vote(k+3)$; pick slots $j \leq j'$ with $t \in [\vote(j),\, \vote(j{+}1)]$ and $t' \in [\vote(j'),\, \vote(j'{+}1)]$. Applying conclusion~3 of \Cref{lem:healing-persistence} at slots $j,\, j{+}1,\, \ldots,\, j'$ chains $\preceq$-monotonically along $v$'s history:
-\[
-  \getConfirmed_v^{t} \;\preceq\; \getConfirmed_v^{\vote(j{+}1)} \;\preceq\; \cdots \;\preceq\; \getConfirmed_v^{\vote(j')} \;\preceq\; \getConfirmed_v^{t'}.
-\]
-This is conclusion~2 of the theorem.
+\emph{Intra-validator monotonicity across the entire range $[\vote(k),\, \infty)$.}
+Fix an honest~$v$ and times $t \leq t'$ with $t, t' \geq \vote(k)$. We chain $\preceq$-monotonically along $v$'s history:
+\begin{itemize}
+  \item If $t, t' \in [\vote(k),\, \vote(k+3)]$: \Cref{lem:healing-3slot}'s conclusion~3 gives $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$ directly.
+  \item If $t \in [\vote(k),\, \vote(k+3)]$ and $t' > \vote(k+3)$: \Cref{lem:healing-3slot}'s conclusion~3 gives $\getConfirmed_v^{t} \preceq \getConfirmed_v^{\vote(k+3)}$. Pick $j'$ with $t' \in [\vote(j'),\, \vote(j'{+}1)]$ and $j' \geq k+3$; applying conclusion~3 of \Cref{lem:healing-persistence} at slots $k+3, k+4, \ldots, j'$ gives $\getConfirmed_v^{\vote(k+3)} \preceq \getConfirmed_v^{\vote(k+4)} \preceq \cdots \preceq \getConfirmed_v^{t'}$. Transitivity of $\preceq$ closes the chain.
+  \item If $t, t' > \vote(k+3)$: pick slots $j \leq j'$ with $t \in [\vote(j),\, \vote(j{+}1)]$ and $t' \in [\vote(j'),\, \vote(j'{+}1)]$, both $\geq k+3$; chain conclusion~3 of \Cref{lem:healing-persistence} at slots $j, j{+}1, \ldots, j'$ as above.
+\end{itemize}
+In every case, $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$. This is conclusion~2 of the theorem.
 
 \emph{Cross-validator compatibility.}
-For~1 of the theorem, given $t, t' \geq \vote(k+3)$ and honest~$v, v'$: WLOG assume $t \leq t'$ (the $\sim$ relation is symmetric); let $j'$ be the slot with $t' \in [\vote(j'),\, \vote(j'{+}1)]$. By the intra-validator monotonicity above, $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$. By conclusion~2 of \Cref{lem:healing-persistence} at slot~$j'$ (using $t', t' \in [\vote(j'),\, \vote(j'{+}1)]$ with the cross-validator pair $v, v'$), $\getConfirmed_v^{t'} \sim \getConfirmed_{v'}^{t'}$.
-Combining $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$ with $\getConfirmed_v^{t'} \sim \getConfirmed_{v'}^{t'}$: a prefix of a block on a chain through a third block lies on that same chain, so $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$.
+For~1 of the theorem, given $t, t' \geq \vote(k)$ and honest~$v, v'$: WLOG assume $t \leq t'$ (the $\sim$ relation is symmetric). By the intra-validator monotonicity just established, $\getConfirmed_v^{t} \preceq \getConfirmed_v^{t'}$. By cross-validator compat at $t'$ --- \Cref{lem:healing-3slot}'s conclusion~2 if $t' \in [\vote(k),\, \vote(k+3)]$, or \Cref{lem:healing-persistence}'s conclusion~2 at the slot containing $t'$ if $t' > \vote(k+3)$ --- $\getConfirmed_v^{t'} \sim \getConfirmed_{v'}^{t'}$.
+The composition $a \preceq b \sim c \Rightarrow a \sim c$ closes: if $b \preceq c$ then $a \preceq c$ gives $a \sim c$; if $c \preceq b$ then $a$ and $c$ both lie on the linear chain $\genesis \preceq \cdots \preceq b$, hence are $\preceq$-comparable, so $a \sim c$. Applying with $a = \getConfirmed_v^{t}$, $b = \getConfirmed_v^{t'}$, $c = \getConfirmed_{v'}^{t'}$ yields $\getConfirmed_v^{t} \sim \getConfirmed_{v'}^{t'}$.
 \end{proof}
 
 \section{Liveness argument (WIP)}\label{sec:liveness}
