@@ -88,6 +88,10 @@
 \newcommand{\getFinalVote}{\textsf{getFinalVote}\xspace}
 \newcommand{\recordVote}{\textsf{recordVote}\xspace}
 \newcommand{\onBlock}{\textsf{onBlock}\xspace}
+\newcommand{\onViewMerge}{\textsf{onViewMerge}\xspace}
+\newcommand{\getSyncerVote}{\textsf{getSyncerVote}\xspace}
+\newcommand{\getPostSyncerVote}{\textsf{getPostSyncerVote}\xspace}
+\newcommand{\onVotingTime}{\textsf{onVotingTime}\xspace}
 \newcommand{\updateJustified}{\textsf{updateJustified}\xspace}
 \newcommand{\updateFinalized}{\textsf{updateFinalized}\xspace}
 \newcommand{\getConfirmed}{\textsf{getConfirmed}\xspace}
@@ -1064,10 +1068,6 @@ We extend $\Sigma$ with a \emph{vote pool} $\Sigma.\mathcal{V}$ populated by vie
 \paragraph{View-merge processing.}
 When the syncer's view-merge delivers $(\comm{\T},\, \comm{V})$ at~$\vote(k)$, each honest validator folds new blocks through \onBlock{} in $\preceq$-respecting order and unions $\comm{V}$ into $\Sigma.\mathcal{V}$.
 
-\paragraph{Voting-time snapshot for \getConfirmed{}.}
-Between consecutive voting times, $\getConfirmed_v$ reads from the store snapshot taken at the most recent voting time: for any time $t \in [\vote(k),\, \vote(k{+}1))$, $\getConfirmed_v^t = \getConfirmed(\Sigma_v^{\vote(k)},\, \Omega_v^t)$.
-The live store $\Sigma_v$ continues to evolve via \onBlock{} and view-merge processing during the interval, but those updates become visible to $\getConfirmed_v$ only from the next voting time $\vote(k{+}1)$ onward.
-
 \paragraph{Voting rule at a syncer slot.}
 Let $k$ be a syncer slot. An honest validator $v$ at $\vote(k)$ casts:
 \begin{enumerate}
@@ -1094,6 +1094,63 @@ We additionally assume that an honest proposer constructing a block~$B$ orders t
 \paragraph{Motivation.}
 The broadcast timeouts at the syncer slot ensure that the timeouts marker is set at every height $\leq \hmax+1$ uniformly across honest, so subsequent timeout certs at any such height require only adversary contribution at the missing-vote heights (which $f < n/3$ rules out).
 The anchor vote at the post-syncer slot reduces the chain-target diversity that can arise from honest validators having different \emph{leaves} but the same state-height: by voting for the height-advancing block on the chain rather than the leaf, all honest converge on a uniquely-determined target whenever their state-heights agree.
+
+\paragraph{Pseudocode.}
+\Cref{alg:healing-mods} shows the modified \processBlock{} (per-vote height closure) and the voting-rule entry points at a syncer slot (\getSyncerVote{}) and at the post-syncer slot (\getPostSyncerVote{}). Further modifications --- the view-merge handler --- will be added in subsequent revisions.
+
+\begin{figure}[H]
+\caption{Healing-section protocol modifications: modified \processBlock{} (per-vote height closure), modified \getConfirmed{} (walks from the snapshot cascade root $\Sigma.R'$), the voting-time hook \onVotingTime{} that refreshes $\Sigma.R'$, syncer-slot voting rule \getSyncerVote{}, and post-syncer-slot voting rule \getPostSyncerVote{}. The hook \onVotingTime{$\Sigma$} runs at the start of every voting time --- before the base voting rule of \Cref{def:voting-rule}, before \getSyncerVote{}, and before \getPostSyncerVote{} --- mirroring the snapshot at the top of \texttt{constructVote} in the simplex-with-notarizations spec.}\label{alg:healing-mods}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{Store extension:} $\Sigma$ gains a field $\Sigma.R'$, the snapshot cascade root at the latest voting time.
+\vspace{3pt}
+
+\Function{\processBlock}{$\sigma,\; B$} \Comment{\emph{Modified}: per-vote height closure}
+  \State \textbf{assert} $\sigma.s = B.\slot$
+  \State $\sigma.L \gets B$
+  \For{each vote $v$ in $B$, in the order they appear}
+    \State $\sigma \gets \processVote(\sigma,\; v)$
+    \State $\sigma \gets \processHeight(\sigma)$ \Comment{close any cert event enabled by $v$ before processing the next}
+  \EndFor
+  \State \Return $\sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\getConfirmed}{$\Sigma,\; \Omega$} \Comment{\emph{Modified}: walks from $\Sigma.R'$ in place of the cascade-gate root}
+  \State \Return $B \in \viableTree(\Sigma)$ with $B \succeq \Sigma.R'$ and $\sigma[B].h \geq \Sigma.\hmax - 1$, depending on $\Omega$
+\EndFunction
+\vspace{3pt}
+
+\Function{\onVotingTime}{$\Sigma$} \Comment{Runs at every voting time, before the voting rule body}
+  \State $\Sigma.R' \gets \Sigma.J$ \textbf{if} $\Sigma.\hmax = \Sigma.h_j + 1$ \textbf{else} $\Sigma.F$ \Comment{snapshot cascade root}
+\EndFunction
+\vspace{3pt}
+
+\Function{\getSyncerVote}{$\Sigma,\; \Omega,\; \Delta$} \Comment{Voting rule at a syncer slot --- returns a set of votes}
+  \State $v_0 \gets \getFinalVote(\Delta,\; \getBaseVote(\Sigma,\; \Omega))$ \Comment{usual vote at $h_c \coloneqq \sigma[\getConfirmed(\Sigma, \Omega)].h$}
+  \State $\mathcal{V} \gets \{v_0\}$
+  \For{$h$ from $v_0.\height + 1$ to $\Sigma.\hmax + 1$} \Comment{broadcast timeouts up to one above $\hmax$}
+    \State $v \gets (i,\; h,\; \bot,\; \bot,\; \bot)$
+    \State $\recordVote(\Delta,\; v)$
+    \State $\mathcal{V} \gets \mathcal{V} \cup \{v\}$
+  \EndFor
+  \State \Return $\mathcal{V}$
+\EndFunction
+\vspace{3pt}
+
+\Function{\getPostSyncerVote}{$\Sigma,\; \Omega,\; \Delta$} \Comment{Voting rule at a post-syncer slot --- single vote}
+  \State $C \gets \getConfirmed(\Sigma,\; \Omega)$
+  \State $T \gets$ the unique $A \preceq C$ with $\sigma[A].h = \sigma[C].h$ and $\sigma[A.\parent].h < \sigma[A].h$ \Comment{anchor of $C$}
+  \State $h_c \gets \sigma[T].h$; \;\; $h_f \gets \sigma[T].h_j$; \;\; $T_f \gets \sigma[T].J$
+  \State \Return $\getFinalVote(\Delta,\; (i,\; h_c,\; T,\; h_f,\; T_f))$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
 
 \subsection{Properties of \getConfirmed{} under stable cascade root}\label{sec:getConfirmed-properties}
 
@@ -1943,6 +2000,33 @@ For a standalone single-slot lemma, hypothesis~\ref{rev:hpj:gate} must be assume
 The justification lemma, finalization lemma, and theorem are self-contained and additive: they use existing definitions (\Cref{def:voting-rule}, \Cref{def:voterecord}, \Cref{def:semi-healed}, \Cref{def:standing}) and existing lemmas/properties (\Cref{lem:just-unique-height}, \Cref{lem:no-high-just}, \Cref{lem:viable-finalized}, \Cref{lem:semi-healing-persistence}, \Cref{thm:fleqr}, \Cref{thm:finperm}, \Cref{prop:target-dominance}). The new constant $\Delta_{\mathit{AC}}$ is local to this section and supersedes $\delta_c$ (\Cref{def:standing}) for these results' purposes; the spec's existing $\delta_c$ uses elsewhere remain valid as long as $\Delta_{\mathit{AC}}$ subsumes one AC slot operation plus $\delta_c$ confirmation. No edits to other sections are required.
 
 \appendix
+
+\section{View-merge mechanism}\label{app:view-merge}
+
+This appendix details the view-merge mechanism abstracted by \Cref{ass:view-merge} and discharges that assumption under a synchronous-slot hypothesis.
+Throughout, $\Delta$ denotes the synchronous network-delivery bound.
+
+\begin{definition}[Slot timing]\label{def:slot-timing}
+Each slot~$k$ is anchored at a real-valued slot time $\start(k)$ with $\start(k+1) - \start(k) \geq 3\Delta$ and contains three ordered events:
+\begin{itemize}
+  \item \emph{Freeze time} $\start(k) - \Delta$: every validator~$i$ records its current local store as its slot-$k$ frozen snapshot $\Sigma^k_{\mathrm{frozen},i}$.
+  \item \emph{Syncer time} $\start(k)$: $\syncer(k)$ broadcasts its current (unfrozen) local store to every validator; let $\Sigma^k_{\mathrm{sent}}$ be the broadcast content.
+  \item \emph{Voting time} $\start(k) + \Delta$: every honest validator~$i$ invokes \Cref{def:voting-rule} on its slot-$k$ merged view $\Sigma^k_{\mathrm{merge},i} \coloneqq \Sigma^k_{\mathrm{frozen},i} \cup \Sigma^k_{\mathrm{sent}}$.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Synchronous slot]\label{def:synchrony-window}
+Slot~$k$ is \emph{synchronous} if every message sent during $[\start(k) - 2\Delta,\, \start(k) + \Delta]$ is delivered to every honest validator within $\Delta$ of its sending time.
+\end{definition}
+
+\begin{lemma}[View-merge under an honest synchronous syncer]\label{lem:view-merge}
+If slot~$k$ is synchronous and $\syncer(k)$ is honest, then every honest~$i$ has $\Sigma^k_{\mathrm{frozen},i} \subseteq \Sigma^k_{\mathrm{sent}}$ and $\Sigma^k_{\mathrm{merge},i} = \Sigma^k_{\mathrm{sent}}$, discharging \Cref{ass:view-merge} with $\comm{\Sigma}^{\vote(k)} = \Sigma^k_{\mathrm{sent}}$.
+\end{lemma}
+
+\begin{proof}
+Any block or vote in $\Sigma^k_{\mathrm{frozen},i}$ was received by $\start(k) - \Delta$, hence sent by that time, hence delivered to $\syncer(k)$ by $\start(k)$ under \Cref{def:synchrony-window}, so it belongs to $\Sigma^k_{\mathrm{sent}}$.
+The broadcast at $\start(k)$ reaches every honest by $\start(k) + \Delta$, so $\Sigma^k_{\mathrm{merge},i}$ is well-defined and equals $\Sigma^k_{\mathrm{sent}}$.
+\end{proof}
 
 \iffull
 
