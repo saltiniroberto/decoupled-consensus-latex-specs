@@ -1556,21 +1556,21 @@ Then
 \footnote{
 Manual sketch proof left for reference.
 \begin{proof}(Sketch)
-  The premises of \Cref{prop:vote-carrier}  should hold.
+  The premises of \Cref{prop:vote-carrier-dominance}  should hold.
   Let $B$ be the block that includes all the votes send by honest validators in slot $k$.
-  Also the premises of \Cref{prop:getConfirmed-compat} to show that the $\getConfirmed^{\vote(k)}$ of any honest validators are compatible should be satisfied.
+  Also the premises of \Cref{prop:getConfirmed-pairwise-from-V} to show that the $\getConfirmed^{\vote(k)}$ of any honest validators are compatible should be satisfied.
   From \Cref{lem:uniform-hmax-at-syncer}, then $\Sigma_v^{\vote(k)}.\hmax$ takes the same value for every honest validator~$v$; denote this common value by $\comm{\hmax}^{\vote(k)}$.
 
   $\vote(k+1)$
-  Due to the voting rule and the fact that we can process more than one height per block, $\Sigma^{\vote(k+1)}\hmax= \comm{\hmax}+2 = \sigma[B].h$.
+  Due to the voting rule and the fact that we can process more than one height per block, $\Sigma^{\vote(k+1)}.\hmax = \comm{\hmax}+2 = \sigma[B].h$.
 
 
 
 
-  Then the system is in a semi-healed state at slot $k$ with frontier height $\comm{\hmax}+1$ as
+  Then the system is in a semi-healed state at slot $k+1$ with frontier height $\comm{\hmax}+1$ as
   \begin{enumerate}
     \item condition 1 is obvious
-    \item condition 2. is given by \Cref{prop:vote-carrier-dominance,prop:getConfirmed-compat}.
+    \item condition 2. is given by \Cref{prop:vote-carrier-dominance,prop:getConfirmed-pairwise-from-V}.
     \item condition 3 is vacuously  true as all honest have sent a timeout vote for height $\comm{\hmax}+1$.
     \item condition 4 holds by \Cref{prop:vote-carrier-dominance}
   \end{enumerate}
