@@ -79,8 +79,9 @@
 \newcommand{\finalizeConflict}{\textsf{finalizeConflict}\xspace}
 \newcommand{\isSlashable}{\textsf{isSlashable}\xspace}
 \newcommand{\updateJFromVotes}{\textsf{updateJFromVotes}\xspace}
-\newcommand{\start}{\ensuremath{\mathrm{start}}}
-\newcommand{\vote}{\ensuremath{\mathrm{vote}}}
+\newcommand{\start}{\ensuremath{\mathsf{start}}}
+\newcommand{\vote}{\ensuremath{\mathsf{vote}}}
+\newcommand{\freeze}{\ensuremath{\mathsf{freeze}}}
 \newcommand{\GST}{\ensuremath{\mathrm{GST}}\xspace}
 \newcommand{\comm}[1]{\ensuremath{\widetilde{#1}}}
 \newcommand{\syncer}{\textsf{syncer}\xspace}
@@ -92,6 +93,7 @@
 \newcommand{\getSyncerVote}{\textsf{getSyncerVote}\xspace}
 \newcommand{\getPostSyncerVote}{\textsf{getPostSyncerVote}\xspace}
 \newcommand{\onVotingTime}{\textsf{onVotingTime}\xspace}
+\newcommand{\proposer}{\textsf{proposer}\xspace}
 \newcommand{\updateJustified}{\textsf{updateJustified}\xspace}
 \newcommand{\updateFinalized}{\textsf{updateFinalized}\xspace}
 \newcommand{\getConfirmed}{\textsf{getConfirmed}\xspace}
@@ -1046,6 +1048,64 @@ A publicly known function $\syncer \colon \mathbb{N} \to \{1, \ldots, n\}$ assig
 \begin{assumption}[View-merge guarantee]\label{ass:view-merge}
 If $\syncer(k)$ is honest, every honest validator~$i$ has seen the same set of blocks and votes.
 \end{assumption}
+
+\paragraph{AC--FG alignment of syncer slots.}
+The finality gadget (FG) runs on a coarser slot grid than the underlying available chain (AC), with the FG slot length a multiple of the AC slot length.
+For an FG slot~$k$, let $k'$ denote the AC slot whose start coincides with $\start(k)$ on the FG layer.
+The syncer of FG slot~$k$ is the AC proposer of slot~$k'$:
+\[
+  \syncer(k) \;\coloneqq\; \proposer_{\mathit{AC}}(k').
+\]
+Write $\Delta_{\mathit{FG}}$ for the FG message-delay bound (the time for the syncer's broadcast to reach every honest validator) and $\Delta_{\mathit{AC}}$ for the AC message-delay bound; the two are independent design parameters.
+The view-merge mechanism (\Cref{app:view-merge}) anchors three instants per FG slot~$k$, all strictly inside the slot:
+\emph{freeze time} $\start(k) - \Delta_{\mathit{FG}}$, when every validator snapshots its local store;
+\emph{syncer time} $\start(k) = \start(k')$, when $\proposer_{\mathit{AC}}(k')$ broadcasts its block as $\syncer(k)$'s view-merge payload (just as the AC proposer broadcasts at the start of its slot);
+and \emph{voting time} $\vote(k) = \start(k) + \Delta_{\mathit{FG}}$, when validators vote on the merged view.
+$\Delta_{\mathit{FG}}$ is strictly less than one FG slot (cf.\ \Cref{def:slot-timing}).
+\Cref{fig:sparse-syncer-slots} illustrates the alignment.
+
+\begin{figure}[H]
+\caption{Variable-length FG slots aligned to a uniform AC slot grid. AC slots (top row) all have the same length, and every FG slot length is an integer multiple of one AC slot length. Slot~$k$ is a syncer slot, implementing the view-merge of \Cref{def:slot-timing}. Only slot~$k-1$ --- the \emph{before-syncer} slot --- must be longer than the others: it must host both its own vote and the freeze for slot~$k$ at $\start(k) - \Delta_{\mathit{FG}}$. Slots~$k-2$, $k$, and $k+1$ need only host their own vote and can all share the same shorter length. The figure assigns $6$ AC slots to slot~$k-1$ and $4$ AC slots to each of slots~$k-2$, $k$, $k+1$, and identifies $\syncer(k)$ with $\proposer_{\mathit{AC}}(k')$ at $\start(k') = \start(k)$. The FG and AC message-delay bounds $\Delta_{\mathit{FG}}$ and $\Delta_{\mathit{AC}}$ are independent design parameters.}\label{fig:sparse-syncer-slots}
+\begin{center}
+\begin{tikzpicture}[scale=0.65, every node/.style={font=\small}]
+  \draw[->, thick] (-2.0, 0) -- (19.5, 0) node[right] {time};
+  \node[anchor=east, font=\footnotesize, align=right] at (-0.3, 3.85) {AC\\slots};
+  \node[anchor=east, font=\footnotesize, align=right] at (-0.3, 1.9) {finality\\slots};
+  \foreach \i in {0,1,...,17} {
+    \draw[thick, fill=xlightgray] (\i, 3.5) rectangle (\i+1, 4.2);
+  }
+  \draw[thick, fill=xblue] (10, 3.5) rectangle (11, 4.2);
+  \node[font=\scriptsize] at (10.5, 3.85) {$k'$};
+  \draw[thick, fill=xlightgray] (0, 1.5) rectangle (4, 2.3);
+  \node at (2, 1.9) {slot $k{-}2$};
+  \draw[thick, fill=xgreen] (4, 1.5) rectangle (10, 2.3);
+  \node at (7, 1.9) {slot $k{-}1$};
+  \draw[thick, fill=xblue] (10, 1.5) rectangle (14, 2.3);
+  \node at (12, 1.9) {slot $k$};
+  \draw[thick, fill=xlightgray] (14, 1.5) rectangle (18, 2.3);
+  \node at (16, 1.9) {slot $k{+}1$};
+  \foreach \x in {0, 4, 10, 14, 18} {
+    \draw[thick, dashed, gray!40] (\x, 0.15) -- (\x, 3.5);
+  }
+  \draw[<->, very thick, red!75] (10, 3.5) -- (10, 2.3);
+  \node[red!75, font=\scriptsize, anchor=west] at (10.15, 2.9) {$\syncer(k) = \proposer_{\mathit{AC}}(k')$};
+  \foreach \x/\sl in {0/{$k{-}2$}, 4/{$k{-}1$}, 10/{$k$}, 14/{$k{+}1$}, 18/{$k{+}2$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\\sl};
+  }
+  \foreach \x/\sl in {2/{$k{-}2$}, 6/{$k{-}1$}, 12/{$k$}, 16/{$k{+}1$}} {
+    \draw[thick, red!75] (\x, -0.12) -- (\x, 0.12);
+    \node[red!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\vote$\\\sl};
+  }
+  \draw[thick, orange!85!black] (8, -0.12) -- (8, 0.12);
+  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.15) {$\freeze$\\$k{-}1$};
+  \draw[<->, thick] (8, 0.75) -- (10, 0.75);
+  \node[fill=white, inner sep=1pt, font=\footnotesize] at (9, 0.75) {$\Delta_{\mathit{FG}}$};
+  \draw[<->, thick] (10, 0.75) -- (12, 0.75);
+  \node[fill=white, inner sep=1pt, font=\footnotesize] at (11, 0.75) {$\Delta_{\mathit{FG}}$};
+\end{tikzpicture}
+\end{center}
+\end{figure}
 
 \begin{definition}[Time-dependent dishonest count]\label{rev:def:f-t}
 For each time~$t$, $f^t$ denotes the number of validators that are dishonest at time~$t$. We assume $f^t$ is monotonically non-decreasing in~$t$: once a validator is dishonest, it remains so.
