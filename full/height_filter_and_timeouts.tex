@@ -1028,6 +1028,17 @@ $\timeouts$ is per-state and resets only at a height advance; on any canonical c
 
 \section{Finality Gadget Available Chain Interaction}\label{sec:fg-ac-interaction}
 
+In any voting round~$k$, every validator is supposed to cast exactly one finality vote.
+A voting round may be subdivided into $m \geq 1$ \emph{sub-rounds}, each ending at a finality voting time (\Cref{fig:slot-voting-times}).
+The validator set is partitioned across the $m$ sub-rounds of voting round~$k$, and only the validators assigned to a given sub-round cast their (single) vote at that sub-round's finality voting time; validators assigned to other sub-rounds of the same voting round do not vote at this finality voting time.
+Consequently, the votes cast across all $m$ sub-rounds of voting round~$k$ together account for exactly one vote per validator.
+
+\paragraph{Impact on the inactivity leak of \Cref{sec:leak}.}
+The leak bookkeeping of \Cref{sec:leak} fires its per-validator penalty increments at each invocation of \processHeight{}, with implicit horizon "all $n$ validators have already had a chance to vote by now" --- a horizon that coincides with $\vote(k)$ only when $m = 1$.
+Under sub-round partitioning ($m > 1$), validators assigned to sub-rounds $j' > j$ of voting round~$k$ have not yet cast their vote at the $j$-th finality voting time, so $\sigma.\timeouts[i] = \mathtt{false}$ and $\sigma.\targets[i] = \bot$ for them; the Layer~1 stall guard and the Layer~2 target guard of \Cref{alg:leak-processslot} would therefore bump these validators at every sub-round that precedes their assigned one, even though they are about to vote on schedule.
+To restore fairness, \Cref{sec:leak}'s penalty bookkeeping must be adjusted in one of the following ways: (i)~defer the firing of Layer~1 and Layer~2 target penalty guards to the end of voting round~$k$, after all $m$ sub-rounds have run; (ii)~refine $\sigma.\timeouts$ and $\sigma.\targets$ to distinguish "has not voted because the assigned sub-round has not yet come" from "missed the assigned sub-round"; or (iii)~redefine the leak's accounting unit as the voting round rather than the per-block \processHeight{} step.
+Theorem~\ref{thm:tightness} (the structural lower bound on the total penalty over a non-finality period) is unaffected; the issue is local to the per-validator side, i.e.\ \Cref{thm:fairness} and Layer~2 target accounting.
+
 \begin{figure}[H]
 \caption{AC slot grid and FG voting structure. Each AC slot (top row) produces one available-chain block. Inside each \emph{voting round}, the FG runs $m$ finality voting times (blue ticks); the gap between two consecutive finality voting times is a \emph{sub-round}.}\label{fig:slot-voting-times}
 \begin{center}
