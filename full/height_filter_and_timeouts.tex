@@ -91,6 +91,9 @@
 \newcommand{\onBlock}{\textsf{onBlock}\xspace}
 \newcommand{\onViewMerge}{\textsf{onViewMerge}\xspace}
 \newcommand{\getSyncerVote}{\textsf{getSyncerVote}\xspace}
+\newcommand{\getStabilityVote}{\textsf{getStabilityVote}\xspace}
+\newcommand{\addStabilityVote}{\textsf{addStabilityVote}\xspace}
+\newcommand{\onVotingRoundTick}{\textsf{onVotingRoundTick}\xspace}
 \newcommand{\getPostSyncerVote}{\textsf{getPostSyncerVote}\xspace}
 \newcommand{\onVotingTime}{\textsf{onVotingTime}\xspace}
 \newcommand{\proposer}{\textsf{proposer}\xspace}
@@ -1026,6 +1029,119 @@ Either way, $\timeouts[i] = \mathtt{true}$ in $\sigma[T']$.
 $\timeouts$ is per-state and resets only at a height advance; on any canonical chain extending~$T'$, $\sigma$ at $T'$'s descendants inherits $\timeouts[i] = \mathtt{true}$ from $\sigma[T']$, and no height advance fires while canonical state-height stays at~$h_c$, so $\timeouts[i] = \mathtt{true}$ persists on canonical and Layer~1 does not bump~$i$.
 \end{proof}
 
+\section{Stabilization Gadget}\label{sec:stability}
+
+\begin{definition}[Stability vote]\label{def:stability-vote}
+A \emph{stability vote} is a signed tuple
+\[
+  (\validator,\; \target,\; r),
+\]
+where $\validator$ is the signer, $\target \in \mathrm{Blocks}$ is a block, and $r \in \mathbb{N}$ is a voting round index.
+\end{definition}
+
+The stabilization gadget selects, at each invocation, a block on the canonical chain that sits between the block targeted by the finality vote (the lower endpoint) and the block returned by \getConfirmed{} (the upper endpoint), and emits a stability vote carrying that block and the current voting round.
+The selection criterion --- e.g.\ depth past a state-height advance, observed-stability duration, or another application-defined predicate --- is left abstract here; the interface guarantees only that the returned target lies on the canonical chain in the closed range $[v_F.\target,\, \getConfirmed(\Sigma, \Omega)]$.
+
+\begin{figure}[H]
+\caption{Stabilization gadget: \getStabilityVote{} emits a stability vote (\Cref{def:stability-vote}) whose target sits on the canonical chain between $v_F.\target$ (the finality-vote target, lower endpoint) and $\getConfirmed(\Sigma, \Omega)$ (upper endpoint), tagged with the current voting round~$r$.}\label{alg:stability}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{\getStabilityVote}{$\Sigma,\; \Omega,\; \Delta,\; r$} \Comment{$r$ is the current voting round}
+  \State $C \gets \getConfirmed(\Sigma,\; \Omega)$ \Comment{canonical confirmed block (upper endpoint)}
+  \State $v_F \gets \getFinalVote(\Delta,\; \getBaseVote(\Sigma,\; \Omega))$
+  \State $T \gets v_F.\target$ \Comment{finality-vote target (lower endpoint)}
+  \State select $S \in \viableTree(\Sigma)$ with $T \preceq S \preceq C$ \Comment{stability-criterion choice}
+  \State \Return $(i,\; S,\; r)$ \Comment{stability vote: signer $i$, target $S$, voting round $r$}
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\paragraph{Store extension for stability votes.}
+The fork-choice store $\Sigma$ (\Cref{sec:store}) is extended to track stability votes received in a sliding window of recent voting rounds.
+Fix a window parameter $\eta \geq 1$.
+The current voting round is maintained in a store field $\Sigma.r$ that is updated by an external callback \onVotingRoundTick{} --- assumed to be invoked by the environment whenever the voting round needs to advance.
+The extension and its update routines are summarised in \Cref{alg:stability-store}; the invariant maintained is
+\[
+  \Sigma.\mathcal{S} \;=\; \{\,v \;:\; v \text{ is a stability vote received by this validator with } v.r \in [\Sigma.r - \eta,\; \Sigma.r - 1]\,\}.
+\]
+
+\begin{figure}[H]
+\caption{Store extension and update routines for tracking stability votes (\Cref{def:stability-vote}) with voting-round index in the sliding window $[\Sigma.r - \eta,\; \Sigma.r - 1]$. \onVotingRoundTick{} is an external callback invoked by the environment at each voting-round boundary.}\label{alg:stability-store}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\State \textbf{Store extension:} $\Sigma$ gains two fields:
+\State \quad $\Sigma.r \in \mathbb{N}$: the current voting round index (initialised to $0$ at genesis).
+\State \quad $\Sigma.\mathcal{S}$: a set of stability votes (initialised to $\emptyset$ at genesis).
+\vspace{3pt}
+
+\Function{\addStabilityVote}{$\Sigma,\; v$} \Comment{$v = (\validator,\; \target,\; r)$}
+  \If{$\Sigma.r - \eta \leq v.r \leq \Sigma.r - 1$}
+    \State $\Sigma.\mathcal{S} \gets \Sigma.\mathcal{S} \cup \{v\}$
+  \EndIf
+  \State \Return $\Sigma$
+\EndFunction
+\vspace{3pt}
+
+\Function{\onVotingRoundTick}{$\Sigma$} \Comment{externally invoked at every voting-round boundary}
+  \State $\Sigma.r \gets \Sigma.r + 1$
+  \State $\Sigma.\mathcal{S} \gets \{\,v \in \Sigma.\mathcal{S} \;:\; v.r \geq \Sigma.r - \eta\,\}$ \Comment{prune votes that fell out of the window}
+  \State \Return $\Sigma$
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\paragraph{Ancestor inheritance of stability votes.}
+A stability vote $v = (\validator,\; \target,\; r)$ is interpreted as a vote by $v.\validator$ for $v.\target$ \emph{and every ancestor of $v.\target$}.
+A validator $i$ is said to \emph{equivocate} on $\Sigma.\mathcal{S}$ if it has cast two stability votes $v_1, v_2 \in \Sigma.\mathcal{S}$ with $v_1.\validator = v_2.\validator = i$ and with $v_1.\target,\, v_2.\target$ on different chains (incomparable under $\preceq$); write
+\[
+  \mathrm{Eq}(\Sigma.\mathcal{S}) \;\coloneqq\; \{\,i \;:\; i \text{ equivocates on } \Sigma.\mathcal{S}\,\}.
+\]
+For any block $B$ we write
+\[
+  \mathcal{M}_B \;\coloneqq\; \bigl|\{\,i \notin \mathrm{Eq}(\Sigma.\mathcal{S}) \;:\; \exists v \in \Sigma.\mathcal{S} \text{ with } v.\validator = i \text{ and } v.\target \succeq B\,\}\bigr|
+\]
+for the number of distinct non-equivocating validators in $\Sigma.\mathcal{S}$ whose stability vote covers $B$.
+Discarding equivocators ensures that any two blocks with stability-vote majority share at least one non-equivocating validator covering both, forcing them onto a common chain.
+Note that $\mathcal{M}$ is monotone along $\preceq$: $A \preceq B$ implies $\mathcal{M}_A \geq \mathcal{M}_B$.
+
+\paragraph{Modified \getConfirmed{}.}
+The fork-choice-store \getConfirmed{} of \Cref{sec:store} is filtered by the stability-vote majority criterion: out of the candidate blocks returned by the original \getConfirmed{}, only those covered by a majority of non-equivocating stability voters are retained; the highest-slot such block (denoted $R^{\mathsf{stab}}$) anchors the returned canonical block. If no candidate carries a stability-vote majority, the function falls back to the unfiltered original \getConfirmed{} candidates.
+\Cref{alg:stability-getconfirmed} states the modified function; the cascade root $R$ is computed exactly as in the original (\Cref{sec:store}).
+
+\begin{figure}[H]
+\caption{Stability-vote-filtered \getConfirmed{}. The original candidate set $\mathcal{C}$ (viable blocks above the cascade root $R$ at the leaf-viability height) is filtered to $\mathcal{C}'$ by the stability-vote majority criterion (more than $V_{\mathrm{active}}/2$ non-equivocating contributors, under ancestor inheritance). If $\mathcal{C}'$ is non-empty, the function returns a viable block in $\mathcal{C}$ that extends the highest-slot block in $\mathcal{C}'$; otherwise it falls back to the original (unfiltered) candidates in $\mathcal{C}$.}\label{alg:stability-getconfirmed}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\begin{algorithmic}[1]
+
+\Function{\getConfirmed}{$\Sigma,\; \Omega$} \Comment{\emph{Modified}: filter by stability-vote majority}
+  \State $R \gets \Sigma.J$ \textbf{if} $\Sigma.\hmax = \Sigma.h_j + 1$ \textbf{else} $\Sigma.F$ \Comment{cascade root, as in \Cref{sec:store}}
+  \State $\mathcal{C} \gets \{\,B \in \viableTree(\Sigma) \;:\; B \succeq R \text{ and } \sigma[B].h \geq \Sigma.\hmax - 1\,\}$ \Comment{original candidates}
+  \State $V_{\mathrm{active}} \gets |\{\,i \notin \mathrm{Eq}(\Sigma.\mathcal{S}) \;:\; \exists v \in \Sigma.\mathcal{S} \text{ with } v.\validator = i\,\}|$ \Comment{non-equivocating contributors}
+  \State $\mathcal{C}' \gets \{\,B \in \mathcal{C} \;:\; \mathcal{M}_B > V_{\mathrm{active}}/2\,\}$
+  \If{$\mathcal{C}' \neq \emptyset$}
+    \State $R^{\mathsf{stab}} \gets \arg\max_{B \in \mathcal{C}'}(B.\slot)$ \Comment{highest-slot stability-confirmed block}
+    \State \Return some $B \in \mathcal{C}$ with $B \succeq R^{\mathsf{stab}}$, depending on $\Omega$
+  \Else
+    \State \Return some $B \in \mathcal{C}$ depending on $\Omega$ \Comment{fallback: unfiltered original \getConfirmed{}}
+  \EndIf
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
 \section{Finality Gadget Available Chain Interaction}\label{sec:fg-ac-interaction}
 
 In any voting round~$k$, every validator is supposed to cast exactly one finality vote.
@@ -1075,39 +1191,6 @@ Theorem~\ref{thm:tightness} (the structural lower bound on the total penalty ove
 \end{center}
 \end{figure}
 
-\begin{figure}[H]
-\caption{Inclusion window for an honest FG vote cast at the $m$-th finality voting time of voting round~$k$ (green). The vote must be carried by an AC block proposed strictly before the $1$st finality voting time of voting round~$k+1$ (red); the highlighted green AC slots are the candidates whose proposers can include the vote.}\label{fig:ac-inclusion-window}
-\begin{center}
-\begin{tikzpicture}[scale=0.9, every node/.style={font=\small}]
-  \draw[->, thick] (-1.0, 0) -- (25.5, 0) node[right] {time};
-  \foreach \i in {0,1,...,23} {
-    \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
-  }
-  \foreach \i in {10, 11, 12, 13} {
-    \draw[thick, fill=xgreen] (\i, 0.5) rectangle (\i+1, 1.2);
-  }
-  \foreach \x in {0, 12, 24} {
-    \draw[thick] (\x, -0.12) -- (\x, 0.12);
-  }
-  \foreach \x in {2, 4.5, 7, 16.5, 19, 21.5} {
-    \draw[thick, blue!75] (\x, -0.12) -- (\x, 0.12);
-  }
-  \draw[ultra thick, green!55!black] (9.5, -0.18) -- (9.5, 0.18);
-  \draw[ultra thick, red!75] (14, -0.18) -- (14, 0.18);
-  \foreach \x in {2, 4.5, 7, 16.5, 19, 21.5} {
-    \draw[thick, dashed, gray!40] (\x, 0.15) -- (\x, 0.5);
-  }
-  \foreach \x in {0, 12, 24} {
-    \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
-  }
-  \draw[ultra thick, green!55!black, dashed] (9.5, 0.15) -- (9.5, 2);
-  \draw[ultra thick, red!75, dashed] (14, 0.15) -- (14, 2);
-  \draw[-{Stealth[length=8pt]}, ultra thick, green!55!black]
-    (9.5, 0.18) to[out=75, in=200] (11.6, 1.45);
-\end{tikzpicture}
-\end{center}
-\end{figure}
-
 \section{Liveness argument (WIP)}\label{sec:liveness}
 
 Starting from a (semi-)healed state, we show that the protocol produces a fresh on-chain justification within one FG voting round and a fresh on-chain finalization within two FG voting rounds, given honest AC-layer participation at the relevant boundary voting rounds.
@@ -1115,6 +1198,8 @@ The argument is parametric in the available chain (AC) on which \getConfirmed{} 
 
 The (semi-)healed state of \Cref{thm:healing} (or \Cref{def:semi-healed} taken on its own) is the natural input.
 \Cref{lem:healing-3slot}'s Step~5 establishes the cascade gate $\Sigma.\hmax = \Sigma.h_j + 1$ at the post-healing voting round, which we record separately below as hypothesis~(8$'$) to make explicit what the liveness argument needs.
+
+The arguments below are stated for a generic number $m \geq 1$ of sub-rounds per voting round (\Cref{sec:fg-ac-interaction}); the $m = 1$ case ($\vote(k)$ a single finality voting time per voting round) is a specialisation.
 
 \medskip
 \noindent\fbox{\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}
@@ -1126,49 +1211,77 @@ The (semi-)healed state of \Cref{thm:healing} (or \Cref{def:semi-healed} taken o
 
 We extend the FG timing of \Cref{def:slots} (\textit{cf.}~\Cref{def:standing}) with an underlying AC slot structure parametrised by a single constant $\Delta_{\mathit{AC}}$: the duration of one AC slot, taken to include confirmation --- i.e., by the end of the AC slot, the block proposed in that AC slot is confirmed in every honest validator's view. We treat the AC's internal structure as a black box; see, e.g., the Goldfish protocol for a concrete instantiation. This $\Delta_{\mathit{AC}}$ supersedes the separate $\delta_c$ of \Cref{def:standing} for this section's purposes.
 
+\paragraph{Sub-round voting times.}
+Each voting round~$j$ is partitioned into $m \geq 1$ sub-rounds (\Cref{sec:fg-ac-interaction}) with finality voting times
+\[
+  \vote(j, 1),\, \vote(j, 2),\, \ldots,\, \vote(j, m),
+\]
+and the validator set partitioned across them so that each honest validator casts exactly one vote in voting round~$j$, at their assigned sub-round's voting time.
+We write $\vote(j) \coloneqq \vote(j, 1)$ for the first finality voting time of voting round~$j$, and refer to $\vote(j{+}1) = \vote(j{+}1, 1)$ as the \emph{settlement time} of voting round~$j$ --- the first finality voting time of the following voting round, by which the inclusion window of every sub-round of round~$j$ closes (\Cref{fig:per-round-timing}).
+
 \paragraph{AC--FG timing alignment.}
-Throughout this section, $\Delta$ denotes the time it takes for all honest votes broadcast at a voting time $\vote(j)$ to reach every honest validator (the synchronous network-delivery bound; see \Cref{def:slots}). Write $\Delta_{\mathit{FG}} \coloneqq \Delta + \Delta_{\mathit{AC}}$ for the FG voting round duration. We require $\Delta = c \cdot \Delta_{\mathit{AC}}$ for some integer $c \geq 1$, with $\vote(j)$ landing on an AC slot boundary for every~$j$, and the FG voting round duration $\vote(j+1) - \vote(j) \geq \Delta_{\mathit{FG}}$ uniformly across~$j$.
+Throughout this section, $\Delta_{\mathit{FG}}$ denotes the FG message-delay bound: the time for messages broadcast at any sub-round voting time to reach every honest validator. We require:
+\begin{enumerate}
+  \item $\vote(j, l) - \vote(j, l-1) \geq \Delta_{\mathit{FG}}$ for $l = 2, \ldots, m$ (consecutive sub-rounds separated by at least one FG message delay);
+  \item $\vote(j{+}1, 1) - \Delta_{\mathit{AC}} \geq \vote(j, m) + \Delta_{\mathit{FG}}$ (so the AC slot ending at $\vote(j{+}1, 1)$ can aggregate every sub-round of voting round~$j$'s votes before constructing its block);
+  \item $\vote(j, 1)$ lands on an AC slot boundary for every~$j$.
+\end{enumerate}
 
 \paragraph{Naming convention for AC slots and their blocks.}
-For each FG voting round index~$j$, let
+For each voting round index~$j$, let
 \[
-  \mathrm{AC}_{\to j} \;\coloneqq\; \text{the AC slot ending exactly at $\vote(j)$, spanning $[\vote(j) - \Delta_{\mathit{AC}},\, \vote(j)]$,}
+  \mathrm{AC}_{\to j} \;\coloneqq\; \text{the AC slot ending exactly at $\vote(j, 1) = \vote(j)$, spanning $[\vote(j) - \Delta_{\mathit{AC}},\, \vote(j)]$.}
 \]
-with the arrow subscript reflecting that this AC slot leads into $\vote(j)$ (its block confirmation lands precisely at $\vote(j)$). We write $B_j$ for the block proposed in $\mathrm{AC}_{\to j}$. For round~$j$, two AC slots play distinguished roles:
+We write $B_j$ for the block proposed in $\mathrm{AC}_{\to j}$. For voting round~$j$, two AC slots play distinguished roles:
 \begin{itemize}
-  \item $\mathrm{AC}_{\to j}$ --- \emph{target-uniformity voting round} for round~$j$: delivers the canonical AC tip $B_j$ confirmed at $\vote(j)$, on which validators vote at $\vote(j)$.
-  \item $\mathrm{AC}_{\to j+1}$ --- \emph{vote-inclusion voting round} for round~$j$: aggregates the voting-round-$j$ honest votes into a block $B_{j+1}$ confirmed at $\vote(j+1)$.
+  \item $\mathrm{AC}_{\to j}$ --- \emph{target-uniformity AC slot} for voting round~$j$: when honest, delivers the canonical AC tip $B_j$ confirmed at $\vote(j, 1)$; provided AC canonical stability persists across voting round~$j$ (no adversarial reorg over $[\vote(j, 1), \vote(j, m)]$), honest validators in every sub-round of round~$j$ vote on $B_j$.
+  \item $\mathrm{AC}_{\to j+1}$ --- \emph{vote-inclusion AC slot} for voting round~$j$: aggregates every voting-round-$j$ honest vote (across all $m$ sub-rounds) into a block $B_{j+1}$ confirmed at $\vote(j{+}1, 1) = \vote(j{+}1)$.
 \end{itemize}
-Note that $\mathrm{AC}_{\to j+1}$ is also the target-uniformity voting round for round~$j+1$: a single AC slot serves both the vote-inclusion role for one round and the target-uniformity role for the next, so per-round AC honesty requirements chain across consecutive rounds.
+Note that $\mathrm{AC}_{\to j+1}$ is also the target-uniformity AC slot for voting round~$j+1$: a single AC slot serves both the vote-inclusion role for one voting round and the target-uniformity role for the next, so per-round AC honesty requirements chain across consecutive voting rounds.
 
 \begin{figure}[H]
-\caption{Timing for one FG round under AC--FG alignment, illustrated for $c = 2$ ($\Delta = 2\Delta_{\mathit{AC}}$). Boxes are the AC slots within FG voting round~$k$; $\mathrm{AC}_{\to k}$ delivers the uniform tip $B_k$ confirmed at $\vote(k)$; the dashed region covers voting-round-$k$ vote propagation, spanning $c = 2$ AC slots (dotted boundary); $\mathrm{AC}_{\to k+1}$ aggregates the voting-round-$k$ honest votes into $B_{k+1}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k+1)$.}\label{fig:per-round-timing}
+\caption{Timing for one FG voting round (integrating the AC-inclusion constraint), illustrated for $m = 4$ sub-rounds (matching \Cref{fig:slot-voting-times}). $\mathrm{AC}_{\to k}$ (blue) delivers the uniform tip $B_k$ confirmed at $\vote(k, 1)$, on which honest validators in every sub-round of voting round~$k$ vote. The honest votes cast at the $m$-th sub-round $\vote(k, m)$ (green source) require $\Delta_{\mathit{FG}}$ to reach $\mathrm{AC}_{\to k+1}$'s proposer; the constraint $\vote(k, m) + \Delta_{\mathit{FG}} \leq \vote(k{+}1, 1) - \Delta_{\mathit{AC}}$ leaves $\mathrm{AC}_{\to k+1}$'s block-construction window (starting at $\vote(k{+}1, 1) - \Delta_{\mathit{AC}}$) able to aggregate every voting-round-$k$ honest vote into $B_{k+1}$, which is confirmed and on-chain (with the cert event fired) by $\vote(k{+}1, 1)$.}\label{fig:per-round-timing}
 \begin{center}
-\begin{tikzpicture}[scale=0.85, every node/.style={font=\small}]
-  \draw[->, thick] (-1.7, 0) -- (12.5, 0) node[right] {time};
-  \foreach \x/\lbl in {0/{$\GST$}, 1/{$\start(k)$}, 5/{$\vote(k)$}, 9/{$\vote(k){+}\Delta$}, 11/{$\vote(k{+}1)$}} {
-    \draw[thick] (\x, -0.12) -- (\x, 0.12);
-    \node[below=2pt] at (\x, -0.15) {\lbl};
+\begin{tikzpicture}[scale=0.9, every node/.style={font=\small}]
+  \draw[->, thick] (-1.0, 0) -- (15.5, 0) node[right] {time};
+  \node[anchor=east, font=\footnotesize, align=right] at (-0.3, 0.85) {AC};
+  \foreach \i in {0,1,...,13} {
+    \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
   }
-  \draw[thick, fill=xblue] (3, 0.45) rectangle (5, 1.0);
-  \node at (4, 0.725) {$\mathrm{AC}_{\to k}$};
-  \draw[thick, fill=xlightgray, dashed] (5, 0.45) rectangle (9, 1.0);
-  \draw[thick, dotted] (7, 0.45) -- (7, 1.0);
-  \node at (7, 0.725) {(votes propagating)};
-  \draw[thick, fill=xgreen] (9, 0.45) rectangle (11, 1.0);
-  \node at (10, 0.725) {$\mathrm{AC}_{\to k+1}$};
-  \begin{scope}[yshift=1.35cm]
-    \draw[<->, thick] (3, 0) -- (5, 0);
-    \node[above] at (4, 0) {$\Delta_{\mathit{AC}}$};
-    \draw[<->, thick] (5, 0) -- (9, 0);
-    \node[above] at (7, 0) {$\Delta = c \cdot \Delta_{\mathit{AC}}$};
-    \draw[<->, thick] (9, 0) -- (11, 0);
-    \node[above] at (10, 0) {$\Delta_{\mathit{AC}}$};
-  \end{scope}
-  \draw[<-, thick, red!75] (5, -0.85) -- (5, -0.18);
-  \node[below, red!75, align=center, font=\footnotesize] at (5, -0.85) {$B_k$ confirmed\\ in every honest's view};
-  \draw[<-, thick, red!75] (11, -0.85) -- (11, -0.18);
-  \node[below, red!75, align=center, font=\footnotesize] at (11, -0.85) {$B_{k+1}$ confirmed,\\ cert event fired};
+  \draw[thick, fill=xblue] (1, 0.5) rectangle (2, 1.2);
+  \node[font=\scriptsize] at (1.5, 0.85) {$\mathrm{AC}_{\to k}$};
+  \draw[thick, fill=xgreen] (13, 0.5) rectangle (14, 1.2);
+  \node[font=\scriptsize] at (13.5, 0.85) {$\mathrm{AC}_{\to k{+}1}$};
+  \foreach \x/\sl in {0/{$k$}, 12/{$k{+}1$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\voting round\\\sl};
+  }
+  \foreach \x/\j in {2/1, 4.5/2, 7/3} {
+    \draw[thick, blue!75] (\x, -0.12) -- (\x, 0.12);
+    \node[blue!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\vote(k, \j)$};
+    \draw[thick, dashed, gray!40] (\x, 0.15) -- (\x, 0.5);
+  }
+  \draw[ultra thick, green!55!black] (9.5, -0.18) -- (9.5, 0.18);
+  \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (9.5, -0.15) {$\vote(k, m)$\\votes cast};
+  \draw[ultra thick, green!55!black, dashed] (9.5, 0.15) -- (9.5, 2.4);
+  \draw[gray, dashed] (11, 1.2) -- (11, 2.4);
+  \draw[ultra thick, red!75] (14, -0.18) -- (14, 0.18);
+  \node[red!75, below=2pt, font=\scriptsize, align=center] at (14, -0.15) {$\vote(k{+}1, 1)$};
+  \draw[ultra thick, red!75, dashed] (14, 1.2) -- (14, 2.4);
+  \foreach \x in {0, 12} {
+    \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
+  }
+  \draw[<->, thick] (9.5, 2.2) -- (11, 2.2);
+  \node[above, font=\footnotesize] at (10.25, 2.2) {$\Delta_{\mathit{FG}}$ (vote propagation)};
+  \draw[gray, dashed] (13, 1.2) -- (13, 2.4);
+  \node[font=\scriptsize, gray!40!black, anchor=south, align=center] at (13, 2.4) {start of\\$\mathrm{AC}_{\to k+1}$};
+  \draw[->, thick, gray!50!black] (11.1, 1.5) -- (12.95, 1.5);
+  \node[font=\scriptsize, gray!40!black, anchor=south] at (12.025, 1.5) {$\geq 0$};
+  \foreach \x in {0, 12} {
+    \draw[ultra thick, red!75] (\x, -1.3) -- (\x, -3);
+  }
+  \draw[decorate, decoration={brace, amplitude=6pt,mirror}, ultra thick, red!75]
+    (0, -3) -- (12, -3) node[midway, below=7pt, font=\footnotesize, red!75] {Voting Round $k$};
 \end{tikzpicture}
 \end{center}
 \end{figure}
@@ -1182,9 +1295,9 @@ Assume:
   \item\label{rev:hpj:healed} The system is in a semi-healed state at voting round~$k$ with frontier height $\comm{h}$ (\Cref{def:semi-healed}).
   \item\label{rev:hpj:gst} $\start(k) - \Delta_{\mathit{AC}} \geq \GST$.
   \item\label{rev:hpj:online} Every honest validator is online throughout $[\start(k) - \Delta_{\mathit{AC}},\, \vote(k+1)]$.
-  \item\label{rev:hpj:ack-honest} \emph{($\mathrm{AC}_{\to k}$ honest, uniform tip):} the proposer of $\mathrm{AC}_{\to k}$ is honest, producing block~$B_k$, with $\getConfirmed_v$ at $\vote(k) = B_k$ for every honest~$v$.
-  \item\label{rev:hpj:ack1-honest} \emph{($\mathrm{AC}_{\to k+1}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\to k+1}$ is honest and receives every voting-round-$k$ honest vote (which it then includes in its block), producing a block $B_{k+1} \succeq B_k$.
-  \item\label{rev:hpj:align} \emph{(AC--FG timing alignment):} $\Delta = c \cdot \Delta_{\mathit{AC}}$ for some integer $c \geq 1$, $\vote(k)$ lies on an AC slot boundary, and $\vote(j+1) - \vote(j) \geq \Delta_{\mathit{FG}}$ for every~$j$.
+  \item\label{rev:hpj:ack-honest} \emph{($\mathrm{AC}_{\to k}$ honest with canonical stability over voting round~$k$):} the proposer of $\mathrm{AC}_{\to k}$ is honest, producing block~$B_k$; AC canonical stability holds over $[\vote(k, 1),\, \vote(k, m)]$, so $\getConfirmed_v = B_k$ at every sub-round voting time $\vote(k, l)$ ($l = 1, \ldots, m$) for every honest~$v$.
+  \item\label{rev:hpj:ack1-honest} \emph{($\mathrm{AC}_{\to k+1}$ honest, vote inclusion):} the proposer of $\mathrm{AC}_{\to k+1}$ is honest and receives every voting-round-$k$ honest vote (across all $m$ sub-rounds), which it then includes in its block, producing a block $B_{k+1} \succeq B_k$.
+  \item\label{rev:hpj:align} \emph{(AC--FG timing alignment):} $\vote(k, l) - \vote(k, l-1) \geq \Delta_{\mathit{FG}}$ for $l = 2, \ldots, m$, $\vote(k+1) - \Delta_{\mathit{AC}} \geq \vote(k, m) + \Delta_{\mathit{FG}}$, and $\vote(k, 1)$ lies on an AC slot boundary.
   \item\label{rev:hpj:gate} \emph{(Cascade-gate frontier):} at $\vote(k)$, every honest store satisfies $\Sigma.\hmax = \Sigma.h_j + 1$ with $\Sigma.h_j = \comm{h}$, so the cascade gate of \getConfirmed{} fires, and $h_c \coloneqq \sigma[B_k].h = \comm{h} + 1$.
 \end{enumerate}
 
@@ -1200,24 +1313,24 @@ None of the Step~1--5 of the proof below uses condition~\ref{rev:def:healed-stat
 Then by time $\vote(k+1)$, in every honest validator's local view:
 \begin{enumerate}
   \item[\textnormal{(C1)}] $\Sigma_v.J = B_k$ and $\Sigma_v.h_j = h_c$.
-  \item[\textnormal{(C2)}] Every justification vote ($v.\target \neq \bot$) cast at $\vote(k+1)$ by an honest validator commits finalize-fields $(h_c,\, B_k)$, i.e., $v.\finalizeHeight = h_c$ and $v.\finalizeTarget = B_k$.
+  \item[\textnormal{(C2)}] Every justification vote ($v.\target \neq \bot$) cast in voting round~$k+1$ by an honest validator (at the validator's assigned sub-round voting time) commits finalize-fields $(h_c,\, B_k)$, i.e., $v.\finalizeHeight = h_c$ and $v.\finalizeTarget = B_k$.
 \end{enumerate}
 \end{lemma}
 
 \begin{proof}
 \textcolor{red}{\textbf{TODO --- Skeleton (five steps):}}
 \begin{description}
-\item[Step 1.] Honest validators cast unanimous (non-$\bot$) justification votes for $B_k$ at $h_c$. Use~\ref{rev:hpj:online},~\ref{rev:hpj:ack-honest},~\ref{rev:hpj:gate} to show $\Delta_i.T(h_c) = \bot$ and $\Delta_i.\tau(h_c) = \mathtt{false}$ at $\vote(k)$ for every honest~$i$, ruling out the lock and elif-timeout branches of \getFinalVote{} (\Cref{def:voterecord}); the first-vote branch fires with target~$B_k$. Honest count $\geq n - f > 2n/3$.
-\item[Step 2.] $\mathrm{AC}_{\to k+1}$'s proposer receives every honest voting-round-$k$ vote by $\vote(k) + \Delta$ via post-GST synchrony~\ref{rev:hpj:gst} and alignment~\ref{rev:hpj:align}.
+\item[Step 1.] Honest validators cast unanimous (non-$\bot$) justification votes for $B_k$ at $h_c$, across all $m$ sub-rounds. For honest~$i$ assigned to sub-round~$l$ of voting round~$k$, voting at $\vote(k, l)$: by~\ref{rev:hpj:online},~\ref{rev:hpj:ack-honest},~\ref{rev:hpj:gate}, $\Delta_i.T(h_c) = \bot$ and $\Delta_i.\tau(h_c) = \mathtt{false}$ at $\vote(k, l)$ (the semi-healed state~\ref{rev:hpj:healed} caps prior honest votes at height $\leq h_c - 1$, and each validator votes only once per voting round, so no earlier sub-round contributes a height-$h_c$ vote from~$i$). The lock and elif-timeout branches of \getFinalVote{} (\Cref{def:voterecord}) are unreachable, and the first-vote branch fires with target~$B_k$ (the AC canonical tip at $\vote(k, l)$ by~\ref{rev:hpj:ack-honest}). Aggregated across the $m$ sub-rounds, the honest count is $\geq n - f > 2n/3$.
+\item[Step 2.] $\mathrm{AC}_{\to k+1}$'s proposer receives every honest voting-round-$k$ vote by the start of its block construction at $\vote(k+1) - \Delta_{\mathit{AC}}$: the latest sub-round's votes (at $\vote(k, m)$) propagate within $\Delta_{\mathit{FG}}$ (post-GST synchrony~\ref{rev:hpj:gst}), and alignment~\ref{rev:hpj:align} ensures $\vote(k, m) + \Delta_{\mathit{FG}} \leq \vote(k+1) - \Delta_{\mathit{AC}}$.
 \item[Step 3.] $B_{k+1}$ is processed and confirmed in every honest's view by $\vote(k+1)$ via $\Delta_{\mathit{AC}}$ confirmation and~\ref{rev:hpj:ack1-honest},~\ref{rev:hpj:align}.
-\item[Step 4.] The justification cert event fires inside $\onBlock(B_{k+1})$: \processVote{} sets $\sigma.\targets[i] \gets B_k$ for $\geq 2n/3$ honest contributors (freshness via \Cref{lem:fresh-equiv}); the next \processSlot{} tick at $\vote(k+1)$ runs \processHeight{}, whose justification branch fires with $T = B_k$, advancing $\sigma.J \gets B_k$, $\sigma.h_j \gets h_c$, $\sigma.h \gets h_c + 1$. The $F$-filter and lex-test in \updateJustified{} pass, so $\Sigma_v.J \gets B_k$, $\Sigma_v.h_j \gets h_c$.
-\item[Step 5.] (C1) follows from Step~4 plus \Cref{prop:target-dominance}. (C2) follows from inspecting the gate inside \getFinalVote{} at $\vote(k+1)$: \getBaseVote{} reads $(h_f, T_f) = (h_c, B_k)$; $\Delta_i.T(h_c) = B_k$ (set by Step~1's \recordVote{}) and $\Delta_i.\tau(h_c) = \mathtt{false}$ pass the gate, keeping the finalize-fields.
+\item[Step 4.] The justification cert event fires inside $\onBlock(B_{k+1})$: \processVote{} sets $\sigma.\targets[i] \gets B_k$ for $\geq 2n/3$ honest contributors across the $m$ sub-rounds (freshness via \Cref{lem:fresh-equiv}); the next \processSlot{} tick at $\vote(k+1)$ runs \processHeight{}, whose justification branch fires with $T = B_k$, advancing $\sigma.J \gets B_k$, $\sigma.h_j \gets h_c$, $\sigma.h \gets h_c + 1$. The $F$-filter and lex-test in \updateJustified{} pass, so $\Sigma_v.J \gets B_k$, $\Sigma_v.h_j \gets h_c$.
+\item[Step 5.] (C1) follows from Step~4 plus \Cref{prop:target-dominance}. (C2) follows from inspecting the gate inside \getFinalVote{} at each honest validator's assigned sub-round voting time in voting round~$k+1$: \getBaseVote{} reads $(h_f, T_f) = (h_c, B_k)$; $\Delta_i.T(h_c) = B_k$ (pinned by Step~1's \recordVote{} at the validator's voting round-$k$ sub-round) and $\Delta_i.\tau(h_c) = \mathtt{false}$ pass the gate, keeping the finalize-fields.
 \end{description}
 \end{proof}
 
 \subsection{Per-round finalization lemma}\label{sec:liveness-fin}
 
-The justification cert event from \Cref{lem:per-round-justification} is observed in every honest's view at $\vote(k+1)$, but \emph{finality} of $B_k$ at height $h_c$ requires the voting-round-$(k+1)$ honest finalize-bearing votes (which carry finalize-fields $(h_c,\, B_k)$ by conclusion~(C2)) to be aggregated on-chain.
+The justification cert event from \Cref{lem:per-round-justification} is observed in every honest's view at $\vote(k+1)$, but \emph{finality} of $B_k$ at height $h_c$ requires the voting-round-$(k+1)$ honest finalize-bearing votes --- cast across all $m$ sub-rounds of voting round~$k+1$, each carrying finalize-fields $(h_c,\, B_k)$ by conclusion~(C2) --- to be aggregated on-chain.
 One additional honest AC slot suffices, namely $\mathrm{AC}_{\to k+2}$ (\Cref{fig:per-round-finality-timing}).
 
 \begin{figure}[H]
@@ -1252,7 +1365,7 @@ One additional honest AC slot suffices, namely $\mathrm{AC}_{\to k+2}$ (\Cref{fi
 \begin{lemma}[Per-round finalization on-chain]\label{lem:per-round-finalization}
 Assume hypotheses~\ref{rev:hpj:f}--\ref{rev:hpj:gate} of \Cref{lem:per-round-justification}, with~\ref{rev:hpj:f} and~\ref{rev:hpj:online} extended to $\vote(k+2)$, plus:
 \begin{itemize}
-  \item[\textnormal{(9)}]\label{rev:hpf:ack2-honest} \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and receives every voting-round-$(k+1)$ honest vote (which it then includes in its block), producing a block $B_{k+2} \succeq B_{k+1}$.
+  \item[\textnormal{(9)}]\label{rev:hpf:ack2-honest} \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and receives every voting-round-$(k+1)$ honest vote across all $m$ sub-rounds (which it then includes in its block), producing a block $B_{k+2} \succeq B_{k+1}$.
 \end{itemize}
 
 Then by time $\vote(k+2)$, in every honest validator's local view, $\Sigma_v.F \succeq B_k$ --- i.e., $B_k$ is finalized at height $h_c$.
@@ -1260,8 +1373,8 @@ Then by time $\vote(k+2)$, in every honest validator's local view, $\Sigma_v.F \
 
 \begin{proof}
 \textcolor{red}{\textbf{TODO --- Skeleton:}}
-By \Cref{lem:per-round-justification}~(C2), every honest validator's voting-round-$(k+1)$ justification vote commits finalize-fields $(h_c,\, B_k)$.
-By~(9), $\mathrm{AC}_{\to k+2}$'s proposer aggregates these into $B_{k+2} \succeq B_{k+1}$, confirmed in every honest's view by $\vote(k+2)$.
+By \Cref{lem:per-round-justification}~(C2), every honest validator's voting-round-$(k+1)$ justification vote (cast at the validator's assigned sub-round of voting round~$k+1$) commits finalize-fields $(h_c,\, B_k)$.
+By~(9), $\mathrm{AC}_{\to k+2}$'s proposer aggregates every voting-round-$(k+1)$ honest vote across the $m$ sub-rounds into $B_{k+2} \succeq B_{k+1}$, confirmed in every honest's view by $\vote(k+2)$.
 Inside $\onBlock(B_{k+2})$: \processBlock{} folds in the voting-round-$(k+1)$ honest votes; the chain has $\sigma.h_j = h_c$ and $\sigma.J = B_k$ at this point (from Step~4 of the previous lemma), so the $P$-gate of \processVote{} matches for every honest finalize-bearing vote, giving $|\sigma.P| \geq n - f > 2n/3$.
 The next \processSlot{} tick at $\vote(k+2)$ runs \processHeight{}: the finality branch fires \emph{first}, setting $\sigma.F \gets \sigma.J = B_k$.
 \updateFinalized{} is offered with $F' = B_k$; its three guards pass: $F' \succ \Sigma.F$ by monotonicity (\Cref{thm:finperm}), $F' \preceq \Sigma.J$ by \Cref{thm:fleqr} together with~(C1), and $F' \in \viableTree(\Sigma)$ by \Cref{lem:viable-finalized}.
@@ -1279,7 +1392,7 @@ Fix $k' \geq k$ and assume:
   \item The system is in a semi-healed state at voting round~$k$ with frontier height~$\comm{h}$ (\Cref{def:semi-healed}).
   \item $\start(k) - \Delta_{\mathit{AC}} \geq \GST$.
   \item Every honest validator is online throughout $[\start(k) - \Delta_{\mathit{AC}},\, \vote(k'+1)]$.
-  \item\label{rev:thm:ac-chain} For every $j \in [k,\, k'+1]$, $\mathrm{AC}_{\to j}$ is honest, and for $j > k$ its proposer receives every voting-round-$(j-1)$ honest vote (and includes them).
+  \item\label{rev:thm:ac-chain} For every $j \in [k,\, k'+1]$, $\mathrm{AC}_{\to j}$ is honest with AC canonical stability over voting round~$j$ (as in~\ref{rev:hpj:ack-honest} of \Cref{lem:per-round-justification}), and for $j > k$ its proposer receives every voting-round-$(j-1)$ honest vote across all $m$ sub-rounds (and includes them).
   \item AC--FG timing alignment as in~\ref{rev:hpj:align} of \Cref{lem:per-round-justification}.
   \item Cascade-gate frontier at voting round $k$ as in~\ref{rev:hpj:gate} of \Cref{lem:per-round-justification}.
 \end{enumerate}
@@ -1319,7 +1432,7 @@ Invoking \Cref{lem:per-round-justification} at voting round $j+1$ yields (T1) at
 Hypothesis~\ref{rev:hpj:ack-honest} gives uniform $B_k$ across honest, and combined with~\ref{rev:hpj:healed} and~\ref{rev:hpj:gst} every honest's $\sigma$ map agrees at the canonical tip; hence $h_c = \sigma[B_k].h$ is well-defined and uniform without separate hypothesis.
 
 \paragraph{Lock-clean falls out.}
-Hypothesis~\ref{rev:hpj:gate} (cascade-gate frontier with $h_c = \comm{h} + 1$) combined with \Cref{def:semi-healed}~(\ref{rev:def:healed-state:vote-h}) (every prior honest vote has height $\leq \sigma[\getConfirmed_{v_\ell}].h \leq h_c - 1$ when the gate holds) implies $\Delta_i.T(h_c) = \bot$ for every honest~$i$ at $\vote(k)$. Hence both the lock branch ($\Delta_i.\lambda(h_c) = \mathtt{true}$ requires a prior finalize-bearing vote at $h_c$) and the elif-timeout branch ($\Delta_i.T(h_c) \neq \bot$ requires a prior non-$\bot$ vote at $h_c$) of \getFinalVote{} are unreachable, leaving only the first-vote branch.
+Hypothesis~\ref{rev:hpj:gate} (cascade-gate frontier with $h_c = \comm{h} + 1$) combined with \Cref{def:semi-healed}~(\ref{rev:def:healed-state:vote-h}) (every prior honest vote has height $\leq \sigma[\getConfirmed_{v_\ell}].h \leq h_c - 1$ when the gate holds) implies $\Delta_i.T(h_c) = \bot$ for every honest~$i$ at the validator's voting-round-$k$ sub-round voting time (and each validator votes only once per voting round, so no earlier sub-round in voting round~$k$ contributes a height-$h_c$ vote from~$i$). Hence both the lock branch ($\Delta_i.\lambda(h_c) = \mathtt{true}$ requires a prior finalize-bearing vote at $h_c$) and the elif-timeout branch ($\Delta_i.T(h_c) \neq \bot$ requires a prior non-$\bot$ vote at $h_c$) of \getFinalVote{} are unreachable, leaving only the first-vote branch.
 
 \paragraph{Chained voting rounds and AC honesty re-use.}
 Under uniform FG voting round duration~\ref{rev:hpj:align}, $\mathrm{AC}_{\to j+1}$ plays double duty: it is the vote-inclusion voting round for round~$j$ and the target-uniformity voting round for round~$j+1$. Iterating across voting rounds, the per-round AC honesty requirement is therefore one voting round per round, with adjacent rounds sharing the boundary AC slot. Likewise hypothesis~\ref{rev:hpj:gate} for the next voting round's $h_c' = h_c + 1$ is automatic: the cert at $h_c$ in this voting round establishes the height advance at $\vote(j+1)$, restoring the cascade gate.
@@ -1335,6 +1448,158 @@ For a standalone single-voting-round lemma, hypothesis~\ref{rev:hpj:gate} must b
 
 \paragraph{Required changes to existing sections.}
 The justification lemma, finalization lemma, and theorem are self-contained and additive: they use existing definitions (\Cref{def:voting-rule}, \Cref{def:voterecord}, \Cref{def:semi-healed}, \Cref{def:standing}) and existing lemmas/properties (\Cref{lem:just-unique-height}, \Cref{lem:no-high-just}, \Cref{lem:viable-finalized}, \Cref{lem:semi-healing-persistence}, \Cref{thm:fleqr}, \Cref{thm:finperm}, \Cref{prop:target-dominance}). The new constant $\Delta_{\mathit{AC}}$ is local to this section and supersedes $\delta_c$ (\Cref{def:standing}) for these results' purposes; the spec's existing $\delta_c$ uses elsewhere remain valid as long as $\Delta_{\mathit{AC}}$ subsumes one AC slot operation plus $\delta_c$ confirmation. No edits to other sections are required.
+
+\subsection{Variants in target selection}\label{sec:liveness-variants}
+
+The lemmas above are stated for one specific choice of how an honest validator picks its voting-round-$k$ target. We discuss two variants of that choice; they differ in the strength of AC-honesty assumption required to deliver the cert event at $\vote(k{+}1, 1)$.
+
+\paragraph{Variant 1: target the canonical leaf $B_k$.}
+This is the variant treated by the per-round lemmas of this section.
+Every honest validator, regardless of which sub-round of voting round~$k$ it is assigned to, votes for $B_k$ --- the canonical AC tip at $\vote(k, 1)$ delivered by $\mathrm{AC}_{\to k}$ --- at height $h_c \coloneqq \sigma[B_k].h$.
+For all $m$ sub-rounds to agree on the same target, the AC canonical tip must remain $B_k$ across $[\vote(k, 1),\, \vote(k, m)]$; this is the AC canonical stability requirement of hypothesis~\ref{rev:hpj:ack-honest} of \Cref{lem:per-round-justification}.
+The on-chain cert event then fires at $\vote(k{+}1, 1)$ via the honest proposer of $\mathrm{AC}_{\to k+1}$ specifically (hypothesis~\ref{rev:hpj:ack1-honest}): this proposer must receive every voting-round-$k$ honest vote across all $m$ sub-rounds before constructing its block, and the timing constraint $\vote(k, m) + \Delta_{\mathit{FG}} \leq \vote(k{+}1, 1) - \Delta_{\mathit{AC}}$ ensures it can (\Cref{fig:per-round-timing}).
+
+\paragraph{Variant 2: target the anchor at height $h_c$.}
+In this variant, honest validators in voting round~$k$ vote for the \emph{anchor} of their canonical: the shortest prefix of $\getConfirmed_v$ at the same $\sigma$-height as $\getConfirmed_v$ (the same notion as the anchor of the post-syncer voting rule in \Cref{lem:healing-3slot}'s setup).
+Since the anchor is uniquely determined by the $\sigma$-height $h_c$ --- any two canonical leaves agreeing on the chain up to height $h_c$ share the same anchor at that height --- AC canonical stability across the voting round is not required: even if the AC reorgs between sub-rounds, the anchor at height $h_c$ stays the same target.
+
+The AC-honesty requirement also relaxes (\Cref{fig:variant-2-inclusion-window}).
+For variant~1 the proposer of $\mathrm{AC}_{\to k+1}$ --- the unique AC slot ending at $\vote(k{+}1, 1)$ --- has to be honest.
+For variant~2 it suffices that \emph{some} honest AC proposer in the inclusion window $[\vote(k, m),\, \vote(k{+}1, 1)]$ receives every $m$-th-sub-round honest vote and includes them in its block by $\vote(k{+}1, 1)$; the honest AC slot need not be $\mathrm{AC}_{\to k+1}$ specifically.
+Any AC slot whose construction starts at or after $\vote(k, m) + \Delta_{\mathit{FG}}$ and whose block lands by $\vote(k{+}1, 1)$ can play this role.
+
+\begin{figure}[H]
+\caption{Variant~2 inclusion window. The honest votes cast at $\vote(k, m)$ (green source) require $\Delta_{\mathit{FG}}$ to propagate, so an AC proposer can include them only if its block construction starts at or after $\vote(k, m) + \Delta_{\mathit{FG}}$ (gray dashed line). The candidate AC slots (green-highlighted) are those whose left edge sits at or after this propagation deadline and whose right edge lands at or before $\vote(k{+}1, 1)$. Unlike variant~1 (\Cref{fig:per-round-timing}), the honest AC slot need not be $\mathrm{AC}_{\to k+1}$ (the rightmost candidate) specifically; any honest AC slot in the candidate set suffices, because all honest validators target the anchor at height $h_c$ rather than the canonical leaf, and the anchor is uniquely determined by $h_c$ alone.}\label{fig:variant-2-inclusion-window}
+\begin{center}
+\begin{tikzpicture}[scale=0.9, every node/.style={font=\small}]
+  \draw[->, thick] (-1.0, 0) -- (15.5, 0) node[right] {time};
+  \node[anchor=east, font=\footnotesize, align=right] at (-0.3, 0.85) {AC};
+  \foreach \i in {0,1,...,13} {
+    \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
+  }
+  \foreach \i in {11, 12, 13} {
+    \draw[thick, fill=xgreen] (\i, 0.5) rectangle (\i+1, 1.2);
+  }
+  \foreach \x/\sl in {0/{$k$}, 12/{$k{+}1$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\voting round\\\sl};
+  }
+  \foreach \x/\j in {2/1, 4.5/2, 7/3} {
+    \draw[thick, blue!75] (\x, -0.12) -- (\x, 0.12);
+    \node[blue!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\vote(k, \j)$};
+    \draw[thick, dashed, gray!40] (\x, 0.15) -- (\x, 0.5);
+  }
+  \draw[ultra thick, green!55!black] (9.5, -0.18) -- (9.5, 0.18);
+  \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (9.5, -0.15) {$\vote(k, m)$\\votes cast};
+  \draw[ultra thick, green!55!black, dashed] (9.5, 0.15) -- (9.5, 2.8);
+  \draw[gray, dashed] (11, 1.2) -- (11, 2.8);
+  \draw[ultra thick, red!75] (14, -0.18) -- (14, 0.18);
+  \node[red!75, below=2pt, font=\scriptsize, align=center] at (14, -0.15) {$\vote(k{+}1, 1)$};
+  \draw[ultra thick, red!75, dashed] (14, 1.2) -- (14, 2.8);
+  \foreach \x in {0, 12} {
+    \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
+  }
+  \draw[<->, thick] (9.5, 2.6) -- (11, 2.6);
+  \node[above, font=\footnotesize] at (10.25, 2.6) {$\Delta_{\mathit{FG}}$};
+  \draw[decorate, decoration={brace, amplitude=5pt}, ultra thick, red!75]
+    (11, 1.35) -- (14, 1.35) node[midway, above=6pt, font=\footnotesize, red!75] {any honest AC slot here suffices};
+\end{tikzpicture}
+\end{center}
+\end{figure}
+
+\paragraph{Trade-off.}
+Variant~2 relaxes both the AC canonical stability requirement (needed in variant~1 to pin a uniform $B_k$ across the voting round) and the AC honesty location requirement (variant~1's $\mathrm{AC}_{\to k+1}$ versus variant~2's any AC slot in the inclusion window).
+The cost is that variant~2's on-chain target is the anchor block rather than the canonical leaf, so further analysis is needed to relate the anchor to the chain available to higher-level consumers of $\Sigma.J$.
+
+\paragraph{Variant 3: weakened freshness.}
+This variant relaxes the height-freshness check inside \processVote{} (\Cref{sec:model}) used to count a justification vote toward a justification quorum.
+The original check declares a justification vote $v$ fresh on a chain at state-height $\sigma.h$ iff the target sits at the chain's current state-height --- equivalently (\Cref{lem:fresh-equiv}) $\sigma[v.\target].h = \sigma.h$ --- together with the chain-prefix constraint $v.\target \prec \sigma.L$.
+Variant~3 widens the \emph{target} state-height predicate: a chain at state-height $\sigma.h$ now accepts as fresh both votes whose target sits at state-height $\sigma.h$ \emph{and} votes whose target sits at state-height $\sigma.h - 1$.
+
+Under variant~3 a voting-round-$k$ honest vote whose target is at state-height $h_c$ continues to be counted toward the cert event for that target even on chains whose state-height has already advanced to $h_c + 1$ during processing.
+Two regimes that benefit:
+\begin{itemize}
+  \item Sub-round-induced height advances within voting round~$k$: if an early sub-round's votes already form a justification quorum and the chain's state-height advances to $h_c + 1$ mid-round, later sub-rounds' votes whose target is at state-height $h_c$ are still admissible.
+  \item Cross-round vote-inclusion delays: a voting-round-$k$ honest vote that, under variant~1 or~2, would be aggregated by an AC slot whose chain has already advanced to $h_c + 1$ (because earlier voting-round-$(k+1)$ votes were processed first) is no longer dropped as stale.
+\end{itemize}
+Variant~3 composes with variant~1 or variant~2 (the freshness change is orthogonal to the target-selection change).
+The lemma chain of \Cref{sec:liveness-just,sec:liveness-fin,sec:liveness-range} requires re-checking: the per-round-justification cert event still requires $\geq 2n/3$ votes targeting the same block, but the broader freshness window changes the set of chains on which a given vote is counted, and \Cref{lem:fresh-equiv}'s ``freshness $\iff$ $\sigma[v.\target].h = \sigma[L].h$'' equivalence widens to ``freshness $\iff$ $\sigma[v.\target].h \in \{\sigma[L].h - 1, \sigma[L].h\}$''.
+
+\subparagraph{Inclusion-window relaxation.}
+Variant~3 also relaxes the AC-honesty timing constraint relative to variant~1.
+Under variant~1 (\Cref{fig:per-round-timing}), $\Delta_{\mathit{FG}}$ propagation must finish before the start of $\mathrm{AC}_{\to k+1}$ (the AC slot ending at $\vote(k{+}1, 1)$), i.e.,
+\[
+  \vote(k, m) + \Delta_{\mathit{FG}} \;\leq\; \vote(k{+}1, 1) - \Delta_{\mathit{AC}},
+\]
+because the cert event at the new frontier height $h_c$ fires by $\vote(k{+}1, 1)$, and any voting-round-$k$ vote not aggregated by then would target a block at state-height $h_c$ on a chain that has already advanced to $h_c + 1$ --- which fails freshness under variant~1.
+Under variant~3 the target side of the freshness check accepts $\sigma[v.\target].h = \sigma.h - 1$, so a voting-round-$k$ vote remains admissible until the chain advances a \emph{second} time (to state-height $h_c + 2$); the cert event for that further advance fires by $\vote(k{+}2, 1)$, so $\Delta_{\mathit{FG}}$ propagation need only finish before the start of $\mathrm{AC}_{\to k+2}$ (the AC slot ending at $\vote(k{+}2, 1)$), i.e.,
+\[
+  \vote(k, m) + \Delta_{\mathit{FG}} \;\leq\; \vote(k{+}2, 1) - \Delta_{\mathit{AC}}.
+\]
+The honest-AC-slot inclusion window for voting-round-$k$ votes thus extends from $[\vote(k, m),\, \vote(k{+}1, 1)]$ (variant~2 alone) to $[\vote(k, m),\, \vote(k{+}2, 1) - \Delta_{\mathit{AC}}]$ (variant~2 composed with variant~3); see \Cref{fig:variant-3-inclusion-window}.
+
+\begin{figure}[H]
+\caption{Variant~3 inclusion window (composed with variant~2). The honest votes cast at $\vote(k, m)$ (green source) require $\Delta_{\mathit{FG}}$ to propagate, so an AC proposer can include them only if its block construction starts at or after $\vote(k, m) + \Delta_{\mathit{FG}}$ (gray dashed line). Under variant~1 (\Cref{fig:per-round-timing}) the candidate window would close at $\vote(k{+}1, 1)$ (orange tick), but under variant~3 the freshness widening keeps the votes admissible until the chain advances a second time, so the window extends to $\vote(k{+}2, 1)$ (red tick). The candidate AC slots (green-highlighted) are those whose left edge sits at or after the propagation deadline and whose right edge lands at or before $\vote(k{+}2, 1)$.}\label{fig:variant-3-inclusion-window}
+\begin{center}
+\begin{tikzpicture}[scale=0.75, every node/.style={font=\small}]
+  \draw[->, thick] (-1.0, 0) -- (17, 0) node[right] {time};
+  \node[anchor=east, font=\footnotesize, align=right] at (-0.3, 0.85) {AC};
+  \foreach \i in {0,1,...,15} {
+    \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
+  }
+  \foreach \i in {7,8,9,10,11,12,13,14} {
+    \draw[thick, fill=xgreen] (\i, 0.5) rectangle (\i+1, 1.2);
+  }
+  \foreach \x/\sl in {0/{$k$}, 7/{$k{+}1$}, 14/{$k{+}2$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\voting round\\\sl};
+  }
+  \draw[ultra thick, green!55!black] (5.5, -0.18) -- (5.5, 0.18);
+  \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (5.5, -0.15) {$\vote(k, m)$\\votes cast};
+  \draw[ultra thick, green!55!black, dashed] (5.5, 0.15) -- (5.5, 2.8);
+  \draw[gray, dashed] (7, 1.2) -- (7, 2.8);
+  \draw[thick, orange!85!black] (8, -0.18) -- (8, 0.18);
+  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.15) {$\vote(k{+}1, 1)$\\(variant~1\\deadline)};
+  \draw[thick, orange!85!black, dashed] (8, 1.2) -- (8, 2.8);
+  \draw[ultra thick, red!75] (15, -0.18) -- (15, 0.18);
+  \node[red!75, below=2pt, font=\scriptsize, align=center] at (15, -0.15) {$\vote(k{+}2, 1)$\\(variant~3\\deadline)};
+  \draw[ultra thick, red!75, dashed] (15, 1.2) -- (15, 2.8);
+  \foreach \x in {0, 7, 14} {
+    \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
+  }
+  \draw[<->, thick] (5.5, 2.6) -- (7, 2.6);
+  \node[above, font=\footnotesize] at (6.25, 2.6) {$\Delta_{\mathit{FG}}$};
+  \draw[decorate, decoration={brace, amplitude=5pt}, ultra thick, red!75]
+    (7, 1.35) -- (15, 1.35) node[midway, above=6pt, font=\footnotesize, red!75] {any honest AC slot here suffices (variant~3)};
+\end{tikzpicture}
+\end{center}
+\end{figure}
+
+\subparagraph{State-transition modifications.}
+The per-chain state $\sigma$ does not currently expose the state-height of an arbitrary past block via $\sigma$'s own fields; we therefore add one tracked field and update \processHeightEvents{} so that the freshness check in \processVote{} can be expressed purely in terms of current $\sigma$ fields.
+
+\emph{State extension.}
+Add a field $\sigma.s_h^{\mathrm{prev}}$ to the per-chain state $\sigma$, initialised to $0$ at genesis: the slot at which the chain reached state-height $\sigma.h - 1$ (i.e., the second-most-recent state-height advance).
+Equivalently, $\sigma.s_h^{\mathrm{prev}}$ holds the previous value of $\sigma.s_h$ just before each state-height advance.
+
+\emph{\processHeightEvents{} modification.}
+Just before each $\sigma.s_h \gets \sigma.s$ assignment (in both the justification and timeout branches), save the old value:
+\[
+  \sigma.s_h^{\mathrm{prev}} \gets \sigma.s_h, \qquad \sigma.s_h \gets \sigma.s.
+\]
+
+\emph{\processVote{} freshness modification.}
+The justification-vote freshness check
+\[
+  \fresh \gets (v.\height = \sigma.h) \land (v.\target \prec \sigma.L) \land (v.\target.\slot \geq \sigma.s_h)
+\]
+is replaced by
+\[
+  \fresh \gets (v.\height = \sigma.h) \land (v.\target \prec \sigma.L) \land (v.\target.\slot \geq \sigma.s_h^{\mathrm{prev}}).
+\]
+Only the freshness-slot constraint relaxes, from $\sigma.s_h$ to $\sigma.s_h^{\mathrm{prev}}$; the vote-height check ($v.\height = \sigma.h$) and the chain-prefix constraint ($v.\target \prec \sigma.L$) are unchanged.
+On the chain, the relaxed slot bound admits targets sitting at state-height $\sigma.h - 1$ or $\sigma.h$ (rather than only at $\sigma.h$): a block with slot in $[\sigma.s_h^{\mathrm{prev}},\, \sigma.s_h - 1]$ on the chain has state-height $\sigma.h - 1$, while a block with slot $\geq \sigma.s_h$ has state-height $\sigma.h$.
+The timeout-vote branch ($v.\target = \bot$) is unchanged --- a timeout has no target, so the target-state-height widening does not apply to it.
 
 \section{Healing from asynchrony}\label{sec:healing}
 
