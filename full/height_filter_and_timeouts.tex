@@ -1070,6 +1070,13 @@ The extension and its update routines are summarised in \Cref{alg:stability-stor
   \Sigma.\mathcal{S} \;=\; \{\,v \;:\; v \text{ is a stability vote received by this validator with } v.r \in [\Sigma.r - \eta,\; \Sigma.r - 1]\,\}.
 \]
 
+\paragraph{Stability votes are off-chain.}
+Stability votes are \emph{not} stored on-chain: they are disseminated peer-to-peer (e.g.\ by gossip) and held purely in each validator's local store $\Sigma.\mathcal{S}$.
+Unlike finality votes (which the AC proposer aggregates into its blocks to drive cert events in \processBlock{}), stability votes never enter \processVote{}, \processBlock{}, or \processHeight{}, and contribute no on-chain state advance; their sole effect is the local filtering performed by the modified \getConfirmed{} (\Cref{alg:stability-getconfirmed}).
+Stability votes are \emph{not} stored on-chain: they are disseminated peer-to-peer (e.g.\ by gossip) and held purely in each validator's local store $\Sigma.\mathcal{S}$, alongside the existing fork-choice fields.
+Unlike finality votes (which the AC proposer aggregates into its blocks to drive cert events in \processBlock{}), stability votes never enter \processVote{}, \processBlock{}, or \processHeight{}, and contribute no on-chain state advance.
+Their sole effect is the local filtering performed by the modified \getConfirmed{} (\Cref{alg:stability-getconfirmed}).
+
 \begin{figure}[H]
 \caption{Store extension and update routines for tracking stability votes (\Cref{def:stability-vote}) with voting-round index in the sliding window $[\Sigma.r - \eta,\; \Sigma.r - 1]$. \onVotingRoundTick{} is an external callback invoked by the environment at each voting-round boundary.}\label{alg:stability-store}
 \begin{center}
@@ -1149,6 +1156,11 @@ A voting round may be subdivided into $m \geq 1$ \emph{sub-rounds}, each ending 
 The validator set is partitioned across the $m$ sub-rounds of voting round~$k$, and only the validators assigned to a given sub-round cast their (single) vote at that sub-round's finality voting time; validators assigned to other sub-rounds of the same voting round do not vote at this finality voting time.
 Consequently, the votes cast across all $m$ sub-rounds of voting round~$k$ together account for exactly one vote per validator.
 
+\paragraph{Co-emitted stability vote.}
+At each finality voting time, a validator casting its single finality vote of voting round~$k$ also emits a \emph{stability vote} (\Cref{def:stability-vote}) via \getStabilityVote{} (\Cref{alg:stability}), tagged with the current voting-round index~$k$.
+The two votes are paired: the finality vote drives the cert events of \Cref{sec:safety,sec:store,sec:leak}, while the stability vote feeds the stabilization gadget of \Cref{sec:stability} and is aggregated by \getConfirmed{}'s stability-vote-majority filter (\Cref{alg:stability-getconfirmed}).
+A validator that fails to cast its finality vote in voting round~$k$ also fails to cast a stability vote for round~$k$; the two are emitted (or not) together.
+
 \paragraph{Impact on the inactivity leak of \Cref{sec:leak}.}
 The leak bookkeeping of \Cref{sec:leak} fires its per-validator penalty increments at each invocation of \processHeight{}, with implicit horizon "all $n$ validators have already had a chance to vote by now" --- a horizon that coincides with $\vote(k)$ only when $m = 1$.
 Under sub-round partitioning ($m > 1$), validators assigned to sub-rounds $j' > j$ of voting round~$k$ have not yet cast their vote at the $j$-th finality voting time, so $\sigma.\timeouts[i] = \mathtt{false}$ and $\sigma.\targets[i] = \bot$ for them; the Layer~1 stall guard and the Layer~2 target guard of \Cref{alg:leak-processslot} would therefore bump these validators at every sub-round that precedes their assigned one, even though they are about to vote on schedule.
@@ -1170,7 +1182,7 @@ Theorem~\ref{thm:tightness} (the structural lower bound on the total penalty ove
   }
   \foreach \x/\j in {2/1, 4.5/2, 7/3, 9.5/m} {
     \draw[thick, blue!75] (\x, -0.12) -- (\x, 0.12);
-    \node[blue!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\j$-th\\finality voting\\time in\\voting round $k$};
+    \node[blue!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\j$-th\\finality \& stab. \\voting time in\\voting round $k$};
   }
   \foreach \x in {2, 4.5, 7, 9.5} {
     \draw[thick, dashed, gray!40] (\x, 0.15) -- (\x, 0.5);
@@ -1216,7 +1228,7 @@ Each voting round~$j$ is partitioned into $m \geq 1$ sub-rounds (\Cref{sec:fg-ac
 \[
   \vote(j, 1),\, \vote(j, 2),\, \ldots,\, \vote(j, m),
 \]
-and the validator set partitioned across them so that each honest validator casts exactly one vote in voting round~$j$, at their assigned sub-round's voting time.
+and the validator set partitioned across them so that each honest validator casts exactly one finality vote in voting round~$j$, at their assigned sub-round's voting time. At the same instant, the validator also emits a stability vote (\Cref{def:stability-vote}, \Cref{sec:fg-ac-interaction}) tagged with the voting-round index~$j$; the two votes are paired and produced together.
 We write $\vote(j) \coloneqq \vote(j, 1)$ for the first finality voting time of voting round~$j$, and refer to $\vote(j{+}1) = \vote(j{+}1, 1)$ as the \emph{settlement time} of voting round~$j$ --- the first finality voting time of the following voting round, by which the inclusion window of every sub-round of round~$j$ closes (\Cref{fig:per-round-timing}).
 
 \paragraph{AC--FG timing alignment.}
@@ -1525,21 +1537,21 @@ Two regimes that benefit:
 Variant~3 composes with variant~1 or variant~2 (the freshness change is orthogonal to the target-selection change).
 The lemma chain of \Cref{sec:liveness-just,sec:liveness-fin,sec:liveness-range} requires re-checking: the per-round-justification cert event still requires $\geq 2n/3$ votes targeting the same block, but the broader freshness window changes the set of chains on which a given vote is counted, and \Cref{lem:fresh-equiv}'s ``freshness $\iff$ $\sigma[v.\target].h = \sigma[L].h$'' equivalence widens to ``freshness $\iff$ $\sigma[v.\target].h \in \{\sigma[L].h - 1, \sigma[L].h\}$''.
 
-\subparagraph{Inclusion-window relaxation.}
-Variant~3 also relaxes the AC-honesty timing constraint relative to variant~1.
+\subparagraph{Timing-constraint relaxation.}
+Variant~3 also relaxes the $\Delta_{\mathit{FG}}$ timing constraint relative to variant~1, while keeping the same shape of AC-honesty requirement (one specific honest AC slot, just one voting round later).
 Under variant~1 (\Cref{fig:per-round-timing}), $\Delta_{\mathit{FG}}$ propagation must finish before the start of $\mathrm{AC}_{\to k+1}$ (the AC slot ending at $\vote(k{+}1, 1)$), i.e.,
 \[
   \vote(k, m) + \Delta_{\mathit{FG}} \;\leq\; \vote(k{+}1, 1) - \Delta_{\mathit{AC}},
 \]
 because the cert event at the new frontier height $h_c$ fires by $\vote(k{+}1, 1)$, and any voting-round-$k$ vote not aggregated by then would target a block at state-height $h_c$ on a chain that has already advanced to $h_c + 1$ --- which fails freshness under variant~1.
-Under variant~3 the target side of the freshness check accepts $\sigma[v.\target].h = \sigma.h - 1$, so a voting-round-$k$ vote remains admissible until the chain advances a \emph{second} time (to state-height $h_c + 2$); the cert event for that further advance fires by $\vote(k{+}2, 1)$, so $\Delta_{\mathit{FG}}$ propagation need only finish before the start of $\mathrm{AC}_{\to k+2}$ (the AC slot ending at $\vote(k{+}2, 1)$), i.e.,
+Under variant~3 the target side of the freshness check accepts $\sigma[v.\target].h = \sigma.h - 1$, so a voting-round-$k$ vote remains admissible until the chain advances a \emph{second} time (to state-height $h_c + 2$); the cert event for that further advance fires by $\vote(k{+}2, 1)$, so the honest AC slot we need is $\mathrm{AC}_{\to k+2}$ (the AC slot ending at $\vote(k{+}2, 1)$), and $\Delta_{\mathit{FG}}$ propagation need only finish before its start:
 \[
   \vote(k, m) + \Delta_{\mathit{FG}} \;\leq\; \vote(k{+}2, 1) - \Delta_{\mathit{AC}}.
 \]
-The honest-AC-slot inclusion window for voting-round-$k$ votes thus extends from $[\vote(k, m),\, \vote(k{+}1, 1)]$ (variant~2 alone) to $[\vote(k, m),\, \vote(k{+}2, 1) - \Delta_{\mathit{AC}}]$ (variant~2 composed with variant~3); see \Cref{fig:variant-3-inclusion-window}.
+See \Cref{fig:variant-3-inclusion-window}. Variant~3 thus changes the location of the required honest AC slot from $\mathrm{AC}_{\to k+1}$ (variant~1) to $\mathrm{AC}_{\to k+2}$ and stretches the $\Delta_{\mathit{FG}}$ budget by one voting-round length, but it does not turn the constraint into ``any honest AC slot in some window''.
 
 \begin{figure}[H]
-\caption{Variant~3 inclusion window (composed with variant~2). The honest votes cast at $\vote(k, m)$ (green source) require $\Delta_{\mathit{FG}}$ to propagate, so an AC proposer can include them only if its block construction starts at or after $\vote(k, m) + \Delta_{\mathit{FG}}$ (gray dashed line). Under variant~1 (\Cref{fig:per-round-timing}) the candidate window would close at $\vote(k{+}1, 1)$ (orange tick), but under variant~3 the freshness widening keeps the votes admissible until the chain advances a second time, so the window extends to $\vote(k{+}2, 1)$ (red tick). The candidate AC slots (green-highlighted) are those whose left edge sits at or after the propagation deadline and whose right edge lands at or before $\vote(k{+}2, 1)$.}\label{fig:variant-3-inclusion-window}
+\caption{Variant~3 timing constraint. The honest votes cast at $\vote(k, m)$ (green source) require $\Delta_{\mathit{FG}}$ to propagate to the proposer of $\mathrm{AC}_{\to k+2}$ (the AC slot ending at $\vote(k{+}2, 1)$, highlighted in green), whose block construction starts at $\vote(k{+}2, 1) - \Delta_{\mathit{AC}}$ (gray dashed line). Under variant~1 (\Cref{fig:per-round-timing}) the corresponding honest AC slot was $\mathrm{AC}_{\to k+1}$ (orange tick at $\vote(k{+}1, 1)$); variant~3 stretches the budget by one voting round, requiring honesty of $\mathrm{AC}_{\to k+2}$ instead.}\label{fig:variant-3-inclusion-window}
 \begin{center}
 \begin{tikzpicture}[scale=0.75, every node/.style={font=\small}]
   \draw[->, thick] (-1.0, 0) -- (17, 0) node[right] {time};
@@ -1547,9 +1559,8 @@ The honest-AC-slot inclusion window for voting-round-$k$ votes thus extends from
   \foreach \i in {0,1,...,15} {
     \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
   }
-  \foreach \i in {7,8,9,10,11,12,13,14} {
-    \draw[thick, fill=xgreen] (\i, 0.5) rectangle (\i+1, 1.2);
-  }
+  \draw[thick, fill=xgreen] (14, 0.5) rectangle (15, 1.2);
+  \node[font=\scriptsize] at (14.5, 0.85) {$\mathrm{AC}_{\to k{+}2}$};
   \foreach \x/\sl in {0/{$k$}, 7/{$k{+}1$}, 14/{$k{+}2$}} {
     \draw[thick] (\x, -0.12) -- (\x, 0.12);
     \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\voting round\\\sl};
@@ -1557,20 +1568,18 @@ The honest-AC-slot inclusion window for voting-round-$k$ votes thus extends from
   \draw[ultra thick, green!55!black] (5.5, -0.18) -- (5.5, 0.18);
   \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (5.5, -0.15) {$\vote(k, m)$\\votes cast};
   \draw[ultra thick, green!55!black, dashed] (5.5, 0.15) -- (5.5, 2.8);
-  \draw[gray, dashed] (7, 1.2) -- (7, 2.8);
   \draw[thick, orange!85!black] (8, -0.18) -- (8, 0.18);
   \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.15) {$\vote(k{+}1, 1)$\\(variant~1\\deadline)};
   \draw[thick, orange!85!black, dashed] (8, 1.2) -- (8, 2.8);
   \draw[ultra thick, red!75] (15, -0.18) -- (15, 0.18);
   \node[red!75, below=2pt, font=\scriptsize, align=center] at (15, -0.15) {$\vote(k{+}2, 1)$\\(variant~3\\deadline)};
   \draw[ultra thick, red!75, dashed] (15, 1.2) -- (15, 2.8);
+  \draw[gray, dashed] (14, 1.2) -- (14, 2.8);
   \foreach \x in {0, 7, 14} {
     \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
   }
-  \draw[<->, thick] (5.5, 2.6) -- (7, 2.6);
-  \node[above, font=\footnotesize] at (6.25, 2.6) {$\Delta_{\mathit{FG}}$};
-  \draw[decorate, decoration={brace, amplitude=5pt}, ultra thick, red!75]
-    (7, 1.35) -- (15, 1.35) node[midway, above=6pt, font=\footnotesize, red!75] {any honest AC slot here suffices (variant~3)};
+  \draw[<->, thick] (5.5, 2.6) -- (14, 2.6);
+  \node[above, font=\footnotesize] at (9.75, 2.6) {$\Delta_{\mathit{FG}}$ (vote propagation)};
 \end{tikzpicture}
 \end{center}
 \end{figure}
