@@ -1560,26 +1560,26 @@ See \Cref{fig:variant-3-inclusion-window}. Variant~3 thus changes the location o
     \draw[thick, fill=xlightgray] (\i, 0.5) rectangle (\i+1, 1.2);
   }
   \draw[thick, fill=xgreen] (14, 0.5) rectangle (15, 1.2);
-  \node[font=\scriptsize] at (14.5, 0.85) {$\mathrm{AC}_{\to k{+}2}$};
-  \foreach \x/\sl in {0/{$k$}, 7/{$k{+}1$}, 14/{$k{+}2$}} {
-    \draw[thick] (\x, -0.12) -- (\x, 0.12);
-    \node[below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\start$\\voting round\\\sl};
-  }
-  \draw[ultra thick, green!55!black] (5.5, -0.18) -- (5.5, 0.18);
-  \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (5.5, -0.15) {$\vote(k, m)$\\votes cast};
-  \draw[ultra thick, green!55!black, dashed] (5.5, 0.15) -- (5.5, 2.8);
-  \draw[thick, orange!85!black] (8, -0.18) -- (8, 0.18);
-  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.15) {$\vote(k{+}1, 1)$\\(variant~1\\deadline)};
-  \draw[thick, orange!85!black, dashed] (8, 1.2) -- (8, 2.8);
-  \draw[ultra thick, red!75] (15, -0.18) -- (15, 0.18);
-  \node[red!75, below=2pt, font=\scriptsize, align=center] at (15, -0.15) {$\vote(k{+}2, 1)$\\(variant~3\\deadline)};
-  \draw[ultra thick, red!75, dashed] (15, 1.2) -- (15, 2.8);
   \draw[gray, dashed] (14, 1.2) -- (14, 2.8);
+  \draw[thick, orange!85!black, dashed] (8, 1.2) -- (8, 2.8);
+  \draw[ultra thick, red!75, dashed] (15, 1.2) -- (15, 2.8);
+  \draw[ultra thick, green!55!black, dashed] (5.5, 0.15) -- (5.5, 2.8);
   \foreach \x in {0, 7, 14} {
     \draw[ultra thick, gray!60] (\x, 0.15) -- (\x, 2);
   }
+  \node[font=\scriptsize, anchor=south, fill=white, inner sep=1pt] at (14.5, 2.85) {$\mathrm{AC}_{\to k{+}2}$};
+  \foreach \x/\sl in {0/{$k$}, 7/{$k{+}1$}, 14/{$k{+}2$}} {
+    \draw[thick] (\x, -0.12) -- (\x, 0.12);
+    \node[below=2pt, font=\scriptsize] at (\x, -0.15) {$\start(\sl)$};
+  }
+  \draw[ultra thick, green!55!black] (5.5, -0.18) -- (5.5, 0.18);
+  \node[green!55!black, below=2pt, font=\scriptsize, align=center] at (5.5, -0.55) {$\vote(k, m)$\\votes cast};
+  \draw[thick, orange!85!black] (8, -0.18) -- (8, 0.18);
+  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.55) {$\vote(k{+}1, 1)$\\\textit{\scriptsize var.~1 deadline}};
+  \draw[ultra thick, red!75] (15, -0.18) -- (15, 0.18);
+  \node[red!75, below=2pt, font=\scriptsize, align=center] at (15, -0.55) {$\vote(k{+}2, 1)$\\\textit{\scriptsize var.~3 deadline}};
   \draw[<->, thick] (5.5, 2.6) -- (14, 2.6);
-  \node[above, font=\footnotesize] at (9.75, 2.6) {$\Delta_{\mathit{FG}}$ (vote propagation)};
+  \node[above, font=\footnotesize, fill=white, inner sep=1pt] at (9.75, 2.6) {$\Delta_{\mathit{FG}}$ (vote propagation)};
 \end{tikzpicture}
 \end{center}
 \end{figure}
