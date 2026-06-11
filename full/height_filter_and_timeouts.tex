@@ -1463,15 +1463,9 @@ The justification lemma, finalization lemma, and theorem are self-contained and 
 
 \subsection{Variants in target selection}\label{sec:liveness-variants}
 
-The lemmas above are stated for one specific choice of how an honest validator picks its voting-round-$k$ target. We discuss two variants of that choice; they differ in the strength of AC-honesty assumption required to deliver the cert event at $\vote(k{+}1, 1)$.
+The per-round lemmas above are stated for one specific choice of how an honest validator picks its voting-round-$k$ target: voting for the canonical leaf $B_k$ delivered by $\mathrm{AC}_{\to k}$. We discuss here a variant of that choice that relaxes the AC-honesty assumption required to deliver the cert event at $\vote(k{+}1, 1)$.
 
-\paragraph{Variant 1: target the canonical leaf $B_k$.}
-This is the variant treated by the per-round lemmas of this section.
-Every honest validator, regardless of which sub-round of voting round~$k$ it is assigned to, votes for $B_k$ --- the canonical AC tip at $\vote(k, 1)$ delivered by $\mathrm{AC}_{\to k}$ --- at height $h_c \coloneqq \sigma[B_k].h$.
-For all $m$ sub-rounds to agree on the same target, the AC canonical tip must remain $B_k$ across $[\vote(k, 1),\, \vote(k, m)]$; this is the AC canonical stability requirement of hypothesis~\ref{rev:hpj:ack-honest} of \Cref{lem:per-round-justification}.
-The on-chain cert event then fires at $\vote(k{+}1, 1)$ via the honest proposer of $\mathrm{AC}_{\to k+1}$ specifically (hypothesis~\ref{rev:hpj:ack1-honest}): this proposer must receive every voting-round-$k$ honest vote across all $m$ sub-rounds before constructing its block, and the timing constraint $\vote(k, m) + \Delta_{\mathit{FG}} \leq \vote(k{+}1, 1) - \Delta_{\mathit{AC}}$ ensures it can (\Cref{fig:per-round-timing}).
-
-\paragraph{Variant 2: target the anchor at height $h_c$.}
+\subsubsection{Variant 2: target the anchor at height $h_c$}
 In this variant, honest validators in voting round~$k$ vote for the \emph{anchor} of their canonical: the shortest prefix of $\getConfirmed_v$ at the same $\sigma$-height as $\getConfirmed_v$ (the same notion as the anchor of the post-syncer voting rule in \Cref{lem:healing-3slot}'s setup).
 Since the anchor is uniquely determined by the $\sigma$-height $h_c$ --- any two canonical leaves agreeing on the chain up to height $h_c$ share the same anchor at that height --- AC canonical stability across the voting round is not required: even if the AC reorgs between sub-rounds, the anchor at height $h_c$ stays the same target.
 
@@ -1523,7 +1517,8 @@ Any AC slot whose construction starts at or after $\vote(k, m) + \Delta_{\mathit
 Variant~2 relaxes both the AC canonical stability requirement (needed in variant~1 to pin a uniform $B_k$ across the voting round) and the AC honesty location requirement (variant~1's $\mathrm{AC}_{\to k+1}$ versus variant~2's any AC slot in the inclusion window).
 The cost is that variant~2's on-chain target is the anchor block rather than the canonical leaf, so further analysis is needed to relate the anchor to the chain available to higher-level consumers of $\Sigma.J$.
 
-\paragraph{Variant 3: weakened freshness.}
+\iffalse
+\subsubsection{Variant 3: weakened freshness}
 This variant relaxes the height-freshness check inside \processVote{} (\Cref{sec:model}) used to count a justification vote toward a justification quorum.
 The original check declares a justification vote $v$ fresh on a chain at state-height $\sigma.h$ iff the target sits at the chain's current state-height --- equivalently (\Cref{lem:fresh-equiv}) $\sigma[v.\target].h = \sigma.h$ --- together with the chain-prefix constraint $v.\target \prec \sigma.L$.
 Variant~3 widens the \emph{target} state-height predicate: a chain at state-height $\sigma.h$ now accepts as fresh both votes whose target sits at state-height $\sigma.h$ \emph{and} votes whose target sits at state-height $\sigma.h - 1$.
@@ -1609,6 +1604,7 @@ is replaced by
 Only the freshness-slot constraint relaxes, from $\sigma.s_h$ to $\sigma.s_h^{\mathrm{prev}}$; the vote-height check ($v.\height = \sigma.h$) and the chain-prefix constraint ($v.\target \prec \sigma.L$) are unchanged.
 On the chain, the relaxed slot bound admits targets sitting at state-height $\sigma.h - 1$ or $\sigma.h$ (rather than only at $\sigma.h$): a block with slot in $[\sigma.s_h^{\mathrm{prev}},\, \sigma.s_h - 1]$ on the chain has state-height $\sigma.h - 1$, while a block with slot $\geq \sigma.s_h$ has state-height $\sigma.h$.
 The timeout-vote branch ($v.\target = \bot$) is unchanged --- a timeout has no target, so the target-state-height widening does not apply to it.
+\fi
 
 \section{Healing from asynchrony}\label{sec:healing}
 
@@ -1649,7 +1645,7 @@ $\Delta_{\mathit{FG}}$ is strictly less than one FG voting round (cf.\ \Cref{def
 \Cref{fig:sparse-syncer-slots} illustrates the alignment.
 
 \begin{figure}[H]
-\caption{Variable-length FG voting rounds aligned to a uniform AC slot grid. AC slots (top row) all have the same length, and every FG voting round length is an integer multiple of one AC slot length. Voting round~$k$ is a syncer voting round, implementing the view-merge of \Cref{def:slot-timing}. Only voting round~$k-1$ --- the \emph{before-syncer} voting round --- must be longer than the others: it must host both its own vote and the freeze for voting round~$k$ at $\start(k) - \Delta_{\mathit{FG}}$. Voting rounds~$k-2$, $k$, and $k+1$ need only host their own vote and can all share the same shorter length. The figure assigns $6$ AC slots to voting round~$k-1$ and $4$ AC slots to each of voting rounds~$k-2$, $k$, $k+1$, and identifies $\syncer(k)$ with $\proposer_{\mathit{AC}}(k')$ at $\start(k') = \start(k)$. The FG and AC message-delay bounds $\Delta_{\mathit{FG}}$ and $\Delta_{\mathit{AC}}$ are independent design parameters.}\label{fig:sparse-syncer-slots}
+\caption{Variable-length FG voting rounds aligned to a uniform AC slot grid, with sub-round voting times shown inside each voting round (cf.\ \Cref{fig:slot-voting-times}). AC slots (top row) all have the same length, and every FG voting round length is an integer multiple of one AC slot length. Voting round~$k$ is a syncer voting round, implementing the view-merge of \Cref{def:slot-timing}. Only voting round~$k-1$ --- the \emph{before-syncer} voting round --- must be longer than the others: it must host both its sub-round voting times and the freeze for voting round~$k$ at $\start(k) - \Delta_{\mathit{FG}}$. Voting rounds~$k-2$, $k$, and $k+1$ need only host their sub-round voting times and can all share the same shorter length. Each voting round has $m \geq 1$ sub-rounds; the figure marks the first ($\vote(j, 1)$) and last ($\vote(j, m)$) per voting round. The figure assigns $6$ AC slots to voting round~$k-1$ and $4$ AC slots to each of voting rounds~$k-2$, $k$, $k+1$, and identifies $\syncer(k)$ with $\proposer_{\mathit{AC}}(k')$ at $\start(k') = \start(k)$.}\label{fig:sparse-syncer-slots}
 \begin{center}
 \begin{tikzpicture}[scale=0.65, every node/.style={font=\small}]
   \draw[->, thick] (-2.0, 0) -- (19.5, 0) node[right] {time};
@@ -1679,10 +1675,14 @@ $\Delta_{\mathit{FG}}$ is strictly less than one FG voting round (cf.\ \Cref{def
   }
   \foreach \x/\sl in {2/{$k{-}2$}, 6/{$k{-}1$}, 12/{$k$}, 16/{$k{+}1$}} {
     \draw[thick, red!75] (\x, -0.12) -- (\x, 0.12);
-    \node[red!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.15) {$\vote$\\\sl};
+    \node[red!75, below=2pt, font=\scriptsize, align=center] at (\x, -0.95) {$\vote$\\$(\sl, 1)$};
+  }
+  \foreach \x/\sl in {3/{$k{-}2$}, 7/{$k{-}1$}, 13/{$k$}, 17/{$k{+}1$}} {
+    \draw[thick, red!75] (\x, -0.12) -- (\x, 0.12);
+    \node[red!75, below=2pt, font=\scriptsize, align=center] at (\x, -1.75) {$\vote$\\$(\sl, m)$};
   }
   \draw[thick, orange!85!black] (8, -0.12) -- (8, 0.12);
-  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.15) {$\freeze$\\$k{-}1$};
+  \node[orange!85!black, below=2pt, font=\scriptsize, align=center] at (8, -0.95) {$\freeze$\\$k{-}1$};
   \draw[<->, thick] (8, 0.75) -- (10, 0.75);
   \node[fill=white, inner sep=1pt, font=\footnotesize] at (9, 0.75) {$\Delta_{\mathit{FG}}$};
   \draw[<->, thick] (10, 0.75) -- (12, 0.75);
