@@ -133,6 +133,7 @@
 \newtheorem*{theorem*}{Theorem}
 \newtheorem{corollary}{Corollary}
 \newtheorem{lemma}{Lemma}
+\newtheorem{lemmaboth}[lemma]{Lemma}
 \newtheorem{proposition}{Proposition}
 \newtheorem{property}[theorem]{Property}
 
@@ -1203,7 +1204,7 @@ Theorem~\ref{thm:tightness} (the structural lower bound on the total penalty ove
 \end{center}
 \end{figure}
 
-\section{Liveness argument (WIP)}\label{sec:liveness}
+\section{Liveness argument}\label{sec:liveness}
 
 Starting from a (semi-)healed state, we show that the protocol produces a fresh on-chain justification within one FG voting round and a fresh on-chain finalization within two FG voting rounds, given honest AC-layer participation at the relevant boundary voting rounds.
 The argument is parametric in the available chain (AC) on which \getConfirmed{} depends: we treat the AC as a black box, require only that its voting rounds are aligned with FG voting times, and ask for honest proposers at the AC slots that close each FG round.
@@ -1300,7 +1301,7 @@ Note that $\mathrm{AC}_{\to j+1}$ is also the target-uniformity AC slot for voti
 
 \subsection{Per-round justification lemma}\label{sec:liveness-just}
 
-\begin{lemma}[Per-round justification on-chain]\label{lem:per-round-justification}
+\begin{lemmaboth}[Per-round justification on-chain]\label{lem:per-round-justification}
 Assume:
 \begin{enumerate}
   \item\label{rev:hpj:f} $f^{\vote(k+1)} < n/3$ and honest validators follow \Cref{def:voting-rule}.
@@ -1312,7 +1313,7 @@ Assume:
   \item\label{rev:hpj:align} \emph{(AC--FG timing alignment):} $\vote(k, l) - \vote(k, l-1) \geq \Delta_{\mathit{FG}}$ for $l = 2, \ldots, m$, $\vote(k+1) - \Delta_{\mathit{AC}} \geq \vote(k, m) + \Delta_{\mathit{FG}}$, and $\vote(k, 1)$ lies on an AC slot boundary.
   \item\label{rev:hpj:gate} \emph{(Cascade-gate frontier):} at $\vote(k)$, every honest store satisfies $\Sigma.\hmax = \Sigma.h_j + 1$ with $\Sigma.h_j = \comm{h}$, so the cascade gate of \getConfirmed{} fires, and $h_c \coloneqq \sigma[B_k].h = \comm{h} + 1$.
 \end{enumerate}
-
+\iffull
 \begin{remark}[Discharging hypothesis~\ref{rev:hpj:gate}]
 When the (semi-)healed state arises from \Cref{lem:healing-3slot}, hypothesis~\ref{rev:hpj:gate} is automatic: Step~5 of that lemma's proof (the cascade-gate analysis) establishes $\Sigma.\hmax = \Sigma.h_j + 1$ at the post-healing voting round, with both admissible $(\hmax, h_j)$ pairs satisfying the gate. Under \Cref{lem:semi-healing-persistence} the cascade gate is preserved across subsequent semi-healed voting rounds.
 For a standalone single-voting-round use of this lemma, hypothesis~\ref{rev:hpj:gate} must be supplied separately.
@@ -1327,7 +1328,8 @@ Then by time $\vote(k+1)$, in every honest validator's local view:
   \item[\textnormal{(C1)}] $\Sigma_v.J = B_k$ and $\Sigma_v.h_j = h_c$.
   \item[\textnormal{(C2)}] Every justification vote ($v.\target \neq \bot$) cast in voting round~$k+1$ by an honest validator (at the validator's assigned sub-round voting time) commits finalize-fields $(h_c,\, B_k)$, i.e., $v.\finalizeHeight = h_c$ and $v.\finalizeTarget = B_k$.
 \end{enumerate}
-\end{lemma}
+\fi
+\end{lemmaboth}
 
 \begin{proof}
 \textcolor{red}{\textbf{TODO --- Skeleton (five steps):}}
@@ -1374,14 +1376,14 @@ One additional honest AC slot suffices, namely $\mathrm{AC}_{\to k+2}$ (\Cref{fi
 \end{center}
 \end{figure}
 
-\begin{lemma}[Per-round finalization on-chain]\label{lem:per-round-finalization}
+\begin{lemmaboth}[Per-round finalization on-chain]\label{lem:per-round-finalization}
 Assume hypotheses~\ref{rev:hpj:f}--\ref{rev:hpj:gate} of \Cref{lem:per-round-justification}, with~\ref{rev:hpj:f} and~\ref{rev:hpj:online} extended to $\vote(k+2)$, plus:
 \begin{itemize}
   \item[\textnormal{(9)}]\label{rev:hpf:ack2-honest} \emph{($\mathrm{AC}_{\to k+2}$ honest, finalize-vote inclusion):} the proposer of $\mathrm{AC}_{\to k+2}$ is honest and receives every voting-round-$(k+1)$ honest vote across all $m$ sub-rounds (which it then includes in its block), producing a block $B_{k+2} \succeq B_{k+1}$.
 \end{itemize}
 
 Then by time $\vote(k+2)$, in every honest validator's local view, $\Sigma_v.F \succeq B_k$ --- i.e., $B_k$ is finalized at height $h_c$.
-\end{lemma}
+\end{lemmaboth}
 
 \begin{proof}
 \textcolor{red}{\textbf{TODO --- Skeleton:}}
