@@ -100,6 +100,7 @@
 % --- Latest head votes / stabilization gadget (SG), Section \ref{sec:headvotes} ---
 \newcommand{\Supp}{\ensuremath{S}}          % latest-head-vote support S(\cdot)
 \newcommand{\Dvote}{\ensuremath{D}}         % total live latest-head-vote weight
+\newcommand{\Credit}{\ensuremath{\mathsf{Credit}}} % credited previous-round support
 \newcommand{\Wvote}{\ensuremath{W}}         % latest-head-vote expiry window
 \newcommand{\headf}{\mathsf{head}}          % attestation head field = SG latest message
 % --- Height classes, Section \ref{sec:heightclasses} ---
@@ -111,7 +112,6 @@
 % --- Vote construction, Section \ref{sec:voteconstruction} ---
 \newcommand{\rzero}{\ensuremath{r_{0}}}                 % round's first slot
 \newcommand{\emptyckpt}{\ensuremath{\mathsf{Checkpoint}()}} % empty checkpoint
-\newcommand{\anchor}{\textsf{anchor}\xspace}
 % --- Procedure names ---
 \newcommand{\cascadeRoot}{\textsf{cascadeRoot}\xspace}
 \newcommand{\walk}{\textsf{walk}\xspace}
@@ -532,7 +532,7 @@ When the gate holds, $\sigma[\Sigma.J].h = \Sigma.h_j = \Sigma.\hmax - 1$ meets 
 When it fails, $\Sigma.J$ is ``stale'' --- some chain has advanced past $\Sigma.J$'s height via timeout cert --- and the adversary cannot force canonical to track such a justification even if its key dominates by lex.
 The choice among admissible descendants is left to~$\Omega$.
 Different validators may pass different~$\Omega$, and a single validator may pass different~$\Omega$ at different call sites.
-Section~\ref{sec:forkchoice} instantiates this~\(\Omega\) and the walk-from cascade concretely: \(\Omega\) is the Goldfish available-chain state, the descent among viable descendants first fixes an anchor (the fresh quorum a proposal points to, or the latest-head-vote grade-1 descent as fallback) and then follows Goldfish and the viability descent (Definition~\ref{def:walk}), and Lemma~\ref{lem:walk-total} shows the instantiation meets Corollary~\ref{cor:getConfirmed-total}, so every store result of this section is preserved unchanged.
+Section~\ref{sec:forkchoice} instantiates this~\(\Omega\) and the walk-from cascade concretely: \(\Omega\) is the Goldfish available-chain state, the descent among viable descendants first fixes an anchor (a locally accepted fresh-root pointer, or the latest-head-vote grade-1 descent as fallback) and then follows Goldfish and the viability descent (Definition~\ref{def:walk}), and Lemma~\ref{lem:walk-total} shows the instantiation meets Corollary~\ref{cor:getConfirmed-total}, so every store result of this section is preserved unchanged.
 
 \begin{figure}[H]
 \caption{Store and fork-choice root}\label{alg:store}
@@ -1078,9 +1078,9 @@ in three layers, all consumed by a single procedure~\walk:
     block inclusion is neither required nor privileged.  The SG fixes the
     walk's \emph{anchor} in one of two
     ways (Section~\ref{sec:walk}): a round's first-slot proposal may
-    \emph{point to} a \emph{fresh quorum} of the previous round's
-    attestations, whose anchor every validator then adopts for the whole
-    round; absent a valid pointed quorum, the anchor is the deepest block
+    point to a block root; at voting time each validator accepts the root
+    only if its previous-round direct support plus equivocation credit reaches
+    \(\tfrac23\) of total stake.  Absent an accepted pointed root, the anchor is the deepest block
     with latest-head-vote support $\geq \tfrac23\Dvote$ reached by descent
     from the cascade root.  There is a single grade-1 threshold,
     $\tfrac23\Dvote$, at
@@ -1091,7 +1091,7 @@ in three layers, all consumed by a single procedure~\walk:
     (Section~\ref{sec:goldfish}).  Its duty is never gated by FG state.
 \end{itemize}
 The walk (Section~\ref{sec:walk}) chains these: it fixes the anchor above
-(pointed fresh quorum, or the grade-1 descent as fallback), follows Goldfish
+(accepted fresh root, or the grade-1 descent as fallback), follows Goldfish
 from the anchor within the viable subtree, then applies the viability
 descent to restore the height bound at the seam.
 Section~\ref{sec:voteconstruction} specifies how an honest validator turns
@@ -1157,7 +1157,7 @@ network views.  Post-\GST{} delivery and the fixed freeze discipline
 relate honest views (Section~\ref{sec:grades}); no proof waits for a proposer
 to include these votes.
 
-\subsection{Fresh quorums, anchors, and the walk}\label{sec:walk}
+\subsection{Fresh-root syncing, anchors, and the walk}\label{sec:walk}
 
 \begin{definition}[Cascade root]\label{def:cascade-root}
 The \emph{cascade root} of a store~$\Sigma$ is
@@ -1174,111 +1174,100 @@ at the frontier, and the always-viable $\Sigma.F$ (Lemma~\ref{lem:F-viable})
 when a timeout has advanced some chain past~$\Sigma.J$'s height.
 \end{definition}
 
-\subsubsection*{Fresh quorums and anchors}
+\subsubsection*{Fresh-root syncing}
 
-The walk's starting point below the cascade root is an \emph{anchor}, fixed
-in one round-atomic step from FG attestations rather than descended through a
-sequence of local grade thresholds.  FG voting is round-atomic: each validator
-emits exactly one FG attestation per round (Section~\ref{sec:timing},
-Definition~\ref{def:round-atomic}), whose head field is its walk output.
+The walk's starting point below the cascade root is an \emph{anchor}.  The
+first proposer of a round points to a root; validators decide locally whether
+that root has an absolute quorum in the immediately preceding round.  The
+proposal carries no votes or aggregate.
 
-\begin{definition}[Round-$r$ quorum, fresh quorum, and anchor]\label{def:fresh-quorum}
-A \emph{round-$r$ quorum} is a set~$Q$ of round-$r$ FG attestations from
-\emph{distinct} validators whose effective balances sum to at least
-$\tfrac23$ of the \emph{total} stake (an \emph{absolute} threshold, not a
-fraction of any local live-head-vote weight).  The \emph{anchor} of~$Q$,
+\begin{definition}[Credited support and a fresh root]\label{def:fresh-quorum}
+Fix a validator~$u$, a round~$r$, and a block~$B$.  Let
+\(V_u^r(B)\) be the validators from which~$u$ has received a valid round-$r$
+FG attestation whose head descends from~$B$.  Let~\(E_u^r\) be the validators
+from which~$u$ has received two distinct valid round-$r$ FG attestations.  The
+\emph{credited support} of~$B$ in~$u$'s view is
 \[
-  \anchor(Q) \;\coloneqq\; \text{the highest common ancestor of }
-  \{\, v.\headf : v \in Q \,\},
+  \Credit_u^r(B) \;\coloneqq\; w\!\left(V_u^r(B) \cup E_u^r\right),
 \]
-is the deepest block whose subtree contains every head field of~$Q$; it is a
-function of~$Q$, not a free choice.  We say $Q$ is a round-$r$ quorum
-\emph{for} a block~$B$ iff $B \preceq \anchor(Q)$, equivalently
-$B \preceq v.\headf$ for every $v \in Q$.
+where each validator's effective balance is counted once.  Thus a validator
+that~$u$ has seen equivocating is credited to~$B$ even if none of the copies
+seen by~$u$ supports~$B$.
 
-A \emph{fresh quorum} for the current round is a round-$r$ quorum with~$r$ the
-\emph{immediately preceding} round --- the latest round whose attestations are
-complete.  (``Fresh'' here means \emph{from the latest round}; it is unrelated
-to the \emph{height} freshness of a justification vote in
-Section~\ref{sec:model}, which pins a vote to a chain's current height.  A
-fresh quorum is a cross-validator object of the anchor layer; height
-freshness is a per-vote predicate of the FG state machine.)
+The block~$B$ is a \emph{fresh root} in~$u$'s view for round~$r+1$ iff
+\(\Credit_u^r(B) \geq \tfrac23 n\), where~$n$ is the total active stake in
+the proposal's state.  This is an absolute, view-independent denominator.
+``Fresh'' refers only to use of the immediately preceding round; it is
+unrelated to the height freshness of an FG justification vote.
 \end{definition}
 
-Two facts make the anchor a sound synchronization object: conflicting anchors
-are impossible without mass equivocation (the safety backstop, mirroring the
-FG's own quorum intersection), and the honest validators alone always form a
-fresh quorum (so an anchor is always available under the standing
-hypotheses).
+The equivocation term is deliberately generous to the proposer.  If the
+proposer saw validator~$i$ vote for a descendant of~$B$, while another
+validator saw two conflicting copies from~$i$ but not the proposer's copy,
+that validator still counts~$i$ for~$B$.  This is the second half of
+time-shifted quorum (TSQ): synchrony ensures that a vote used by an honest
+proposer is either visible to a validator by its voting action or that
+validator has evidence that the signer equivocated.  Because the denominator
+is fixed and the local numerator only grows, no TSQ freeze is needed.
 
-\begin{lemma}[Anchor intersection]\label{lem:quorum-intersection-sg}
-If two fresh quorums~$Q, Q'$ have conflicting anchors
-($\anchor(Q) \nsim \anchor(Q')$), then at least $n/3$ of the stake belongs to
-validators that equivocated in the shared round --- signed two distinct
-round-$r$ attestations --- and are therefore slashable.  Hence, unless
-$\geq n/3$ of the stake is slashable, all fresh quorums of a round have
-pairwise compatible anchors.  The conclusion holds even when the equivocations
-are never exhibited to a verifier: it is forced by the counting, not by any
-on-chain proof.
+\begin{lemma}[Fresh-root intersection]\label{lem:quorum-intersection-sg}
+If honest validators~$u$ and~$v$ accept conflicting fresh roots~$B$ and~$B'$ for
+the same preceding round, then at least~$n/3$ stake actually equivocated in
+that round.  Hence, with less than~$n/3$ equivocating stake, all accepted fresh
+roots of a round are compatible.
 \end{lemma}
 
 \begin{proof}
-Conflicting anchors have disjoint subtrees: a common descendant of
-$\anchor(Q)$ and $\anchor(Q')$ would make them comparable
-(Definition~\ref{def:chain}).  Every $v \in Q$ has $v.\headf \succeq \anchor(Q)$
-and every $v' \in Q'$ has $v'.\headf \succeq \anchor(Q')$, so no single
-round-$r$ attestation lies in both~$Q$ and~$Q'$.  A validator that contributes
-a (necessarily non-equivocating, single) round-$r$ attestation to both quorums
-would thus have contributed \emph{two distinct} round-$r$ attestations --- an
-equivocation.  Now count by stake: $w(Q) + w(Q') \geq \tfrac23 + \tfrac23 =
-\tfrac43$ of the total, while the union of their signers has stake at most~$1$
-(the total).  Hence the stake of validators appearing in \emph{both} quorums is
-at least $\tfrac43 - 1 = \tfrac13$ of the total, i.e.\ $\geq n/3$, and every
-such validator equivocated in round~$r$.  The count uses only the two
-$\tfrac23$-absolute weights and the total, so it stands whether or not the two
-offending attestations are ever placed side by side for a verifier; this
-robustness is exactly why the threshold is $\tfrac23$ of the \emph{total}
-rather than a fraction of a view-dependent denominator.
+Let \(S=V_u^r(B)\cup E_u^r\) and
+\(S'=V_v^r(B')\cup E_v^r\).  Both have weight at least~$2n/3$, so
+\(w(S\cap S')\geq n/3\).  Fix~$i\in S\cap S'$.  If~$i$ lies in either
+equivocation set, its two valid round-$r$ attestations witness an actual
+equivocation.  Otherwise one valid attestation from~$i$ supports~$B$ and one
+supports~$B'$.  Since the roots conflict, those attestations are distinct, so
+$i$ again equivocated.  Thus every validator in the intersection actually
+equivocated, irrespective of which copies either verifier received.
 \end{proof}
 
-\begin{lemma}[Honest fresh quorum]\label{lem:honest-fresh-quorum}
-Fix a round~$r$ after \GST{} satisfying the standing assumptions
-(Definition~\ref{def:standing}): $\beta < 1/3$ and every honest validator
-online.  Then the honest round-$r$ attestations form a fresh quorum, whose
-anchor is the highest common ancestor of the honest head fields and is a
-descendant of the cascade root of every honest view that has processed
-round~$r$'s finalized prefix.
+\begin{lemma}[Fresh-root synchronization]\label{lem:honest-fresh-quorum}
+Fix consecutive rounds~$r,r+1$ after \GST{} under the standing assumptions and
+let an honest first-slot proposer of round~$r+1$ point to a block~$B$ for which
+it saw direct round-$r$ support of weight at least~$2n/3$.  At every honest
+validator's round-$r+1$ voting action,~$B$ is a fresh root in that validator's
+view.  In particular, when~$\beta<1/3$, the highest common ancestor of the
+honest round-$r$ heads has direct support greater than~$2n/3$ and is available
+to an honest proposer.
 \end{lemma}
 
 \begin{proof}
-Honest validators hold more than $\tfrac23$ of the stake ($\beta < 1/3$) and
-each emits one round-$r$ attestation (Definition~\ref{def:round-atomic}), so
-the set~$Q_H$ of honest round-$r$ attestations has $w(Q_H) > \tfrac23$ of the
-total and distinct signers: a round-$r$ quorum, hence a fresh quorum.  Its
-anchor $A_H \coloneqq \anchor(Q_H)$ is the highest common ancestor of the
-honest heads by definition.  Each honest head is the honest caster's own walk
-output, a descendant of that caster's cascade root
-(Definition~\ref{def:walk}); after \GST{} honest views share the same
-store-finalized block and the same cascade root up to the one-height cascade
-slack (Theorem~\ref{thm:orderindep}), so every honest head descends from that
-common cascade root, and therefore so does their highest common
-ancestor~$A_H$.
+Consider each signer~$i$ in the proposer's direct-support set.  The honest
+proposer re-gossips the supporting attestation.  By the delivery-before-action
+discipline, every honest validator~$u$ has received that attestation by its
+voting action unless its relay path already stopped because~$u$ had retained
+two distinct round-$r$ attestations from~$i$; in that case~$i\in E_u^r$.
+Consequently
+\(V_p^r(B)\subseteq V_u^r(B)\cup E_u^r\), and~$u$'s credited numerator is at
+least the proposer's direct numerator, hence at least~$2n/3$.
+
+For existence, honest validators hold more than~$2n/3$ stake and each emits
+one round-$r$ attestation.  Their highest common ancestor lies on every honest
+head, so every honest attestation directly supports it; after delivery an
+honest proposer sees all of that support.
 \end{proof}
 
 \paragraph{Pointing.}
-A round's first-slot ($\rzero$) proposer \emph{may} include in its proposal a
-reference to one fresh quorum of the previous round.  The reference is an
-aggregate over round-$r$ attestations plus a marker identifying them as an
-anchor claim.  A validator \emph{verifies} the reference from the aggregate
-alone (aggregate signature over distinct round-$r$ signers, total effective
-balance $\geq \tfrac23$ of the stake, and the common-subtree condition that
-pins $\anchor$); the aggregate riding the proposal makes its votes available
-on its own and does not mutate the receiver's latest-message store.  If the
-reference verifies, its
-anchor~$\anchor(Q)$ is \emph{adopted by every validator for the whole round},
-even if other or deeper fresh quorums exist or later become visible.  Anchors
-carry \emph{no cross-round state}: each round's anchor is computed from that
-round's pointed quorum alone, with no required relation to earlier anchors.
+A round's first-slot ($\rzero$) proposer may put one block root~$B$ in its
+proposal.  An honest proposer does so only after seeing at least~$2n/3$ direct
+support for~$B$ in the preceding round; it does not use equivocation credit to
+construct the pointer, and it re-gossips the valid attestations it counted.
+The normal relay rule forwards a newly received valid round attestation unless
+the receiver has already retained enough conflicting data to mark that signer
+as a round equivocator.  A validator gives the proposer the benefit of the
+doubt and accepts~$B$ exactly when its own credited support reaches~$2n/3$ at
+the validator's voting action.  Otherwise it ignores the pointer and uses the
+grade-1 fallback.  For fixed~$B$, each signer's contribution is monotone:
+receiving a supporting vote adds the signer, and receiving a conflicting copy
+can only turn the signer into equivocation credit.  There is therefore no
+freeze and no carried certificate.  Roots carry no cross-round state.
 
 \begin{remark}[Optional per-branch anchor monotonicity]\label{rem:anchor-monotone}
 One may optionally harden pointing with a \emph{chain-data} validity rule: a
@@ -1292,7 +1281,7 @@ hardening (Section~\ref{sec:open-items}).
 
 \subsubsection*{The grade-1 anchor and the two grades}
 
-Absent a valid pointed quorum, the anchor is fixed by a latest-head-vote
+Absent an accepted pointed root, the anchor is fixed by a latest-head-vote
 descent under a single $\tfrac23$ threshold.  The two grade thresholds --- the
 $\tfrac23$ anchor and the $\tfrac13$ conflict veto --- are the only SG
 fork-choice objects, uniform at every height.
@@ -1305,7 +1294,7 @@ $\cascadeRoot(\Sigma)$ and, while some child~$c$
 in~$\viableTree(\Sigma)$ has $\Supp(c) \geq \tfrac23\Dvote$, step into it (the
 unique such child, by the sum bound of Section~\ref{sec:headvotes}); stop at the
 $\geq\tfrac23$-crossed frontier.  This is the walk's \emph{fallback} anchor,
-used when the round's $\rzero$ proposal does not point to a valid fresh quorum
+used when the round's $\rzero$ proposal does not point to an accepted fresh root
 (Definition~\ref{def:walk}).
 \end{definition}
 
@@ -1326,17 +1315,16 @@ $\walk(\Sigma, \Omega)$ returns a block, computed in three phases
 (Figure~\ref{alg:walk}).
 \begin{enumerate}
   \item \emph{Anchor.}  If the current round's $\rzero$ proposal points to a
-    valid fresh quorum~$Q$ (Definition~\ref{def:fresh-quorum}) whose anchor
-    satisfies $\cascadeRoot(\Sigma) \preceq \anchor(Q)$ and
-    $\anchor(Q) \in \viableTree(\Sigma)$, set the anchor $A \gets \anchor(Q)$
-    --- the deeper of the cascade root and the pointed anchor, which are
-    comparable because both lie on the chain of every head of a fresh quorum.
-    (If the pointed anchor is not a descendant of the cascade root --- shallower
+    block~$P$ that is a fresh root in the validator's local view at its voting
+    action (Definition~\ref{def:fresh-quorum}), and
+    $\cascadeRoot(\Sigma) \preceq P$ with
+    $P \in \viableTree(\Sigma)$, set the anchor $A \gets P$.
+    (If the pointed root is not a descendant of the cascade root --- shallower
     than it, or on a conflicting branch --- or if it has slipped behind the
-    viability frontier, ignore the pointed quorum.)  Otherwise set
+    viability frontier, ignore it.)  Otherwise set
     $A \gets \Gone(\Sigma)$, the grade-1 anchor (Definition~\ref{def:g1}).  Either
     way $A \in \viableTree(\Sigma)$: the grade-1 anchor descends only into viable
-    children from the always-viable cascade root, and the pointed anchor is
+    children from the always-viable cascade root, and the pointed root is
     adopted only when viable.
   \item \emph{Goldfish.}  From the anchor~$A$, follow the available chain
     \emph{within the viable subtree}: $B \gets \textsf{goldfishHead}(A, \Omega)$
@@ -1389,8 +1377,8 @@ meets it.
 
 \Function{\walk}{$\Sigma,\; \Omega$}
   \State $R \gets \cascadeRoot(\Sigma)$
-  \If{the current round's $\rzero$ proposal points to a valid fresh quorum $Q$, \ $R \preceq \anchor(Q)$, \ \textbf{and} $\anchor(Q) \in \viableTree(\Sigma)$}
-    \State $A \gets \anchor(Q)$ \Comment{pointed anchor, adopted for the whole round (Def.~\ref{def:fresh-quorum})}
+  \If{the current round's $\rzero$ proposal points to $P$, \ $\Credit^{r-1}(P) \geq \tfrac23 n$, \ $R \preceq P$, \ \textbf{and} $P \in \viableTree(\Sigma)$}
+    \State $A \gets P$ \Comment{locally accepted fresh root (Def.~\ref{def:fresh-quorum})}
   \Else
     \State $A \gets \Gone(\Sigma)$ \Comment{fallback: latest-head-vote descent, $\geq\tfrac23\Dvote$ from $R$ (Def.~\ref{def:g1})}
   \EndIf
@@ -1444,7 +1432,7 @@ Lemma~\ref{lem:F-viable}.  Phase~1 fixes an anchor $A \in \viableTree(\Sigma)$:
 the grade-1 fallback $\Gone(\Sigma)$ descends only into viable children
 from the (viable) cascade root and so stays in~$\viableTree(\Sigma)$
 (Definition~\ref{def:g1}), and the pointed anchor is adopted only when
-$\anchor(Q) \in \viableTree(\Sigma)$ (Definition~\ref{def:walk}).  Phase~2 then
+$P \in \viableTree(\Sigma)$ (Definition~\ref{def:walk}).  Phase~2 then
 only ever steps from a block to a child that is itself in~$\viableTree(\Sigma)$
 (Goldfish descends the accepted tree and, restricted to~$\viableTree(\Sigma)$,
 every block it can reach past~$A$ retains a viable leaf descendant --- a block
@@ -1484,9 +1472,10 @@ previous slot's view-merge freeze; committee members then vote for a head at
 the attestation deadline.
 The merge covers \emph{blocks and votes only}, exactly as in base Goldfish;
 latest FG head votes are ordinary network votes and need no additional carrier
-or inclusion path.  The fresh quorum a round's $\rzero$ proposal points to
-(Definition~\ref{def:fresh-quorum}) is the only separate round-atomic anchor
-certificate; it rides the proposal and fixes one common anchor per round.
+or inclusion path.  The fresh-root pointer in a round's $\rzero$ proposal
+(Definition~\ref{def:fresh-quorum}) is only a root; validators test it against
+their live previous-round FG view at voting time, with equivocations credited
+to the root.
 The Goldfish walk $\textsf{goldfishHead}(B, \Omega)$ from an anchor~$B$
 descends by \emph{previous-slot participant majority}: at each block it
 steps into the child whose subtree holds a majority of the previous slot's
@@ -2182,19 +2171,19 @@ honest validator with $\geq\tfrac13$ support at the next action boundary.  We
 first note that the walk's \emph{fallback} grade-1 anchor is such a block in its
 holder's own view,
 then prove the cross-view step with per-view denominators.  A \emph{pointed}
-anchor is \emph{not} covered by this step --- the pointed aggregate is a threshold
-certificate, not a write to the latest-message store --- and is protected separately by anchor
-intersection (Lemma~\ref{lem:quorum-intersection-sg}), as
+root is \emph{not} covered by this step --- its credited previous-round support
+is a different tally from the live latest-message grade --- and is protected
+separately by fresh-root intersection (Lemma~\ref{lem:quorum-intersection-sg}), as
 Corollary~\ref{cor:anchor-vs-safe} makes precise.
 
 \begin{lemma}[Fallback anchor grade-1 support]\label{lem:anchor-support}
 Let~\(A = \Gone(\Sigma_u)\) be the \emph{fallback grade-1 anchor} an honest
 validator~\(u\) adopts in a round when its round's \(\rzero\) proposal does not
-point to a valid fresh quorum (Definition~\ref{def:walk}), evaluated at~\(u\)'s
+point to a locally accepted fresh root (Definition~\ref{def:walk}), evaluated at~\(u\)'s
 round freeze after \GST.  Then either \(A = \cascadeRoot(\Sigma_u)\), or
 \(\Supp_u(A) \geq \tfrac{2}{3}\Dvote_u\) in~\(u\)'s own view.  A \emph{pointed}
-anchor \(A = \anchor(Q)\) carries \emph{no} such latest-head-vote-support guarantee:
-\(\Supp_u(\anchor(Q)) \geq \tfrac{2}{3}\Dvote_u\) need not hold.
+root~\(A=P\) carries \emph{no} such latest-head-vote-support guarantee:
+\(\Supp_u(P) \geq \tfrac{2}{3}\Dvote_u\) need not hold.
 \end{lemma}
 
 \begin{proof}
@@ -2202,16 +2191,15 @@ When the pointed branch is not taken, \(A = \Gone(\Sigma_u)\): the grade-1 desce
 of Definition~\ref{def:g1} either does not step, leaving
 \(A = \cascadeRoot(\Sigma_u)\), or steps into a child with
 \(\Supp_u \geq \tfrac{2}{3}\Dvote_u\), the last such child being~\(A\).
-The pointed case carries no latest-head-vote-support guarantee: verification of a pointed
-quorum~\(Q\) reads only the aggregate signature, distinct-signer count,
-\(\tfrac23\)-\emph{absolute} weight, and common-subtree condition
-(Definition~\ref{def:fresh-quorum}); the aggregate rides the proposal but is not
-thereby inserted into the receiver's latest-message store
+The pointed case carries no latest-head-vote-support guarantee: its local
+acceptance reads the credited previous-round tally
+(Definition~\ref{def:fresh-quorum}), which neither carries votes in the
+proposal nor writes to the receiver's latest-message store
 (Definition~\ref{def:head-vote}).  Hence no lower bound on
-\(\Supp_u(\anchor(Q))\) follows --- before the honest head votes have
-concentrated, \(\anchor(Q)\) may have support well below
+\(\Supp_u(P)\) follows --- before the honest head votes have
+concentrated, \(P\) may have support well below
 \(\tfrac23\Dvote_u\), or below \(\tfrac13\Dvote_u\).  Pointed anchors are therefore
-protected not by local grade support but by anchor intersection
+protected not by local grade support but by fresh-root intersection
 (Lemma~\ref{lem:quorum-intersection-sg}); see Corollary~\ref{cor:anchor-vs-safe}.
 \end{proof}
 
@@ -2267,12 +2255,12 @@ Suppose an honest validator~\(v\) safe-confirms a block~\(C\)
 (Definition~\ref{def:safe-confirm}) and every honest anchor descends from a common
 cascade root~\(R \preceq C\).  Assume moreover the standing hypotheses and that
 honest head votes lie on~\(C\)'s chain, so that the honest round-\(r\)
-attestations form a fresh quorum~\(Q_C\) whose anchor descends from~\(C\),
-\(\anchor(Q_C) \succeq C\) (Lemma~\ref{lem:honest-fresh-quorum} once concentration
-has placed honest heads on~\(C\)'s chain, Lemma~\ref{lem:vote-concentration}).  Then no
+attestations give~\(C\) direct fresh support greater than~\(2n/3\)
+(Lemma~\ref{lem:honest-fresh-quorum} once concentration has placed honest heads
+on~\(C\)'s chain, Lemma~\ref{lem:vote-concentration}).  Then no
 honest validator's adopted anchor conflicts with~\(C\).  The two anchor kinds are
 handled by two routes, both \emph{conditional} on participation: the fallback
-grade-1 anchor by graded delivery, the pointed anchor by anchor intersection.
+grade-1 anchor by graded delivery, the pointed root by fresh-root intersection.
 \end{corollary}
 
 \begin{proof}
@@ -2288,20 +2276,19 @@ with~\(C\) holding \(\geq\tfrac13\Dvote_v\) head-vote support, contradicting the
 \(\Gzero\)-clearance of~\(C\) in~\(v\)'s safe confirmation
 (Definition~\ref{def:g0clear}).
 
-\emph{Pointed anchor \(A = \anchor(Q_A)\).}  Here~\(A\) is backed by a
-\(\tfrac23\)-absolute quorum~\(Q_A\) but need not carry grade-1 support
+\emph{Pointed anchor \(A=P\).}  Here~\(P\) has at least~\(2n/3\) credited
+previous-round support in~\(u\)'s view but need not carry grade-1 support
 (Lemma~\ref{lem:anchor-support}), so the graded-delivery route does not apply.
-Instead use the honest fresh quorum~\(Q_C\): its anchor satisfies
-\(\anchor(Q_C) \succeq C\), so \(\anchor(Q_C)\) is compatible with~\(C\).  If~\(A\)
-conflicted with~\(C\) then~\(A \nsim \anchor(Q_C)\) as well (a block conflicting
-with~\(C\) conflicts with every descendant of~\(C\), and \(\anchor(Q_C) \succeq C\)),
-so~\(Q_A\) and~\(Q_C\) would be two fresh quorums with conflicting anchors,
-forcing \(\geq n/3\) of the stake to be slashable
+Instead use~\(C\) itself: the honest round-$r$ attestations give it direct
+support greater than~\(2n/3\), so it is a fresh root in every honest view after
+delivery.  If~\(P\) conflicted with~\(C\), these would be two conflicting
+accepted fresh roots, forcing at least~\(n/3\) of the stake to have equivocated
 (Lemma~\ref{lem:quorum-intersection-sg}) --- impossible under the standing
 assumption.
 
 Either way~\(A\) does not conflict with~\(C\).  The pointed-anchor route consumes
-the participation-dependent premise \(\anchor(Q_C) \succeq C\) (honest heads
+the participation-dependent premise that~\(C\) has greater than~\(2n/3\) direct
+fresh support (honest heads
 on~\(C\)'s chain); this is why the corollary, like
 Lemma~\ref{lem:graded-delivery}, is a dependency of the conditional healing theorem
 (Theorem~\ref{thm:healing-safety}) rather than of the unconditional
@@ -2495,10 +2482,10 @@ in~\(v\)'s view (Definition~\ref{def:safe-confirm}).  Then \(R \preceq B \preceq
 from the common root~\(R \preceq C\).  Under the standing hypotheses honest
 available votes concentrate on~\(C\)'s chain (Goldfish majority, \(f<1/2\)), so an
 honest bloc of head votes lands on~\(C\)'s chain and the honest round-\(r\)
-attestations form a fresh quorum~\(Q_C\) with \(\anchor(Q_C) \succeq C\)
+attestations give~\(C\) direct fresh support greater than~\(2n/3\)
 (Lemmas~\ref{lem:honest-fresh-quorum},~\ref{lem:vote-concentration}).
 Corollary~\ref{cor:anchor-vs-safe} then applies by both its routes --- fallback
-grade-1 anchors by graded delivery, pointed anchors by anchor intersection --- and
+grade-1 anchors by graded delivery, pointed roots by fresh-root intersection --- and
 no honest anchor conflicts with~\(C\).  (This is the single cross-view inference of
 the argument, read at the round freeze; its full freeze-alignment
 formalization --- that \(v\)'s \(\Gzero\)-evaluation and each anchor-holder's
@@ -2513,8 +2500,8 @@ so~\(C\) is common to all honest validators.
 Once honest head votes on~\(C\)'s chain have propagated, latest-message
 concentration (Lemma~\ref{lem:vote-concentration}) leaves every branch conflicting
 with~\(C\) below \(\tfrac13\Dvote\) in every honest view, so no future grade-1
-anchor \(\Gone\) conflicts with~\(C\); and a fresh quorum for an anchor
-conflicting with an honest anchor above~\(C\) would require \(\geq n/3\) slashable
+anchor \(\Gone\) conflicts with~\(C\); and an accepted fresh root conflicting
+with~\(C\) would require at least~\(n/3\) equivocating stake
 (Lemma~\ref{lem:quorum-intersection-sg}).  Hence~\(C\) remains canonical.
 
 \emph{(2) No reorg and induction.}  By~(1) every honest canonical chain is at
@@ -2660,10 +2647,12 @@ not that both height transitions fit inside one first-slot-proposer wait.
 Fix either current height~\(K \in \{H,H+1\}\).  Gated-out honest validators
 cast the empty vote (Definition~\ref{def:empty-target}) rather than abstaining,
 so their head fields keep flowing and remain fresh-quorum material.  When a
-round's first slot~\(\rzero\) has an honest proposer, it assembles a fresh quorum
-from the previous round's honest attestations (Lemma~\ref{lem:honest-fresh-quorum})
-and points to it (Definition~\ref{def:fresh-quorum}); every honest validator
-adopts the same anchor~\(A=\anchor(Q)\) for that round.  Above the common anchor,
+round's first slot~\(\rzero\) has an honest proposer, it points to the highest
+root with at least~\(2n/3\) direct support in the previous round
+(Lemma~\ref{lem:honest-fresh-quorum}).  By the voting action, every honest
+validator sees each supporting vote or an equivocation by its signer, so its
+credited numerator is no lower than the proposer's and it accepts the same
+root (Definition~\ref{def:fresh-quorum}).  Above the common anchor,
 the per-slot Goldfish vote view-merge makes the walk common at honest-proposer
 slots.  Available votes concentrate on the common chain and the time-shifted
 quorum available-confirms an interval block one slot later
@@ -2789,8 +2778,8 @@ The following points remain to be pinned down.
     residual, and the per-view adversarial-message cap that absorbs them
     (Lemma~\ref{lem:graded-delivery}) should be tied precisely to the schedule.
   \item \emph{Behavior for \(\beta \in (1/3, 1/2)\).}
-    Above \(\beta = 1/3\) honest stake alone cannot form the
-    \(\tfrac23\)-absolute fresh quorum, and the single-step graded-delivery
+    Above \(\beta = 1/3\) honest stake alone cannot give a root
+    \(\tfrac23\)-absolute direct fresh support, and the single-step graded-delivery
     guarantee no longer holds (\(\beta/(1-\beta) \geq 1/2\)).  A local grade-1
     anchor may still form, but it no longer has the cross-view grade-0 relation
     required by healing.  The protocol then runs on the available chain,
@@ -2799,14 +2788,14 @@ The following points remain to be pinned down.
     (Remark~\ref{rem:sub-two-thirds}), and finality-restoration in this regime is
     left to the leak (Theorem~\ref{thm:tightness}).
   \item \emph{Pointer equivocation by the \(\rzero\) proposer.}
-    A first-slot proposer that points to two conflicting fresh quorums in
+    A first-slot proposer that points to two conflicting roots in
     conflicting proposals is equivocating on its proposal --- the existing
     proposal-equivocation handling applies, and the fault is confined to a single
-    round.  Honest validators adopt the anchor of whichever proposal they
-    process on their chain; the anchor intersection lemma
-    (Lemma~\ref{lem:quorum-intersection-sg}) guarantees the two anchors cannot be
-    both valid and conflicting without \(\geq n/3\) slashable, so healing safety
-    is unaffected.
+    round.  Each honest validator evaluates the root of whichever proposal it
+    processes against its own credited previous-round support.  Fresh-root
+    intersection (Lemma~\ref{lem:quorum-intersection-sg}) guarantees that two
+    roots cannot both be accepted and conflict without at least~\(n/3\)
+    equivocating stake, so healing safety is unaffected.
   \item \emph{Layer-1 exposure of the empty vote.}
     The empty vote does not set~\(\timeouts[i]\)
     (Definition~\ref{def:empty-target}), so a gate-blocked honest validator is
