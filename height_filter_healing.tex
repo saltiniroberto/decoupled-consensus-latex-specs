@@ -100,7 +100,7 @@
 % --- Latest head votes / stabilization gadget (SG), Section \ref{sec:headvotes} ---
 \newcommand{\Supp}{\ensuremath{S}}          % latest-head-vote support S(\cdot)
 \newcommand{\Dvote}{\ensuremath{D}}         % total live latest-head-vote weight
-\newcommand{\Wvote}{\ensuremath{W}}         % latest-head-vote expiry window (128 slots)
+\newcommand{\Wvote}{\ensuremath{W}}         % latest-head-vote expiry window
 \newcommand{\headf}{\mathsf{head}}          % attestation head field = SG latest message
 % --- Height classes, Section \ref{sec:heightclasses} ---
 \newcommand{\Knj}{\ensuremath{K}}                      % nonjustifiable-height spacing
@@ -1115,8 +1115,9 @@ consumes it immediately after the attestation is received and validated.
 Fix a validator's fork-choice store~$\Sigma$ at current slot~$s$.
 Every valid FG attestation received over the network contributes its signed
 head field immediately; learning the same attestation from a block is merely
-another delivery path and creates no distinct object.  The attestation is
-\emph{live} while $v.\slot + \Wvote > s$, where $\Wvote=128$ slots.
+another delivery path and creates no distinct object.  For protocol expiry
+parameter~$\Wvote>0$, the attestation is \emph{live} while
+$v.\slot + \Wvote > s$.
 For each validator~$i$, its live latest head vote is the head field of its
 greatest-slot live attestation.  A later-slot attestation supersedes the
 earlier one whether or not either is ever included in a block.  A validator
