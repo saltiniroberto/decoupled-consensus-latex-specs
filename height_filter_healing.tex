@@ -1,5 +1,3 @@
-% Repaired working copy created 2026-07-16.  The source paper
-% height_filter_healing.tex is intentionally left unchanged.
 % This file compiles standalone.  The guard below also permits a future lite
 % wrapper to define \litemode and provide the shared lite setup.
 \ifx\litemode\undefined\documentclass{article}\fi
@@ -37,15 +35,14 @@
   \IfFileExists{full/lite_full_setup.tex}{\input{full/lite_full_setup.tex}}{}%
 }
 
-\title{Fresh Simplex: Graded Healing and Finality Liveness\\
-\large Repaired working draft}
+\title{Fresh Simplex: Graded Healing and Finality Liveness}
 \author{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-We give a repaired abstract version of Fresh Simplex and write out its healing
+We give an abstract version of Fresh Simplex and write out its healing
 and finality-liveness arguments in full.  The finality state machine retains
 fixed-target justification, marker-based timeout advancement, and the E1/E2
 accountable-safety rules under one immutable integer-weight quorum base per
@@ -80,9 +77,6 @@ separately rather than hidden in the proof.
 \end{abstract}
 
 \section{Claim boundary and design summary}\label{sec:claim-boundary}
-
-This is a repaired working copy.  The source paper
-\texttt{height\_filter\_healing.tex} is intentionally unchanged.
 
 The result has four deliberately separate layers.
 \begin{enumerate}
@@ -1621,7 +1615,7 @@ Each quorum signer previously targeted~\(T_u\), never timed out there, and now
 knows the retained justification.  It therefore passes the independent
 finality gate and durably locks~\(T_u\), regardless of whether its new
 current-height decision is target, timeout, or empty.  The recorded commitment
-weight reaches~\(q\).  Finality is the first settlement branch and the repaired
+weight reaches~\(q\).  Finality is the first settlement branch and the
 state keeps per-pair finality tallies, so neither a simultaneous nor later
 justification can erase or preempt the full old quorum.  The closure finalizes
 \(T_u\), or a compatible descendant already selected by a higher certificate,
@@ -1808,7 +1802,7 @@ does not silently infer safety from equal local frozen sets.
 
 \section{What was simplified}\label{sec:simplification}
 
-The repaired dependency graph is:
+The dependency graph is:
 \[
 \begin{array}{c}
 \text{immutable height base + E1/E2}\\
