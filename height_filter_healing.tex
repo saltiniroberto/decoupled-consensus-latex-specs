@@ -6,8 +6,15 @@
 \usepackage{mathtools}
 \usepackage{amsthm}
 \usepackage{enumitem}
+\usepackage[noend]{algpseudocode}
+\usepackage{float}
+\usepackage{boxedminipage}
 \usepackage{hyperref}
 \usepackage{cleveref}
+\makeatletter
+\providecommand*{\theHALG@line}{}
+\renewcommand*{\theHALG@line}{\thefigure.\arabic{ALG@line}}
+\makeatother
 \crefname{property}{property}{properties}
 \Crefname{property}{Property}{Properties}
 \crefname{assumption}{assumption}{assumptions}
@@ -30,6 +37,12 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 \newtheorem{assumption}[theorem]{Assumption}
+
+\newcommand{\currentHeightStartSlot}{\mathsf{current\_height\_start\_slot}}
+\newcommand{\currentHeightTarget}{\mathsf{current\_height\_target}}
+\newcommand{\heightClass}{\mathsf{height\_class}}
+\newcommand{\targetParticipation}{\mathsf{target\_participation}}
+\newcommand{\timeoutParticipation}{\mathsf{timeouts}}
 
 \IfFileExists{lite_full_setup.tex}{\input{lite_full_setup.tex}}{%
   \IfFileExists{full/lite_full_setup.tex}{\input{full/lite_full_setup.tex}}{}%
@@ -251,10 +264,10 @@ derived only from its parent and the messages included in that block, as
 specified in Section~\ref{sec:store}.
 
 The pair \((h_j,J)\) is the chain's latest justified height and block.  The
-set~\(P\) contains validators whose finality fields commit to this pair while
-it is the latest justification and has not been finalized.  A newer
-justification replaces \((h_j,J)\) and resets~\(P\).  The state does not
-keep finality tallies for older justifications.
+set~\(P\) contains validators whose finality fields were accepted while this
+pair was the latest unfinalized justification.  After it is finalized, the
+set is ignored.  A newer justification replaces \((h_j,J)\) and resets~\(P\).
+The state does not keep finality tallies for older justifications.
 
 The signed messages in a block \(B\) are treated as a set.  A valid vote for
 the current-height target sets both
@@ -308,6 +321,107 @@ only the latest justified block.  It needs neither a fork-choice rule for
 pending finality nor a per-height finality map.  An empty decision sets neither
 participation bit.  Otherwise every validator could submit an empty decision
 and advance the height without voting for a target or timeout.
+
+Figure~\ref{alg:state-machine} gives the same rules as pseudocode.  The round
+schedule supplies the Boolean \(\mathit{close}\), which is true only for the
+block transition that records the end-of-round result.  All timely votes for
+that close have already been included before the function is called.  The
+abstract model uses that block as the next height's target.  Calling the close
+rule after each block is useful as a safety-proof interpretation, but the
+round bounds in this paper use exactly one scheduled close per round.
+
+\begin{figure}[H]
+\caption{Finality state machine}\label{alg:state-machine}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\small
+\begin{algorithmic}[1]
+
+\State \textbf{Genesis state} \(\sigma\):
+\Statex \hspace{1em}\(L\gets\mathsf{genesis},\ s\gets0,\ h\gets1,\
+  \currentHeightStartSlot\gets0,\ \currentHeightTarget\gets\mathsf{genesis}\)
+\Statex \hspace{1em}\(\heightClass\gets\mathsf{ordinary},\
+  \targetParticipation\gets\mathsf{false}^{V_1},\
+  \timeoutParticipation\gets\mathsf{false}^{V_1}\)
+\Statex \hspace{1em}\((h_j,J)\gets(0,\mathsf{genesis}),\
+  (h_F,F)\gets(0,\mathsf{genesis}),\ P\gets\varnothing\)
+\vspace{3pt}
+
+\Function{state\_transition}{$\sigma,B,\mathit{close}$}
+  \State \textbf{assert} \(B.\mathsf{parent}=\sigma.L\) and
+    \(B.\mathsf{slot}>\sigma.s\)
+  \State \(\sigma.L\gets B;\quad \sigma.s\gets B.\mathsf{slot}\)
+  \ForAll{valid signed messages \(m\in B.\mathsf{messages}\)}
+    \State \(\sigma\gets\Call{process\_message}{\sigma,m,B}\)
+  \EndFor
+  \If{\(\mathit{close}\)}
+    \State \(\sigma\gets\Call{process\_round\_close}{\sigma}\)
+  \EndIf
+  \State \Return \(\sigma\)
+\EndFunction
+\vspace{3pt}
+
+\Function{process\_message}{$\sigma,m,B$}
+  \State \(i\gets m.\mathsf{validator}\)
+  \If{\(i\in V_{\sigma.h}\) and
+       \(m.d=(\mathsf{target},\sigma.h,\sigma.\currentHeightTarget)\)}
+    \If{\(\sigma.\currentHeightTarget\neq\bot\) and
+         \(\sigma.\currentHeightTarget\prec B\)}
+      \State \(\sigma.\targetParticipation[i]\gets\mathsf{true}\)
+      \State \(\sigma.\timeoutParticipation[i]\gets\mathsf{true}\)
+    \EndIf
+  \ElsIf{\(i\in V_{\sigma.h}\) and
+          \(m.d=(\mathsf{timeout},\sigma.h)\)}
+    \State \(\sigma.\timeoutParticipation[i]\gets\mathsf{true}\)
+  \EndIf
+  \If{\(i\in V_{\sigma.h_j}\), \(\sigma.h_j>\sigma.h_F\),
+      \(\sigma.F\preceq\sigma.J\), and \(m.\phi=(\sigma.h_j,\sigma.J)\)}
+    \State \(\sigma.P\gets\sigma.P\cup\{i\}\)
+  \EndIf
+  \State \Return \(\sigma\)
+\EndFunction
+\vspace{3pt}
+
+\Function{process\_round\_close}{$\sigma$}
+  \If{\(\sigma.h_j>\sigma.h_F\), \(\sigma.F\preceq\sigma.J\), and
+       \(w_{\sigma.h_j}(\sigma.P)\geq q_{\sigma.h_j}\)}
+    \State \((\sigma.h_F,\sigma.F)\gets(\sigma.h_j,\sigma.J)\)
+  \EndIf
+  \State \(Q_T\gets\{i\in V_{\sigma.h}:\sigma.\targetParticipation[i]\}\)
+  \If{\(\sigma.\heightClass=\mathsf{ordinary}\),
+       \(\sigma.\currentHeightTarget\neq\bot\), and
+       \(w_{\sigma.h}(Q_T)\geq q_{\sigma.h}\)}
+    \State \((\sigma.h_j,\sigma.J)\gets
+      (\sigma.h,\sigma.\currentHeightTarget);\quad \sigma.P\gets\varnothing\)
+    \State \Return \(\Call{enter\_next\_height}{\sigma}\)
+  \EndIf
+  \State \(Q_{\rm timeout}\gets
+    \{i\in V_{\sigma.h}:\sigma.\timeoutParticipation[i]\}\)
+  \If{\(w_{\sigma.h}(Q_{\rm timeout})\geq q_{\sigma.h}\)}
+    \State \Return \(\Call{enter\_next\_height}{\sigma}\)
+  \EndIf
+  \State \Return \(\sigma\)
+\EndFunction
+\vspace{3pt}
+
+\Function{enter\_next\_height}{$\sigma$}
+  \State \(\sigma.h\gets\sigma.h+1\)
+  \State \(\sigma.\currentHeightStartSlot\gets\sigma.s;\quad
+    \sigma.\currentHeightTarget\gets\sigma.L\)
+  \If{\(\sigma.h-\sigma.h_F>D_{\rm debt}\) and \(K\mid\sigma.h\)}
+    \State \(\sigma.\heightClass\gets\mathsf{nonjustifiable}\)
+  \Else
+    \State \(\sigma.\heightClass\gets\mathsf{ordinary}\)
+  \EndIf
+  \State \(\sigma.\targetParticipation\gets\mathsf{false}^{V_{\sigma.h}}\)
+  \State \(\sigma.\timeoutParticipation\gets\mathsf{false}^{V_{\sigma.h}}\)
+  \State \Return \(\sigma\)
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
 
 \begin{definition}[Certificates]\label{def:certificates}
 A \emph{justification certificate} \(\mathsf{JC}(h,T)\) consists of signed
@@ -459,20 +573,32 @@ heights.
 \section{Store merging}\label{sec:store}
 
 \begin{definition}[Stored data]\label{def:stored-data}
-A node stores:
+A node's raw store is
+\[
+  S=(\mathcal B,\mathcal M,\mathcal R,\Theta,\mathcal C,t),
+\]
+with:
 \begin{itemize}
-  \item blocks and their post-states;
-  \item signed FG and head messages;
-  \item pointer proposals, each containing a round and a root;
-  \item facts \(\mathsf{timely}(x,I)\), recording that object \(x\) was
+  \item received blocks \(\mathcal B\), including blocks whose parent is not
+    yet known and finalized-conflicting blocks retained as evidence;
+  \item signed FG and head messages \(\mathcal M\), including messages
+    extracted from received blocks;
+  \item pointer proposals \(\mathcal R\), each containing a round and either
+    a root or an explicit empty pointer;
+  \item timely facts \(\Theta\), where \(\mathsf{timely}(x,I)\) records that object \(x\) was
     received before the deadline of scheduled step~\(I\);
-  \item the result of each scheduled step that has already been completed; and
-  \item the local round clock.
+  \item completed-step records \(\mathcal C\), each containing the step, its
+    exact input, the preceding records on which it depended, and its fixed
+    result; and
+  \item the local round clock \(t\).
 \end{itemize}
 The first five components are sets.  A timely fact is local metadata, not a
 signed network message.  Step~\(I\) uses the objects marked timely for~\(I\)
 when its deadline is reached.  Its result is then fixed.  A later message may
 be evidence or input to a later step, but it does not change a completed step.
+The post-state map \(\sigma_S[B]\), pending-reference indices, and the
+fork-choice state~\(\Sigma\) are derived from these raw sets.  They may be
+cached, but are not independent merge inputs.
 \end{definition}
 
 A block's post-state is obtained from its parent's post-state by processing
@@ -488,8 +614,8 @@ state.
 For stores \(S_1,S_2\), their merge \(S_1\sqcup S_2\) contains the union of
 their blocks, messages, proposals, timely facts, and completed-step records.
 Its clock is the greater of the two clocks.  A scheduled step that neither
-copy has completed uses every message marked timely for that step in either
-copy.  If these messages contain two distinct pointers signed by the round's
+copy has completed uses every input object marked timely for that step in
+either copy.  If these inputs contain two distinct pointers signed by the round's
 proposer, the step uses neither.  If they contain only one pointer, that
 pointer remains available.
 
@@ -536,7 +662,8 @@ the walk head and state from which the committee was chosen, together with the
 ordered weighted validator list.  If two stores contain different inputs, the
 implementation must either show that they produce the same committee or apply
 a deterministic conflict rule.  A cached committee list does not record how
-the committee was selected.
+the committee was selected.  These values are part of that available-vote
+step's completed result.
 
 Pruning data below a finalized root must retain the finalized state and the
 validator weights for relevant heights, the current-height target, the current
@@ -545,6 +672,128 @@ to determine it, the latest justified pair and evidence that it was justified
 at an ordinary height, and any unresolved timely facts.  Validators' signing
 histories are local data rather than part of the network store, and are not
 pruned by this rule.
+
+Figure~\ref{alg:store} gives the store operations.  An object with an unknown
+referenced block remains in its raw set.  It becomes usable by an uncompleted
+step when the block and ancestry are known and were timely for that step; it
+never changes a completed step.
+The derived state map is rebuilt after a merge.  It processes each block from
+its own parent state and its own included messages, and never combines sibling
+states.  If two completed records for the same step remain after a merge, a
+later operation that requires one predecessor result does not run until the
+protocol has a common continuation.  The completed available-vote record stores
+the anchor chosen for its round.  Every later \textsf{get\_head} call in that
+round reads this anchor; later votes do not cause the pointer to be accepted or
+rejected again.  A completed result is usable only when its predecessor chain
+matches the current history and it is the unique such result; otherwise the
+dependent operation waits.
+
+\begin{figure}[p]
+\caption{Raw store, state derivation, and fork-choice state}\label{alg:store}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\footnotesize
+\begin{algorithmic}[1]
+
+\State \textbf{Genesis store} \(S\):
+\Statex \hspace{1em}\(\mathcal B\gets\{\mathsf{genesis}\},\
+  \mathcal M\gets\mathcal R\gets\Theta\gets\mathcal C\gets\varnothing,\
+  \ t\gets0\)
+\vspace{3pt}
+
+\Function{add\_object}{$S,x$}
+  \If{\(x\) is a block}
+    \State \(S.\mathcal B\gets S.\mathcal B\cup\{x\}\)
+    \State \(S.\mathcal M\gets S.\mathcal M\cup x.\mathsf{messages}\)
+    \State \(O\gets\{x\}\cup x.\mathsf{messages}\)
+  \ElsIf{\(x\) is a signed message}
+    \State \(S.\mathcal M\gets S.\mathcal M\cup\{x\};\quad O\gets\{x\}\)
+  \Else \Comment{Pointer proposal, including an explicit empty pointer}
+    \State \(S.\mathcal R\gets S.\mathcal R\cup\{x\};\quad O\gets\{x\}\)
+  \EndIf
+  \ForAll{\(y\in O\) and scheduled steps \(I\) whose input or validation uses \(y\)}
+    \If{\(S.t<\mathsf{deadline}(I)\)}
+      \State \(S.\Theta\gets S.\Theta\cup\{\mathsf{timely}(y,I)\}\)
+    \EndIf
+  \EndFor
+  \State \Return \(S\) \Comment{Unknown references remain in the raw sets}
+\EndFunction
+\vspace{3pt}
+
+\Function{derive\_block\_states}{$S$}
+  \State \(\sigma[\mathsf{genesis}]\gets\sigma_{\rm genesis};\quad
+    \mathcal A\gets\{\mathsf{genesis}\}\)
+  \Repeat
+    \State \(\mathit{changed}\gets\mathsf{false}\)
+    \ForAll{\(B\in S.\mathcal B\setminus\mathcal A\) with
+             \(B.\mathsf{parent}\in\mathcal A\)}
+      \State \(\sigma'\gets\Call{state\_transition}{
+        \sigma[B.\mathsf{parent}],B,\mathsf{closes\_round}(B)}\)
+      \If{\(B\) is valid and its authenticated post-state equals \(\sigma'\)}
+        \State \(\sigma[B]\gets\sigma';\quad
+          \mathcal A\gets\mathcal A\cup\{B\};\quad
+          \mathit{changed}\gets\mathsf{true}\)
+      \EndIf
+    \EndFor
+  \Until{\(\mathit{changed}=\mathsf{false}\)}
+  \State \Return \((\sigma,\mathcal A)\)
+\EndFunction
+\vspace{3pt}
+
+\Function{complete\_step}{$S,I$}
+  \If{\(S.\mathcal C\) already contains a record for \(I\) in this history}
+    \State \Return \(S\) \Comment{Never recompute a completed step}
+  \EndIf
+  \State \textbf{assert} \(S.t\geq\mathsf{deadline}(I)\) and every required
+    preceding step has exactly one history-compatible result
+  \State \(X\gets\{x:\mathsf{timely}(x,I)\in S.\Theta\text{ and every
+    validation dependency }z\text{ has }\mathsf{timely}(z,I)\in S.\Theta\}\)
+  \State \(D\gets\) the completed records used by step \(I\)
+  \State \(y\gets\mathsf{execute\_step}(I,X,D)\)
+  \State \(S.\mathcal C\gets S.\mathcal C\cup\{(I,X,D,y)\}\)
+  \State \Return \(S\)
+\EndFunction
+\vspace{3pt}
+
+\Function{merge\_stores}{$S_1,S_2$}
+  \State \textbf{assert} \(S_1,S_2\) use the same genesis and protocol rules
+  \State \Return \(S\) with
+  \Statex \hspace{1em}\(S.\mathcal B=S_1.\mathcal B\cup S_2.\mathcal B,\quad
+    S.\mathcal M=S_1.\mathcal M\cup S_2.\mathcal M,\quad
+    S.\mathcal R=S_1.\mathcal R\cup S_2.\mathcal R\)
+  \Statex \hspace{1em}\(S.\Theta=S_1.\Theta\cup S_2.\Theta,\quad
+    S.\mathcal C=S_1.\mathcal C\cup S_2.\mathcal C,\quad
+    S.t=\max(S_1.t,S_2.t)\)
+  \Statex \hspace{1em}\Comment{Discard and rebuild all derived caches}
+\EndFunction
+\vspace{3pt}
+
+\Function{derive\_fork\_choice}{$S$}
+  \State \((\sigma,\mathcal A)\gets\Call{derive\_block\_states}{S}\)
+  \State \((h_F,F)\gets\) greatest compatible finalized pair in
+    \(\{(\sigma[B].h_F,\sigma[B].F):B\in\mathcal A\}\)
+  \State \(\mathcal T\gets\{B\in\mathcal A:F\preceq B\}\)
+  \State \(\mathcal J\gets
+    \{(\sigma[B].h_j,\sigma[B].J):B\in\mathcal T,\ F\preceq\sigma[B].J\}\)
+  \State \((h_j,J)\gets\arg\max_{(h,C)\in\mathcal J}(h,\mathsf{hash}(C))\)
+  \State \(h_{\max}\gets\max\{\sigma[B].h:B\in\mathcal T\}\)
+  \State \(\mathcal T'\gets\{B\in\mathcal T:\exists\text{ leaf }L\in\mathcal T,
+    B\preceq L\text{ and }\sigma[L].h\geq h_{\max}-1\}\)
+  \State \(R\gets J\) if \(h_{\max}=h_j+1\), else \(R\gets F\)
+  \State \Return \(\Sigma=(\sigma,\mathcal T,h_F,F,h_j,J,h_{\max},\mathcal T',R)\)
+\EndFunction
+\vspace{3pt}
+
+\Function{get\_head}{$S,I,\Omega,u$}
+  \State \(\Sigma\gets\Call{derive\_fork\_choice}{S}\)
+  \State \(A\gets\) the anchor in the unique history-compatible result for \(I\)
+  \State \Return \(\mathsf{walk}(\Sigma,\Omega,u;A)\)
+\EndFunction
+
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
 
 \section{Fork-choice state and nonjustifiable heights}\label{sec:fork-choice-state}
 
@@ -800,7 +1049,9 @@ Otherwise set \(A=G_1(\Sigma,u)\).  From~\(A\), follow
 has state-height below \(\Sigma.h_{\max}-1\), continue through viable children
 using the same previous-slot participating-vote plurality, with deterministic
 ties, until that height bound is met.  The returned block is
-\(\mathsf{walk}(\Sigma,\Omega,u)\).
+\(\mathsf{walk}(\Sigma,\Omega,u;A)\).  The available-vote step stores~\(A\);
+every later walk in the same round uses that stored value and does not evaluate
+the pointer again.
 \end{definition}
 
 The last step affects only the height of the returned block, not its
@@ -1823,7 +2074,12 @@ executable protocol may spread these duties across a round.  Such a schedule
 must preserve the same order for every vote used in the proof.  The validator
 set and weights used at a height must remain fixed across forks.  Checkpoint
 sync must authenticate \texttt{current\_height\_target} together with the
-current height and finalized state.  A valid vote that refers to an unknown
+current height and finalized state.  Figure~\ref{alg:state-machine} sets the
+new target to the block that performs the abstract height transition.  An
+executable profile may record the same unique first block only once its root
+can be represented without a circular state-root dependency.  It must also
+define the scheduled block transition for which
+\(\mathsf{closes\_round}(B)\) is true.  A valid vote that refers to an unknown
 block must be queued and replayed when the block arrives.  The companion note
 \texttt{paper-spec-status.md} records the remaining specification details.
 
