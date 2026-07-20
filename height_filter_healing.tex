@@ -60,12 +60,12 @@
 \newcommand{\Supp}{S}
 \newcommand{\Dvote}{D}
 \newcommand{\Credit}{\mathsf{Credit}}
-\newcommand{\cascadeRoot}{\mathsf{cascadeRoot}}
+\newcommand{\simplexRoot}{\mathsf{simplex\_root}}
+\newcommand{\stableRoot}{\mathsf{stable\_root}}
 \newcommand{\Gone}{G_1}
 \newcommand{\Gzero}{G_0}
 \newcommand{\GST}{\mathrm{GST}}
 \newcommand{\liveConfirmed}{\mathsf{live\_confirmed\_head}}
-\newcommand{\roundEnd}{\mathsf{ends\_round}}
 
 \IfFileExists{lite_full_setup.tex}{\input{lite_full_setup.tex}}{%
   \IfFileExists{full/lite_full_setup.tex}{\input{full/lite_full_setup.tex}}{}%
@@ -191,15 +191,18 @@ root can be computed; the pre-fork genesis or finalized root is not used.
 \end{definition}
 
 \begin{definition}[Blocks and chains]\label{def:block-chain}
-A block has a parent, a strictly increasing slot, a deterministic finite set of
-signed messages, and a post-state.  Its root is known when its post-state is
-recorded.  Blocks form a tree rooted at genesis.
+A block has a parent, a strictly increasing slot, an optional proposer pointer
+\(B.\mathsf{pointer\_root}\), a deterministic finite set of individual signed
+FG attestations, and a post-state.  Its root is known when its post-state is
+recorded; after that point we identify the block with its root.  Blocks form a
+tree rooted at genesis.
 Write \(B\preceq C\) when \(B\) is an ancestor of \(C\), and \(B\sim C\) when
 they are compatible.
 \end{definition}
 
 \begin{definition}[FG message]\label{def:fg-message}
-An FG message, also called an FG vote or attestation, is a signed object~\(v\)
+An FG message, also called an individual FG vote or attestation, is a signed
+object~\(v\)
 with fields
 \[
   (v.\validator,\ v.\mathsf{round},\ v.\headf,\ v.\height,\ v.\target,\
@@ -361,27 +364,27 @@ pending finality nor a per-height finality map.  An empty vote sets neither
 participation bit.  Otherwise every validator could submit an empty vote
 and advance the height without voting for a target or timeout.
 
-Figure~\ref{alg:state-machine} gives the same rules as pseudocode.  Write
-\(\roundEnd(s)\) when slot~\(s\) is the final slot of a round under the
-schedule.  A live validator invokes \(\mathsf{process\_slot}\) on every slot
-tick; \(\mathsf{state\_transition}\) replays the same intervening slot
-transitions before a later block.  A boundary sets
+Figure~\ref{alg:state-machine} gives the same rules as self-contained
+pseudocode.  The routine \(\mathsf{process\_slot}\) is the transition that
+advances beyond the current slot after that slot has been resolved; it is not
+an action at the start of an arbitrary slot.  A live validator applies it to
+an empty slot once that slot is known to be empty, and
+\(\mathsf{state\_transition}\) replays it for every intervening empty slot
+before a later block.  A round boundary sets
 \(\pendingHeightOutcome\); the following slot consumes it after block
 operations, or \(\mathsf{process\_slot}\) consumes it once that slot is known
 to be empty.  In the latter case the invariant
-\(\sigma.L.\slot<\sigma.s\) proves that no block was processed in the
-inclusion-opportunity slot; otherwise \(\mathsf{process\_block}\) would already
-have cleared the pending outcome.  A block never supplies a separate close flag.  The
+\(\sigma.L.\slot<\sigma.s\), together with the fact that slot
+\(\sigma.s-1\) ended a round, proves that no block was processed in the
+inclusion-opportunity slot; otherwise \(\mathsf{process\_block}\) would
+already have cleared the pending outcome.  A block never supplies a separate close flag.  The
 \(\mathsf{state\_transition}\) interface starts from the authenticated
 post-state cached for \(B.\parent\), not from a live action state that has
 already processed later empty-slot ticks; this prevents replaying a slot
-transition twice.  The function and field names otherwise follow the
-executable specification.  In particular,
-\(\mathsf{is\_viable\_attestation\_target}\),
-\(\mathsf{is\_timeout\_vote}\),
-\(\mathsf{has\_new\_finalization}\),
-\(\mathsf{compute\_justified\_checkpoint}\), and
-\(\mathsf{has\_timeout\_quorum}\) implement the checks stated above.
+transition twice.  Every vote classification and quorum check used by the
+state transition is written directly in the figure; it does not import helper
+predicates or aggregate-attestation machinery from the executable
+specification.
 
 \begin{figure}[H]
 \caption{Finality state machine}\label{alg:state-machine}
@@ -389,6 +392,18 @@ executable specification.  In particular,
 \begin{boxedminipage}{\textwidth}
 \scriptsize
 \begin{algorithmic}[1]
+
+\Statex \textbf{Fixed inputs:} \(V,w,q\); constants \(K\geq2\) and
+  \(D_{\rm debt}\geq1\); and a schedule that identifies each round's final slot.
+\Statex An attestation \(a\) is an individual signed message with fields
+  \((a.\validator,a.\height,a.\target,a.\finalizeHeight,a.\finalizeTarget)\);
+  \(B.\mathsf{attestations}\) is a finite set of them.
+\Statex Its checkpoint pair is a target vote \((h,T)\), a timeout \((h,\bot)\),
+  or empty \((\bot,\bot)\); its finalize pair is a commitment \((h_f,T_f)\)
+  or empty \((\bot,\bot)\).
+\Statex Its round and head fields are SG metadata and do not alter this
+  per-chain finality state.
+\vspace{3pt}
 
 \State \textbf{Genesis state} \(\sigma\):
 \Statex \hspace{1em}\(L\gets\genesis,\ s\gets0,\ h\gets1,\
@@ -424,13 +439,14 @@ executable specification.  In particular,
       \Comment{Its canonical root is now noncircular}
   \EndIf
   \If{\(\sigma.\pendingHeightOutcome\)}
-    \State \textbf{assert} \(\sigma.L.\slot<\sigma.s\)
-      \Comment{The inclusion-opportunity slot was empty}
+    \State \textbf{assert} \(\sigma.L.\slot<\sigma.s\) and slot
+      \(\sigma.s-1\) ended a round
+      \Comment{This first post-round slot was empty}
     \State \(\sigma\gets
       \Call{process\_justification\_and\_finalization}{\sigma,\sigma.s+1}\)
     \State \(\sigma.\pendingHeightOutcome\gets\mathsf{false}\)
   \EndIf
-  \If{\(\roundEnd(\sigma.s)\)}
+  \If{slot \(\sigma.s\) is the final slot of its round}
     \State \(\sigma.\pendingHeightOutcome\gets\mathsf{true}\)
   \EndIf
   \State \(\sigma.s\gets\sigma.s+1\)
@@ -443,7 +459,7 @@ executable specification.  In particular,
     \(B.\slot=\sigma.s\)
   \State \(\sigma.L\gets B\)
     \Comment{The next slot materializes its canonical root}
-  \ForAll{attestations \(a\in B.\mathsf{body}.\mathsf{attestations}\)}
+  \ForAll{\(a\in B.\mathsf{attestations}\)}
     \State \(\sigma\gets\Call{process\_attestation}{\sigma,a}\)
   \EndFor
   \If{\(\sigma.\pendingHeightOutcome\)}
@@ -457,38 +473,42 @@ executable specification.  In particular,
 \vspace{3pt}
 
 \Function{process\_attestation}{$\sigma,a$}
-  \State \(d\gets a.\mathsf{data}\)
-  \State \(\mathsf{validate\_attestation}(\sigma,a)\)
-  \State \(\mathit{viable}\gets
-    \mathsf{is\_viable\_attestation\_target}(\sigma,a)\)
-  \State \(\mathit{timeout}\gets\mathsf{is\_timeout\_vote}(d)\)
-  \ForAll{\(i\in\mathsf{get\_attesting\_indices}(\sigma,a)\)}
-    \If{\(i\in V\), \(\sigma.h_j>\sigma.h_F\),
-        \(\sigma.F\preceq\sigma.J\),
-        \(d.\finalizeHeight=\sigma.h_j\), and
-        \(d.\finalizeTarget=\sigma.J\)}
-      \State \(\sigma.P\gets\sigma.P\cup\{i\}\)
-    \EndIf
-    \If{\(i\in V\) and \(\mathit{viable}\)}
-      \State \(\sigma.\timeouts[i]\gets\mathsf{true}\)
-      \If{\(\neg\mathit{timeout}\)}
-        \State \(\sigma.\targetParticipation[i]\gets\mathsf{true}\)
-      \EndIf
-    \EndIf
-  \EndFor
+  \State \(i\gets a.\validator\); \quad
+    \textbf{assert} \(i\in V\) and \(a\) is well formed and validly signed by \(i\)
+  \State \(\mathit{target\_vote}\gets
+    (a.\height=\sigma.h)\wedge
+    (\sigma.\currentHeightTarget\neq\bot)\wedge
+    (a.\target=\sigma.\currentHeightTarget)\wedge
+    (a.\target\prec\sigma.L)\)
+  \State \(\mathit{timeout\_vote}\gets
+    (a.\height=\sigma.h)\wedge(a.\target=\bot)\)
+  \If{\(\sigma.h_j>\sigma.h_F\), \(\sigma.F\preceq\sigma.J\),
+      \(a.\finalizeHeight=\sigma.h_j\), and
+      \(a.\finalizeTarget=\sigma.J\)}
+    \State \(\sigma.P\gets\sigma.P\cup\{i\}\)
+  \EndIf
+  \If{\(\mathit{target\_vote}\)}
+    \State \(\sigma.\targetParticipation[i]\gets\mathsf{true};\quad
+      \sigma.\timeouts[i]\gets\mathsf{true}\)
+  \ElsIf{\(\mathit{timeout\_vote}\)}
+    \State \(\sigma.\timeouts[i]\gets\mathsf{true}\)
+  \EndIf
   \State \Return \(\sigma\)
 \EndFunction
 \vspace{3pt}
 
 \Function{process\_justification\_and\_finalization}{$\sigma,\mathit{height\_start\_slot}$}
-  \If{\(\mathsf{has\_new\_finalization}(\sigma)\)}
+  \If{\(\sigma.h_j>\sigma.h_F\), \(\sigma.F\preceq\sigma.J\), and
+      \(w(\sigma.P)\geq q\)}
     \State \((\sigma.F,\sigma.h_F)\gets(\sigma.J,\sigma.h_j)\)
   \EndIf
-  \State \(T\gets\mathsf{compute\_justified\_checkpoint}(\sigma)\)
-  \If{\(T\neq\bot\)}
-    \State \Return \(\Call{advance\_height}{\sigma,T,\mathit{height\_start\_slot}}\)
+  \If{\(\neg\sigma.\currentHeightNonjustifiable\),
+      \(\sigma.\currentHeightTarget\neq\bot\), and
+      \(w(\{i\in V:\sigma.\targetParticipation[i]\})\geq q\)}
+    \State \Return \(\Call{advance\_height}{\sigma,
+      \sigma.\currentHeightTarget,\mathit{height\_start\_slot}}\)
   \EndIf
-  \If{\(\mathsf{has\_timeout\_quorum}(\sigma)\)}
+  \If{\(w(\{i\in V:\sigma.\timeouts[i]\})\geq q\)}
     \State \Return
       \(\Call{advance\_height}{\sigma,\bot,\mathit{height\_start\_slot}}\)
   \EndIf
@@ -711,12 +731,11 @@ The post-state map \(\sigma_S[B]\), pending-reference indices, and the
 fork-choice state~\(\Sigma\) are derived from these raw sets.  They may be
 cached, but are not independent merge inputs.
 
-The fresh-root pointer is not a separate store object.  As in the executable
-specification, it is the \(\mathsf{anchor\_root}\) field of a round-start
-block.  The \(\mathsf{on\_block}\) path retains that field with the signed
-block.
+The fresh-root pointer is not a separate store object.  It is the
+\(\mathsf{pointer\_root}\) field of a round-start block.  The
+\(\mathsf{on\_block}\) path retains that field with the signed block.
 Consequently, not observing a round-start block is different from observing
-one with an explicit empty \(\mathsf{anchor\_root}\).
+one with an explicit empty \(\mathsf{pointer\_root}\).
 \end{definition}
 
 A block's post-state is obtained from its parent's post-state by replaying
@@ -735,7 +754,7 @@ their blocks, attestations, timely facts, and completed-step records.
 Its clock is the greater of the two clocks.  A scheduled step that neither
 copy has completed uses every input object marked timely for that step in
 either copy.  If the timely round-start blocks contain two distinct
-\(\mathsf{anchor\_root}\) values signed by the round's proposer, the step uses
+\(\mathsf{pointer\_root}\) values signed by the round's proposer, the step uses
 neither.  If they contain only one value, that pointer remains available.
 
 A merge does not recompute a completed step.  A second proposal learned after
@@ -804,9 +823,9 @@ its own parent state and its own included attestations, and never combines sibli
 states.  If two completed records for the same step remain after a merge, a
 later operation that requires one predecessor result does not run until the
 protocol has a common continuation.  The completed available-vote record stores
-the anchor chosen for its round.  Every later \textsf{get\_head} call in that
-round reads this anchor; later votes do not cause the pointer to be accepted or
-rejected again.  A completed result is usable only when its predecessor chain
+the round's stabilization root, called its \emph{stable root}.  Every later
+\textsf{get\_head} call in that round reads this stable root; later votes do not
+cause the pointer to be accepted or rejected again.  A completed result is usable only when its predecessor chain
 matches the current history and it is the unique such result; otherwise the
 dependent operation waits.
 
@@ -835,10 +854,10 @@ dependent operation waits.
         \{\mathsf{timely}(\mathit{signed\_block},I)\}\)
     \EndIf
   \EndFor
-  \ForAll{\(a\in B.\mathsf{body}.\mathsf{attestations}\)}
+  \ForAll{\(a\in B.\mathsf{attestations}\)}
     \State \(S\gets\Call{on\_attestation}{S,a}\)
   \EndFor
-  \State \Return \(S\) \Comment{\(B.\mathsf{body}.\mathsf{anchor\_root}\) stays with \(B\)}
+  \State \Return \(S\) \Comment{\(B.\mathsf{pointer\_root}\) stays with \(B\)}
 \EndFunction
 \vspace{2pt}
 
@@ -919,15 +938,18 @@ dependent operation waits.
   \State \(\hmax\gets\max\{\sigma[B].h:B\in\T\}\)
   \State \(\viableTree\gets\{B\in\T:\exists\text{ leaf }L\in\T,
     B\preceq L\text{ and }\sigma[L].h\geq\hmax-1\}\)
-  \State \(R\gets J\) if \(\hmax=h_j+1\), else \(R\gets F\)
-  \State \Return \(\Sigma=(\sigma,\T,F,h_F,J,h_j,\hmax,\viableTree,R)\)
+  \State \(\simplexRoot\gets J\) if \(\hmax=h_j+1\), else
+    \(\simplexRoot\gets F\)
+  \State \Return
+    \(\Sigma=(\sigma,\T,F,h_F,J,h_j,\hmax,\viableTree,\simplexRoot)\)
 \EndFunction
 \vspace{2pt}
 
 \Function{get\_head}{$S,I,\Omega,u$}
   \State \(\Sigma\gets\Call{derive\_fork\_choice}{S}\)
-  \State \(A\gets\) the anchor in the unique history-compatible result for \(I\)
-  \State \Return \(\mathsf{walk}(\Sigma,\Omega,u;A)\)
+  \State \(\stableRoot_u^r\gets\) the stable root in the unique
+    history-compatible result for \(I\)
+  \State \Return \(\mathsf{walk}(\Sigma,\Omega,u;\stableRoot_u^r)\)
 \EndFunction
 
 \end{algorithmic}
@@ -947,12 +969,13 @@ height, breaking ties by target hash.  Let
 \(\Sigma.\hmax\) be the greatest state-height of any block in this restricted
 tree.  Blocks outside the subtree of \(\Sigma.F\) do not affect the protocol.
 
-\begin{definition}[Viable subtree and cascade root]\label{def:cascade-root}
+\begin{definition}[Viable subtree and Simplex root]\label{def:simplex-root}
 A block is \emph{viable} in~\(\Sigma\) when it has an accepted leaf descendant
 whose state-height is at least \(\Sigma.\hmax-1\).  Write
-\(\viableTree(\Sigma)\) for the viable subtree.  The cascade root is
+\(\viableTree(\Sigma)\) for the viable subtree.  The \emph{Simplex root}
+is the derived value
 \[
-  \cascadeRoot(\Sigma)=
+  \simplexRoot(\Sigma)=
   \begin{cases}
     \Sigma.J,&\Sigma.\hmax=\Sigma.h_j+1,\\
     \Sigma.F,&\text{otherwise}.
@@ -961,13 +984,13 @@ whose state-height is at least \(\Sigma.\hmax-1\).  Write
 Thus the latest justification roots the walk only while it is exactly one
 height behind \(\Sigma.\hmax\).  Once a timeout moves a chain one height
 farther, the walk starts from the finalized root instead.
-Every accepted pointed or fallback anchor below is required to lie in
-\(\viableTree(\Sigma)\) and to descend from~\(\cascadeRoot(\Sigma)\).
+Every stable root defined below is required to lie in
+\(\viableTree(\Sigma)\) and to descend from~\(\simplexRoot(\Sigma)\).
 \end{definition}
 
 The finalized root is viable because a block that raises \(h_{\max}\) is
 accepted only if it descends from the local finalized block.
-When the cascade selects~\(J\), the justified target itself is at
+When the Simplex-root rule selects~\(J\), the justified target itself is at
 state-height~\(h_{\max}-1\), so it is viable as well.  Every descent used below
 therefore starts from a viable root.
 
@@ -980,10 +1003,10 @@ later walk output descends from~\(F\).
 
 \begin{proof}
 Lemma~\ref{lem:past-finalized} gives the first claim.  The store filters later
-justifications against its finalized root.  If the cascade root is~\(J\), it
-therefore descends~\(F\); if the cascade root is~\(F\), the claim is immediate.
-Every anchor and every later step of the walk is constrained to descendants of the
-cascade root.
+justifications against its finalized root.  If the Simplex root is~\(J\), it
+therefore descends~\(F\); if the Simplex root is~\(F\), the claim is immediate.
+Every stable root and every later step of the walk is constrained to
+descendants of the Simplex root.
 \end{proof}
 
 Fix protocol constants \(K\geq2\) and \(D_{\rm debt}\geq1\).
@@ -1022,7 +1045,7 @@ If every valid chain reaching~\(H\) has
 \(\nj=\mathsf{true}\) in its height-\(H\) state, no justification at~\(H\)
 can form.  Throughout the
 period in which \(\Sigma.h_{\max}=H+1\), every honest
-cascade root is its own \(\Sigma.F\); in particular, FG cannot reintroduce a
+Simplex root is its own \(\Sigma.F\); in particular, FG cannot reintroduce a
 height-\(H\) justification as the walk root.  If the store already contains,
 or later imports, a branch at height~\(H+2\), the only newly eligible
 justification root is at height~\(H+1\), not height~\(H\).
@@ -1035,11 +1058,11 @@ justification exists.
 Every chain with \(\Sigma.h_{\max}=H+1\) therefore has greatest justified height
 at most \(H-1\).  While \(\Sigma.h_{\max}=H+1\), we have
 \(\Sigma.h_{\max}\geq\Sigma.h_j+2\), so the condition for selecting~\(J\) is
-not met and Definition~\ref{def:cascade-root} selects~\(\Sigma.F\).  The same
+not met and Definition~\ref{def:simplex-root} selects~\(\Sigma.F\).  The same
 reasoning applies after importing any branch that leaves
 \(\Sigma.h_{\max}=H+1\), because a height-\(H\) justification remains
-impossible.  When \(\Sigma.h_{\max}=H+2\), the cascade can instead select only
-a height-\(H+1\) justification.  Lemma~\ref{lem:cascade-compatible} shows that any such root
+impossible.  When \(\Sigma.h_{\max}=H+2\), the Simplex-root rule can instead select only
+a height-\(H+1\) justification.  Lemma~\ref{lem:simplex-root-compatible} shows that any such root
 used during recovery is compatible with the common safe-confirmed chain once
 it has been established.
 \end{proof}
@@ -1108,16 +1131,16 @@ block.
 \end{definition}
 
 \begin{definition}[The two SG grades]\label{def:grades}
-The \emph{grade-1 fallback anchor} \(\Gone(\Sigma,u)\) starts at the cascade
-root~\(\cascadeRoot(\Sigma)\) and repeatedly enters the unique viable child~\(c\) with
+The \emph{grade-1 fallback root} \(\Gone(\Sigma,u)\) starts at the
+Simplex root~\(\simplexRoot(\Sigma)\) and repeatedly enters the unique viable child~\(c\) with
 \(3\Supp_u(c)\geq2\Dvote_u\), stopping when no such child exists.  If
-\(\Dvote_u=0\), it returns the cascade root.
+\(\Dvote_u=0\), it returns the Simplex root.
 
 A block~\(C\) is \emph{\(\Gzero\)-clear} in~\(u\)'s view when every block~\(B\)
 conflicting with~\(C\) has
 \(3\Supp_u(B)<\Dvote_u\).  Equivalently, no conflicting block has
 support at least one third of the local live denominator.  When \(\Dvote_u=0\),
-grade-0 clearance holds by convention.  The \(2/3\) anchor and \(1/3\)
+grade-0 clearance holds by convention.  The \(2/3\) fallback root and \(1/3\)
 conflict veto are used at every height.
 \end{definition}
 
@@ -1128,23 +1151,23 @@ not a selected block.
 \begin{assumption}[Goldfish properties]\label{ass:goldfish}
 Write~\(\Omega\) for the available-layer blocks and votes used for one round's
 walk and confirmation.  The function
-\(\mathsf{goldfishHead}(A,\Omega)\) deterministically chooses a viable
-descendant of anchor~\(A\).  Goldfish confirmation is separate from SG and
+\(\mathsf{goldfishHead}(S,\Omega)\) deterministically chooses a viable
+descendant of stable root~\(S\).  Goldfish confirmation is separate from SG and
 safe confirmation.  It requires a strict majority of the participating
-committee.  A vote for a descendant supports every ancestor back to~\(A\).
+committee.  A vote for a descendant supports every ancestor back to~\(S\).
 The participating set is fixed after the available vote, and confirmation is
 evaluated one slot later.  During recovery, Goldfish satisfies:
 \begin{enumerate}
   \item the available-confirmed heads used when honest validators make the SG
     and FG votes considered here are pairwise compatible, including across
     rounds.  The same holds for the confirmations underlying a saved target,
-    an active lock, or a justified target used as a cascade root;
+    an active lock, or a justified target used as a Simplex root;
   \item if an honest view confirms~\(C\), and at one post-\(\GST\) available-vote
-    step every responsive honest voter starts from an anchor compatible with
+    step every responsive honest voter starts from a stable root compatible with
     \(C\) and votes for a descendant of~\(C\), then the delayed evaluation
     makes~\(C\) common to all honest views.  Thereafter, Goldfish from any
-    compatible honest anchor returns a descendant of~\(C\), for as long as
-    the participation and compatible-anchor assumptions continue to hold;
+    compatible honest stable root returns a descendant of~\(C\), for as long as
+    the participation and compatible-stable-root assumptions continue to hold;
     and
   \item in a slot with an honest proposer, let \(c_{\rm honest}\) be the common
     online honest committee weight and \(c_{\rm adv}\) the committee's total
@@ -1170,19 +1193,25 @@ view.  The participating sets and their denominators need not be identical.
 The first condition above provides the only compatibility assumption between
 different views.
 
-\begin{definition}[Anchored walk]\label{def:walk}
-At a round's available-vote action, validator~\(u\) first evaluates the
+\begin{definition}[Stable root and walk]\label{def:walk}
+At round~\(r\)'s available-vote action, validator~\(u\) first evaluates the
 round-start proposal's pointed root as in
 Definition~\ref{def:fresh-root}.  If the root~\(B\) is accepted,
-\(\cascadeRoot(\Sigma)\preceq B\), and \(B\) is viable, set the anchor~\(A=B\).
-Otherwise set \(A=\Gone(\Sigma,u)\).  From~\(A\), follow
-\(\mathsf{goldfishHead}(A,\Omega)\) inside the viable subtree.  If the result
+\(\simplexRoot(\Sigma)\preceq B\), and \(B\) is viable, set
+\(\stableRoot_u^r=B\).  Otherwise set
+\(\stableRoot_u^r=\Gone(\Sigma,u)\).  This per-round stabilization root is the
+\emph{stable root}; it always descends from the Simplex root.  From
+\(\stableRoot_u^r\), follow
+\(\mathsf{goldfishHead}(\stableRoot_u^r,\Omega)\) inside the viable subtree.  If the result
 has state-height below \(\Sigma.h_{\max}-1\), continue through viable children
 using the same previous-slot participating-vote plurality, with deterministic
 ties, until that height bound is met.  The returned block is
-\(\mathsf{walk}(\Sigma,\Omega,u;A)\).  The available-vote step stores~\(A\);
+\(\mathsf{walk}(\Sigma,\Omega,u;\stableRoot_u^r)\).  The available-vote step
+stores~\(\stableRoot_u^r\);
 every later walk in the same round uses that stored value and does not evaluate
-the pointer again.
+the pointer again.  Pointer support is never re-evaluated.  If a later
+authenticated state change makes the stored root unavailable below the current
+Simplex root, that root is inert and the walk uses the current grade-1 fallback.
 \end{definition}
 
 The last step affects only the height of the returned block, not its
@@ -1190,9 +1219,9 @@ confirmation status.  By definition, a viable child exists until the height
 bound is reached.
 
 \begin{definition}[Safe confirmation]\label{def:safe-confirm}
-Fix an honest view~\(u\), its derived store~\(\Sigma\), cascade root
-\(R=\cascadeRoot(\Sigma)\), and Goldfish available-confirmed head
-\(\liveConfirmed_u\).  The cascade root~\(R\) is always safe-confirmed.  If
+Fix an honest view~\(u\), its derived store~\(\Sigma\), Simplex root
+\(R=\simplexRoot(\Sigma)\), and Goldfish available-confirmed head
+\(\liveConfirmed_u\).  The Simplex root~\(R\) is always safe-confirmed.  If
 \(\liveConfirmed_u\) does not descend from~\(R\),
 the safe-confirmed head is~\(R\).  Otherwise it is the deepest \(\Gzero\)-clear
 block between~\(R\) and~\(\liveConfirmed_u\), or~\(R\) if no strict descendant qualifies.
@@ -1219,7 +1248,7 @@ proposer of a round is honest, then:
   \item every honest validator evaluates pointer ancestry and viability using
     the same state.  If the pointed root passes, all use it; if it fails,
     all use the same grade-1 fallback.  Thus every honest available voter uses
-    one common viable anchor and votes for the proposal block or a descendant
+    one common viable stable root and votes for the proposal block or a descendant
     on its walk chain; and
   \item after delayed confirmation, every honest validator chooses an SG head
     on a descendant of the same block and obtains the same height and
@@ -1258,7 +1287,7 @@ accepts it as a \emph{fresh root} at its available-vote step exactly when
 \(B\) and its ancestry are available,
 \(\Credit_u^r(B)\geq q\), the proposer has not signed a distinct
 pointer for the same round, and the walk checks in
-Definition~\ref{def:walk} (cascade ancestry and viability) pass.  The proposal
+Definition~\ref{def:walk} (Simplex-root ancestry and viability) pass.  The proposal
 carries only~\(B\), never the votes or an aggregate.
 \end{definition}
 
@@ -1325,13 +1354,13 @@ honest proposer, which therefore sees direct quorum support.
 \end{proof}
 
 An honest proposer chooses the deepest directly quorum-supported root that
-descends from the cascade root and passes the viability check in the state used for its proposal,
+descends from the Simplex root and passes the viability check in the state used for its proposal,
 with a deterministic hash tie-break; if none passes, it omits the pointer and
 the fallback is used.  It broadcasts one proposal.  A
 Byzantine proposer may equivocate.  If both proposals are in a validator's
 view before its pointer deadline, that validator uses neither pointer.  If the second
 proposal arrives later, it is kept as equivocation evidence but does not alter
-the anchor already chosen for that round.  This can delay liveness but cannot
+the stable root already chosen for that round.  This can delay liveness but cannot
 create two conflicting accepted fresh roots under \(b<2q-W\).  There is
 a new pointer opportunity every round, even when the height has not advanced.
 A pointer applies to one round, not to an entire height.
@@ -1339,7 +1368,7 @@ A pointer applies to one round, not to an entire height.
 \begin{lemma}[An honest proposer gives validators the same fork-choice input]\label{lem:pointer-alignment}
 Under Assumptions~\ref{ass:recovery-weights}
 and~\ref{ass:honest-proposer}, an honest first-slot proposer makes every responsive
-honest validator use the same viable anchor at its available-vote action: the
+honest validator use the same viable stable root at its available-vote action: the
 pointed root if its common checks pass, otherwise the common grade-1 fallback.
 At the later SG action their walk outputs lie on one chain and have one
 state-height~\(k\) and one current-height target~\(T\), even if their pre-round walks
@@ -1349,11 +1378,11 @@ were split between \(h_{\max}-1\) and \(h_{\max}\).
 \begin{proof}
 Lemma~\ref{lem:fresh-root-exists} supplies a directly supported root and
 Lemma~\ref{lem:fresh-root-sync} makes its credited support reach~\(q\)
-everywhere.  Those two facts alone do not prove cascade-root ancestry and
+everywhere.  Those two facts alone do not prove Simplex-root ancestry and
 viability.  Assumption~\ref{ass:honest-proposer} gives them the same state:
 the proposed root either passes everywhere or fails everywhere, in which case
 the same fallback is used.  It then makes all honest available voters follow
-that common anchor's walk chain.  After confirmation, all SG walks remain on
+that common stable root's walk chain.  After confirmation, all SG walks remain on
 that chain.
 The height and current-height target are read from the slot-advanced action
 states on those walks rather
@@ -1643,7 +1672,7 @@ learned \(\mathsf{JC}(k,T_L)\).  If that target quorum has already been
 processed on the current chain, the height has advanced.  Otherwise the common
 walk is at height~\(k\) and its safely confirmed target is~\(T\).
 
-If \(T\) is the cascade root, it is genesis or a justified or finalized target
+If \(T\) is the Simplex root, it is genesis or a justified or finalized target
 at the same height.  Target uniqueness and finalized-chain safety, applied to
 the retained \(\mathsf{JC}(k,T_L)\), give \(T_L=T\) under \(b<2q-W\).
 Otherwise, Goldfish confirmed a descendant of~\(T\).  The retained JC for
@@ -1869,47 +1898,47 @@ timeout votes are also present.  Whether the target or timeout branch advances t
 height does not change the common confirmed prefix established by these votes.
 \end{proof}
 
-\begin{lemma}[Later cascade roots are compatible with a safe-confirmed block]\label{lem:cascade-compatible}
+\begin{lemma}[Later Simplex roots are compatible with a safe-confirmed block]\label{lem:simplex-root-compatible}
 Let~\(C\) be safe-confirmed during an interval in which
-Assumption~\ref{ass:goldfish} holds.  Under \(b<2q-W\), every cascade root
+Assumption~\ref{ass:goldfish} holds.  Under \(b<2q-W\), every Simplex root
 selected at that or a later action in the same interval is compatible
 with~\(C\).
 \end{lemma}
 
 \begin{proof}
-Every non-genesis justified block used as a cascade root has a JC containing an
+Every non-genesis justified block used as a Simplex root has a JC containing an
 honest target vote.  Before that vote, the validator Goldfish-confirmed a
 descendant of the target.  Every non-genesis finalized block was previously
 justified and has the same property.
 
-If~\(C\) lies strictly above its action's cascade floor, the current
+If~\(C\) lies strictly above its action's Simplex-root floor, the current
 available-confirmed head confirms~\(C\).  If~\(C\) is the floor, then it is
 genesis or a justified or finalized root with such a prior confirmation.
 Clause~1 of Assumption~\ref{ass:goldfish} makes these confirmations
 pairwise compatible, so their ancestors are compatible with~\(C\).  This
-applies to every justification selected during the interval.  Since a cascade
+applies to every justification selected during the interval.  Since a Simplex
 root is either~\(F\) or~\(J\), later updates to either value preserve the
 result.
 \end{proof}
 
-\begin{lemma}[Delivered SG votes exclude later conflicting anchors]\label{lem:no-conflicting-anchor}
+\begin{lemma}[Delivered SG votes exclude later conflicting stable roots]\label{lem:no-conflicting-stable-root}
 Suppose~\(C\) is on the common safe-confirmed chain, all responsive honest
 available voters perform one post-\(\GST\) available-vote action on descendants
-of~\(C\) from compatible anchors, and all responsive honest validators then
+of~\(C\) from compatible stable roots, and all responsive honest validators then
 publish that round's SG pre-votes for descendants of~\(C\).  After their
-delivery, no anchor adopted by an honest validator in that or a later round
+delivery, no stable root adopted by an honest validator in that or a later round
 in which Assumption~\ref{ass:goldfish} holds conflicts with~\(C\).
 \end{lemma}
 
 \begin{proof}
-The walks descend both their fixed anchors and~\(C\).  Their anchors are
-therefore compatible.  Lemma~\ref{lem:cascade-compatible} makes every later
-cascade root compatible with~\(C\).  After the SG votes are delivered,
+The walks descend both their fixed stable roots and~\(C\).  Their stable roots
+are therefore compatible.  Lemma~\ref{lem:simplex-root-compatible} makes every
+later Simplex root compatible with~\(C\).  After the SG votes are delivered,
 Lemma~\ref{lem:head-concentration} leaves every conflicting branch below the
 grade-0 threshold.  A grade-1 fallback descent from a compatible root cannot
 enter such a branch because every step needs at least two-thirds support.
 
-For a pointed anchor, let~\(B_C\) be the highest common ancestor of the
+For a pointed stable root, let~\(B_C\) be the highest common ancestor of the
 preceding round's responsive honest pre-vote heads.  It descends from~\(C\) and
 has direct support at least~\(q\).  If an honest view credited a conflicting
 pointed root~\(B'\) with weight~\(q\), intersect its credited signer set with
@@ -1944,7 +1973,7 @@ After the SG votes for the second advance are delivered, there is a common
 safe-confirmed prefix~\(C\).  Normally \(C=T_{H+1}\).  If a certificate has
 already advanced~\(H+1\), let~\(C\) be the common target in the first later
 round in which the target is confirmed before FG voting.  No honest validator
-then adopts a conflicting anchor in any later round satisfying the same
+then adopts a conflicting stable root in any later round satisfying the same
 assumptions.  Neither FG, SG, nor Goldfish can move the canonical
 available chain to a branch that conflicts with~\(C\).
 \end{theorem}
@@ -1983,14 +2012,14 @@ that target as~\(C\).  The two height advances are already complete in this
 case, and the SG votes establish the same property for~\(C\).
 
 By Lemma~\ref{lem:nonjustifiable-fg}, while
-\(h_{\max}=H+1\), no height-\(H\) justification exists and the cascade root
+\(h_{\max}=H+1\), no height-\(H\) justification exists and the Simplex root
 is~\(F\), so FG
 cannot interfere with the available walk.  Once \(h_{\max}=H+2\), any
 eligible height-\(H+1\) justification root is compatible with honest safe confirmations by
-Lemma~\ref{lem:cascade-compatible}.  Lemma~\ref{lem:common-target-confirmation} makes
+Lemma~\ref{lem:simplex-root-compatible}.  Lemma~\ref{lem:common-target-confirmation} makes
 \(C\) common and safe-confirmed.  The Goldfish persistence assumption and the
 SG pre-votes keep votes on descendants of~\(C\).
-Lemma~\ref{lem:no-conflicting-anchor} then shows that fallback anchors cannot
+Lemma~\ref{lem:no-conflicting-stable-root} then shows that fallback stable roots cannot
 choose a branch conflicting with~\(C\), while a conflicting pointed root would
 require at least~\(2q-W\) equivocation.  Hence the confirmation
 established after the second advance persists for every later round in which
@@ -2046,21 +2075,21 @@ Theorem~\ref{thm:available-healing}.  Suppose the first shared store with
 Definition~\ref{def:previous-honest-votes}.  No pre-existing justification can redirect
 the walk from~\(C\)'s chain:
 \begin{enumerate}[label=(\roman*)]
-  \item Definition~\ref{def:cascade-root} cannot select a \(J\) of height at
+  \item Definition~\ref{def:simplex-root} cannot select a \(J\) of height at
     most~\(H-1\);
   \item a height-\(H\) justification is impossible;
   \item every height-\(H+1\) justification formed before or after the store became shared, and
-    selected as a cascade root during the interval, is compatible with~\(C\); and
+    selected as a Simplex root during the interval, is compatible with~\(C\); and
   \item no justification at height~\(H+2\) or higher can exist before this shared store.
 \end{enumerate}
 \end{lemma}
 
 \begin{proof}
-When \(\Sigma.h_{\max}=H+2\), Definition~\ref{def:cascade-root} can select a
+When \(\Sigma.h_{\max}=H+2\), Definition~\ref{def:simplex-root} can select a
 justification only at height~\(H+1\), proving~(i).  Since~\(H\) is
 nonjustifiable, a height-\(H\) justification is impossible, proving~(ii).  A
 height-\(H+1\) justification quorum contains an honest target vote.
-If the justification is selected as a cascade root here, Assumption~\ref{ass:goldfish}
+If the justification is selected as a Simplex root here, Assumption~\ref{ass:goldfish}
 makes the confirmation that preceded that vote
 compatible with~\(C\).
 Target uniqueness excludes a conflicting certified target.  Any remaining
@@ -2167,7 +2196,7 @@ eventual result has no fixed round bound.
 
 \begin{proof}
 Lemma~\ref{lem:no-preexisting-high-j} excludes every pre-existing justification that could
-move the walk to a conflicting chain, and Lemma~\ref{lem:no-conflicting-anchor}
+move the walk to a conflicting chain, and Lemma~\ref{lem:no-conflicting-stable-root}
 keeps later walks on the stabilized chain.  In the shared store, \(d\) is the
 value of~\(h_{\max}\) and bounds all heights previously reached or
 signed at by an honest validator.  The height filter and the honest proposal
