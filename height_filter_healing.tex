@@ -43,6 +43,7 @@
 \newcommand{\currentHeightNonjustifiable}{\mathsf{current\_height\_nonjustifiable}}
 \newcommand{\targetParticipation}{\mathsf{target\_participation}}
 \newcommand{\timeouts}{\mathsf{timeouts}}
+\newcommand{\pendingHeightOutcome}{\mathsf{pending\_height\_outcome}}
 \newcommand{\genesis}{B_{\mathrm{gen}}}
 \newcommand{\validator}{\mathsf{validator}}
 \newcommand{\height}{\mathsf{height}}
@@ -164,18 +165,24 @@ as justified and finalized at height \(0\), and the genesis state is at current
 height \(1\) with \(T_1=\genesis\).  A justification certificate or timeout certificate
 advances height by exactly one.
 
-For \(h>1\), \(s_h\) is the first slot after the transition that enters
-height~\(h\).  The \emph{current-height target} \(T_h\) is a state field.  It
-is initially~\(\bot\).  After the first block processed at or after~\(s_h\),
-the following slot transition records that block as~\(T_h\), and the field
+For \(h>1\), \(s_h\) is the start slot chosen by the transition that enters
+height~\(h\).  If the outcome is consumed after processing a block~\(B\), then
+\(s_h=B.\slot\); thus the transition block is the first block of the new height
+in its post-state, even though its prestate was at the previous height.  If the
+outcome is consumed after an empty slot~\(s\), then \(s_h=s+1\).  The
+\emph{current-height target} \(T_h\) is a state field.  It is initially~\(\bot\).
+After the first block processed at or after~\(s_h\), the following slot
+transition records that block as~\(T_h\), and the field
 then remains fixed until the next height transition.  For height~\(1\),
 genesis is the target and carries the genesis start slot.  A later height's
 first block cannot store or vote for its own canonical root: that root commits
 to the block's post-state, so putting it in the same post-state would be
 circular.  The following slot transition fills the cached header's state root
 and can then record the block root; descendants can name it.  A
-checkpoint-sync state carries \(T_h\) even when its trusted block is in the
-middle of the height.
+checkpoint-sync state in the middle of a height carries \(T_h\).  A checkpoint
+exactly at the transition block may instead carry
+\((h,s_h,T_h)=(h,B.\slot,\bot)\); it must authenticate~\(B\) so validator
+actions derive the same target until the next slot materializes it.
 
 The convention \(T_1=\genesis\) applies when the protocol is active
 from genesis.  At a fork activation, the first Simplex height starts with an
@@ -251,6 +258,7 @@ the same height.
 A chain state is
 \[
   \sigma=(L,s,h,s_h,T_h,\nj,\targetParticipation,\timeouts,
+          \pendingHeightOutcome,
           J,h_j,F,h_F,P).
 \]
 Here \(L\) is the latest block and \(s\) is the current processed slot, which
@@ -263,10 +271,14 @@ change until the next height transition.  Finality processing does not change it
 \((J,h_j)=(F,h_F)=(\genesis,0)\),
 \((s_1,T_1)=(0,\genesis)\), and \(\nj=\mathsf{false}\).  Initially every
 \(\targetParticipation[i]\) and \(\timeouts[i]\) is false and
-\(P=\varnothing\).  Write \(\sigma_{\rm gen}\) for this initial state.  A
-height advance at the end of slot~\(s\) sets
-\(s_{h+1}=s+1\) and \(T_{h+1}=\bot\).  Slot processing records the first
-later block as~\(T_{h+1}\) once its root is available.
+\(P=\varnothing\) and \(\pendingHeightOutcome=\mathsf{false}\).  Write
+\(\sigma_{\rm gen}\) for this initial state.  A height advance consumed after
+block~\(B\)'s operations sets \(s_{h+1}=B.\slot\); one consumed after an empty
+slot~\(s\) sets \(s_{h+1}=s+1\).  Both start with
+\(T_{h+1}=\bot\).  The following slot processing records the first block at or
+after~\(s_{h+1}\) once its root is available.  Thus a transition block~\(B\)
+becomes the new target, while an empty transition waits for the first later
+block.
 
 The bit \(\targetParticipation[i]\) records whether validator~\(i\) has made
 a valid vote for the stored current-height target~\(T_h\).  The bit
@@ -303,27 +315,31 @@ received from another branch also does not replace the justified block in the
 current branch's state.  Only the justification rule changes \((J,h_j)\)
 below.
 
-The height rules are evaluated exactly once at each scheduled round boundary,
-after all timely votes for that close have been processed.  They are applied
-in this order:
+Each scheduled round boundary makes one height outcome due.  It is evaluated
+exactly once after the following slot's operation phase: after that slot's
+block attestations when it has a block, or on the empty-slot path otherwise.
+This gives the round's last-slot votes one inclusion opportunity.  The outcome
+is applied in this order:
 \begin{enumerate}
   \item if \(h_j>h_F\), \(F\preceq J\), and
     \(w(P)\geq q\), set \((F,h_F)\gets(J,h_j)\);
   \item if \(\nj=\mathsf{false}\) and
     \(w(Q_{\rm target})\geq q\), set
     \((J,h_j)\gets(T_h,h)\), reset \(P\), and then advance \(h\), set
-    \((s_h,T_h)\gets(s+1,\bot)\), set the new height's
+    \((s_h,T_h)\gets(s_\ast,\bot)\), set the new height's
     nonjustifiable flag by Definition~\ref{def:nonjustifiable}, and reset
     \(\targetParticipation\) and \(\timeouts\);
   \item otherwise, if \(w(Q_{\rm timeout})\geq q\), advance \(h\) and
     reset \(\targetParticipation\) and \(\timeouts\), again setting
-    \((s_h,T_h)\gets(s+1,\bot)\) and setting the new height's
+    \((s_h,T_h)\gets(s_\ast,\bot)\) and setting the new height's
     nonjustifiable flag.  This is the
     timeout branch even when some members of the timeout quorum cast
     current-height target votes.
 \end{enumerate}
-Finality is processed before a justification or timeout enabled at the same
-round boundary.  Since a chain stores one current-height target, all valid target votes
+Here \(s_\ast\) is the current block's slot on the block path and the slot
+after the empty inclusion opportunity on the empty path.  Finality is
+processed before a justification or timeout enabled by the same due outcome.
+Since a chain stores one current-height target, all valid target votes
 increment the same bitlist.
 
 A target vote therefore has two independent effects: it contributes to
@@ -335,7 +351,8 @@ advances by timeout.  A validator already locked on the unique target at~\(h\)
 need not vote timeout: its existing or repeated target vote already counts
 toward the timeout branch.
 
-At the end of a round, finality is checked before justification and timeout.
+When a round's due outcome is consumed, finality is checked before
+justification and timeout.
 Thus a full quorum of finality votes for the latest justification is processed
 before a new justification can replace it and reset~\(P\).  A partial tally is
 discarded when a newer justification replaces it; the protocol finalizes
@@ -348,9 +365,10 @@ Figure~\ref{alg:state-machine} gives the same rules as pseudocode.  Write
 \(\roundEnd(s)\) when slot~\(s\) is the final slot of a round under the
 schedule.  A live validator invokes \(\mathsf{process\_slot}\) on every slot
 tick; \(\mathsf{state\_transition}\) replays the same intervening slot
-transitions before a later block.  The round outcome is therefore evaluated
-even when the final slot is empty.  A block never supplies a separate close
-flag.  All timely attestations for the close have already been included.  The
+transitions before a later block.  A boundary sets
+\(\pendingHeightOutcome\); the following slot consumes it after block
+operations, or \(\mathsf{process\_slot}\) consumes it once that slot is known
+to be empty.  A block never supplies a separate close flag.  The
 \(\mathsf{state\_transition}\) interface starts from the authenticated
 post-state cached for \(B.\parent\), not from a live action state that has
 already processed later empty-slot ticks; this prevents replaying a slot
@@ -366,7 +384,7 @@ executable specification.  In particular,
 \caption{Finality state machine}\label{alg:state-machine}
 \begin{center}
 \begin{boxedminipage}{\textwidth}
-\footnotesize
+\scriptsize
 \begin{algorithmic}[1]
 
 \State \textbf{Genesis state} \(\sigma\):
@@ -374,7 +392,8 @@ executable specification.  In particular,
   \currentHeightStartSlot\gets0,\ \currentHeightTarget\gets\genesis\)
 \Statex \hspace{1em}\(\currentHeightNonjustifiable\gets\mathsf{false},\
   \targetParticipation\gets\mathsf{false}^{V},\
-  \timeouts\gets\mathsf{false}^{V}\)
+  \timeouts\gets\mathsf{false}^{V},\
+  \pendingHeightOutcome\gets\mathsf{false}\)
 \Statex \hspace{1em}\((J,h_j)\gets(\genesis,0),\
   (F,h_F)\gets(\genesis,0),\ P\gets\varnothing\)
 \vspace{3pt}
@@ -401,9 +420,14 @@ executable specification.  In particular,
     \State \(\sigma.\currentHeightTarget\gets\sigma.L\)
       \Comment{Its canonical root is now noncircular}
   \EndIf
-  \If{\(\roundEnd(\sigma.s)\)}
+  \If{\(\sigma.\pendingHeightOutcome\)}
     \State \(\sigma\gets
-      \Call{process\_justification\_and\_finalization}{\sigma}\)
+      \Call{process\_justification\_and\_finalization}{\sigma,\sigma.s+1}\)
+    \State \(\sigma.\pendingHeightOutcome\gets\mathsf{false}\)
+      \Comment{The current slot was empty}
+  \EndIf
+  \If{\(\roundEnd(\sigma.s)\)}
+    \State \(\sigma.\pendingHeightOutcome\gets\mathsf{true}\)
   \EndIf
   \State \(\sigma.s\gets\sigma.s+1\)
   \State \Return \(\sigma\)
@@ -418,6 +442,12 @@ executable specification.  In particular,
   \ForAll{attestations \(a\in B.\mathsf{body}.\mathsf{attestations}\)}
     \State \(\sigma\gets\Call{process\_attestation}{\sigma,a}\)
   \EndFor
+  \If{\(\sigma.\pendingHeightOutcome\)}
+    \State \(\sigma\gets
+      \Call{process\_justification\_and\_finalization}{\sigma,\sigma.s}\)
+    \State \(\sigma.\pendingHeightOutcome\gets\mathsf{false}\)
+      \Comment{The transition block opens the new height}
+  \EndIf
   \State \Return \(\sigma\)
 \EndFunction
 \vspace{3pt}
@@ -446,28 +476,29 @@ executable specification.  In particular,
 \EndFunction
 \vspace{3pt}
 
-\Function{process\_justification\_and\_finalization}{$\sigma$}
+\Function{process\_justification\_and\_finalization}{$\sigma,\mathit{height\_start\_slot}$}
   \If{\(\mathsf{has\_new\_finalization}(\sigma)\)}
     \State \((\sigma.F,\sigma.h_F)\gets(\sigma.J,\sigma.h_j)\)
   \EndIf
   \State \(T\gets\mathsf{compute\_justified\_checkpoint}(\sigma)\)
   \If{\(T\neq\bot\)}
-    \State \Return \(\Call{advance\_height}{\sigma,T}\)
+    \State \Return \(\Call{advance\_height}{\sigma,T,\mathit{height\_start\_slot}}\)
   \EndIf
   \If{\(\mathsf{has\_timeout\_quorum}(\sigma)\)}
-    \State \Return \(\Call{advance\_height}{\sigma,\bot}\)
+    \State \Return
+      \(\Call{advance\_height}{\sigma,\bot,\mathit{height\_start\_slot}}\)
   \EndIf
   \State \Return \(\sigma\)
 \EndFunction
 \vspace{3pt}
 
-\Function{advance\_height}{$\sigma,\mathit{justify\_target}=\bot$}
+\Function{advance\_height}{$\sigma,\mathit{justify\_target},\mathit{height\_start\_slot}$}
   \If{\(\mathit{justify\_target}\neq\bot\)}
     \State \((\sigma.J,\sigma.h_j)\gets
       (\mathit{justify\_target},\sigma.h);\quad \sigma.P\gets\varnothing\)
   \EndIf
   \State \(\sigma.h\gets\sigma.h+1\)
-  \State \(\sigma.\currentHeightStartSlot\gets\sigma.s+1;\quad
+  \State \(\sigma.\currentHeightStartSlot\gets\mathit{height\_start\_slot};\quad
     \sigma.\currentHeightTarget\gets\bot\)
   \State \(\sigma.\currentHeightNonjustifiable\gets
     (\sigma.h-\sigma.h_F>D_{\rm debt})\mathbin{\wedge}(K\mid\sigma.h)\)
@@ -538,9 +569,14 @@ strict ancestor of the block containing the vote.  The target is initialized
 to genesis for \(h=1\).  At each later height, slot processing records the
 first block at or after the height start slot and replaces it only at the next
 height transition.  The strict-ancestor check ensures that this recording step
-has occurred before a vote naming the block can be counted.  That block's state
-is already at height~\(h\), and no height transition occurs between it and its
-use as~\(T_h\).
+has occurred before a vote naming the block can be counted: while the field is
+empty the target bit cannot be set, and before a descendant can include the
+vote, its slot transition materializes the target root.  If a block~\(T\)
+consumed the preceding height's due outcome, its post-state is already at
+height~\(h\) and its slot is the new start slot.  If that outcome was consumed
+on an empty-slot path, the target is the first later block and likewise has a
+height-\(h\) post-state.  No height transition occurs between that post-state
+and installing~\(T\) as~\(T_h\).
 \end{proof}
 
 \begin{lemma}[Target uniqueness on a chain]\label{lem:chain-target-uniqueness}
@@ -554,11 +590,13 @@ can be accepted only on conflicting branches.
 
 \begin{proof}
 Height never decreases and each transition increments it by one.  A chain
-therefore has at most one first block after the start of height~\(h\), which
+therefore has at most one first block at or after the start of height~\(h\), which
 Definition~\ref{def:height} stores after its root becomes available and until
-the next transition.  If another height-\(h\) branch has processed beyond that
-block~\(T\), it has crossed the same height start and has already recorded
-\(T\) as its first block.  The target-validity rule then accepts the vote.
+the next transition.  The authenticated post-state of the transition block
+fixes the same start slot on every extension containing it.  If another
+height-\(h\) branch has processed beyond target block~\(T\), it inherits that
+state and has already recorded~\(T\).  The target-validity rule then accepts
+the vote.
 \end{proof}
 
 \begin{lemma}[Target participation bits]\label{lem:target-bit-compression}
@@ -677,8 +715,9 @@ Consequently, not observing a round-start block is different from observing
 one with an explicit empty \(\mathsf{anchor\_root}\).
 \end{definition}
 
-A block's post-state is obtained from its parent's post-state by processing
-only the attestations included in that block.  When two stores are merged, each
+A block's post-state is obtained from its parent's post-state by replaying
+intervening slot transitions, processing the attestations included in that
+block, and then consuming any due outcome.  When two stores are merged, each
 block is replayed with its own included attestation batch.  In particular, target,
 timeout, and finality bitlists from sibling blocks are never combined.  A
 chain accepts only its stored current-height target.  Votes for other targets
@@ -1318,17 +1357,20 @@ than from a receiver's pre-round height, so a prior one-height split does not
 cause pointer rejection.  The remaining conditions of
 Assumption~\ref{ass:honest-proposer} ensure that proposal processing and
 Goldfish confirmation give the same height and current-height target.  If the
-height has just begun with an empty stored target, the common first-slot
-proposal is its first block; slot processing records that block before the
-delayed confirmation and SG actions.
+common proposal's operations consume a due outcome and enter a new height,
+its post-state has an empty stored target and a start slot equal to the
+proposal's slot.  Every validator therefore derives that proposal as the
+same-slot action target.  The following slot transition records exactly that
+root before any descendant can include the target votes.
 \end{proof}
 
 \section{Round schedule and state processing}\label{sec:rounds}
 
-FG time is grouped into rounds of 32 consecutive slots.  The paper does not
-spread FG duties across those slots; it models one quorum-contributing FG
-action per validator after the proposal has received Goldfish available votes
-and been confirmed.  The strict order is
+FG time is grouped into rounds of one or more consecutive slots; the safety
+and liveness arguments do not fix the round length.  The paper does not spread
+FG duties across those slots.  It models one quorum-contributing FG action per
+validator after the proposal has received Goldfish available votes and been
+confirmed.  The strict order is
 \[
 \begin{array}{c}
 \text{first-slot proposal and pointer selection}
@@ -1340,15 +1382,17 @@ and been confirmed.  The strict order is
 \xrightarrow{\ \Delta\ }
 \text{FG checkpoint/finality action}
 \\[-1mm]
-\longrightarrow \text{process the round's outcome}.
+\longrightarrow \text{mark the round's outcome due}
+\longrightarrow \text{next-slot inclusion and processing}.
 \end{array}
 \]
 Before a step reads state, it processes every message whose deadline has
 passed.
 The proposal and available vote occupy the first available-layer opportunity;
-the time-shifted confirmation is evaluated one slot later; the SG pre-vote is
-then delivered for one network delay~\(\Delta\) before the FG action.  The remaining
-slots are available for inclusion and processing.
+confirmation is evaluated at a later action after those votes, and the SG
+pre-vote is then delivered for one network delay~\(\Delta\) before the FG
+action.  These can be sub-slot actions when one round is one slot.  The next
+slot supplies the minimum inclusion opportunity for the resulting FG vote.
 
 \begin{lemma}[Delivery before the next step]\label{lem:delivery-before-action}
 After \(\GST\), every message sent by an honest validator in one step is received
@@ -1367,17 +1411,18 @@ honestly sent messages.
 \end{proof}
 
 \begin{definition}[Round close]\label{def:round-close}
-At the end of a round, the protocol processes all timely votes included by the
-specified deadline, then evaluates the state transition once.  It
-checks finality first, current-height target justification second, and timeout
-third.  It does not evaluate any branch earlier using only some of the round's
-timely votes.
+At the boundary after a round, the protocol marks one outcome due.  It consumes
+that outcome exactly once after the following slot's operation phase: after
+the block's attestations if the slot has a block, or after the empty operation
+phase otherwise.  It then checks finality first, current-height target
+justification second, and timeout third.  It does not evaluate any branch
+earlier using only some of the round's timely votes.
 \end{definition}
 
 In every round counted below, responsive honest validators of total weight at
 least~\(q\) complete the available, SG, and FG steps, and their votes are
-included by the deadline for that round close.  If a round advances the
-height, before the next SG and FG votes every responsive honest validator uses
+included in the following slot before that round's due outcome is consumed.
+If a round's outcome advances the height, before the next SG and FG votes every responsive honest validator uses
 the same resulting state and has safe-confirmed a block carrying it.  The
 first counted round has an honest first-slot proposer whose
 proposal is common before the available-vote action.  Later counted rounds do
@@ -1385,9 +1430,8 @@ not require honest proposers once the new state and its confirmed chain are
 common.
 
 This uses the state transition of Section~\ref{sec:state-machine}.  Safety does
-not depend on whether it runs immediately or at the end of the round.  The
-liveness bounds assume end-of-round processing so that all timely votes are
-included before the target branch is checked.
+not depend on the one-slot inclusion grace.  The liveness bounds assume that
+all timely votes are included before the target branch is checked.
 
 \begin{lemma}[Latest-message concentration]\label{lem:head-concentration}
 In the exact \(2/3\), less-than-\(1/3\) recovery regime, suppose all responsive
@@ -1443,12 +1487,39 @@ checkpoint sync.
 Let \(W_r\) be the walk output chosen by the round's SG pre-vote.  Let
 \(\sigma_r\) be the state obtained by advancing \(\sigma[W_r]\) through the
 scheduled slot processing up to the FG action, on \(W_r\)'s chain.  Set
-\(k=\sigma_r.h\) and
-\(T=\sigma_r.\currentHeightTarget=T_k\).  When \(T\neq\bot\), it is the first block of
-height~\(k\) on that chain and supplies the candidate target vote~\((k,T)\),
-which is not necessarily about the pointed root itself.  Validators first choose their
-walk, then derive its action-state height and target.
+\(k=\sigma_r.h\).  Normally
+\(T=\sigma_r.\currentHeightTarget=T_k\).  If that field is empty and
+\(W_r.\slot\geq\sigma_r.\currentHeightStartSlot\), set \(T=W_r\): this is the
+same-slot case in which \(W_r\)'s post-state entered~\(k\), but its canonical
+root cannot appear inside that same post-state.  The next slot transition will
+store the same root.  Otherwise set \(T=\bot\).  When \(T\neq\bot\), it is the
+first block of height~\(k\) on that chain and supplies the candidate target
+vote~\((k,T)\), which is not necessarily about the pointed root itself.
+Validators first choose their walk, then derive its action-state height and
+target.  A vote signed in the target block's slot cannot be included in that
+block; a descendant includes it only after the stored field is populated.
+Write \(\mathsf{get\_current\_height\_target}(\sigma_r,W_r)\) for this
+stored-target-or-same-slot-head rule.
 \end{definition}
+
+\begin{lemma}[Same-slot target materialization]\label{lem:same-slot-target}
+Suppose the same-slot rule of Definition~\ref{def:current-height-target}
+returns block~\(B\) at height~\(k\) while
+\(\sigma_r.\currentHeightTarget=\bot\).  Before a descendant can process
+a target vote for~\((k,B)\), slot processing records
+\(\currentHeightTarget=B\).  If the chain has already advanced beyond~\(k\),
+the vote is stale and changes neither participation bit.
+\end{lemma}
+
+\begin{proof}
+The rule implies \(B.\slot\geq\sigma_r.\currentHeightStartSlot\).  The vote
+cannot be included in~\(B\) itself.  Before processing a descendant block, the
+state transition processes~\(B\)'s slot, fills its cached state root, and
+records its canonical block root as the stored target.  That happens before
+the descendant's attestations.  A prior height advance instead resets the
+target and both participation arrays, and the vote's old height then fails the
+height-validity check.
+\end{proof}
 
 \begin{definition}[Finality vote]\label{def:finality-vote}
 Let \((J,h_j)\) and \((F,h_F)\) be the latest justified and finalized pairs in
@@ -1609,7 +1680,7 @@ validator may retain additional evidence that cannot affect that step.
 After \(\GST\), every message sent by an honest validator in one step arrives at
 every honest validator before the next step and before the deadline at which
 it is used.  Honest current-height and finality votes are included on the
-common chain by the applicable round-close deadline.  There is a future honest
+common chain before the applicable round's due outcome is consumed.  There is a future honest
 first-slot proposer.  After each common height transition, another honest
 proposer eventually proposes a descendant of the new state.
 
@@ -1629,7 +1700,8 @@ a height, because votes may be cast there before the chain becomes common.
 For round~\(r\), let \(W_i^r\) be honest validator~\(i\)'s SG walk output,
 and let \(\sigma_i^r\) be its slot-advanced action state as in
 Definition~\ref{def:current-height-target}.  Set
-\(k_i^r=\sigma_i^r.h\), and let \(T_i^r\) be its current-height target.  The round
+\(k_i^r=\sigma_i^r.h\), and let
+\(T_i^r=\mathsf{get\_current\_height\_target}(\sigma_i^r,W_i^r)\).  The round
 has a \emph{common target \((k,T)\)} when every responsive honest validator
 has \(k_i^r=k\), \(T_i^r=T\neq\bot\), and all \(W_i^r\) lie on one chain.  The target
 is \emph{confirmed before FG voting} when every responsive honest validator's
@@ -1639,20 +1711,19 @@ head then descends~\(T\).
 
 \begin{lemma}[An honest proposer gives validators a common confirmed target]\label{lem:honest-proposer-confirmation}
 Under Assumptions~\ref{ass:goldfish} and~\ref{ass:honest-proposer}, a post-\(\GST\)
-round with an honest first-slot proposer either observes an already completed
-height transition or has a common target that is confirmed before the round's
-FG action.
+round with an honest first-slot proposer has a common target that is confirmed
+before the round's FG action, after processing any preceding due outcome in
+the proposal block.
 \end{lemma}
 
 \begin{proof}
 Lemma~\ref{lem:pointer-alignment} gives one chain, height~\(k\), and
 current-height target~\(T\).  Let~\(B_r\) be the honest proposal block.  The
 state used for the proposal includes every signed message received by the
-applicable deadline and the preceding round's state transition.  Because
-the height rules run only at round close, no further height transition occurs
-between this state and the round's SG action.  If
-this processing already moves the chain beyond~\(k\), the first alternative
-holds.  Otherwise \(T\preceq B_r\), and every honest available voter votes for
+applicable deadline.  Its operation phase then consumes any outcome due from
+the preceding round.  If that advances the height, \(B_r\)'s post-state enters
+the new height and the same-slot target rule gives \(T=B_r\).  Otherwise the
+stored target satisfies \(T\preceq B_r\).  In either case every honest available voter votes for
 \(B_r\) or a descendant.  Write~\(a\leq c_{\rm adv}\) for the adversarial
 weight in one honest view.  Assumption~\ref{ass:goldfish} gives
 \(c_{\rm honest}>c_{\rm adv}\), hence
@@ -1670,8 +1741,9 @@ before the FG action.
 Consider a round that satisfies Assumption~\ref{ass:goldfish}.  Suppose it has a
 common target~\((k,T)\), that target is confirmed before FG voting, and the
 responsive honest votes together with all unresolved older votes that they
-retransmit are processed before the round closes.  The responsive honest
-validators have total weight at least~\(q\) and set their timeout bits at~\(k\).
+retransmit are included before the round's due outcome is consumed.  The responsive honest
+validators have total weight at least~\(q\), and their accepted votes set their
+timeout bits at~\(k\).
 The round advances the height exactly
 once: by justification if one target has weight~\(q\), and otherwise by
 timeout.  At an ordinary height, if no honest validator previously timed out
@@ -1694,10 +1766,16 @@ ordinary height and times out at a nonjustifiable height.  Confirmation
 of~\(T\) makes every validator satisfy the corresponding condition in
 Definition~\ref{def:fg-rule}, so none emits an empty vote.
 
-Every responsive honest validator has therefore set its timeout bit, and their
+If \(T\) was derived from a same-slot transition block whose stored target was
+still empty, Lemma~\ref{lem:same-slot-target} records~\(T\) before any of these
+votes can be processed.  Thus the exact-target validity check accepts them on
+the common chain.
+
+Every responsive honest validator's accepted vote therefore sets its timeout
+bit, and their
 total weight is at least~\(q\).  By assumption, the old votes and the newly
-repeated targets or timeouts are processed before the same
-round closes.  The state transition first checks for a target quorum and then
+repeated targets or timeouts are processed before that due outcome.  The state
+transition first checks for a target quorum and then
 for a timeout quorum, and increments the height only once.  Under the final
 conditions of the lemma, every previous honest target is~\(T\), every honest
 validator that has not yet voted targets~\(T\), and no honest validator has
@@ -1708,7 +1786,7 @@ timed out.  Target support therefore reaches~\(q\).
 A post-\(\GST\) round satisfying Assumption~\ref{ass:goldfish}, with an honest
 first-slot proposer and the message inclusion of
 Assumption~\ref{ass:recovery-delivery}, advances the common height when the round
-closes, unless a certificate has already advanced it.  The advance need not
+outcome is consumed, unless a certificate has already advanced it.  The advance need not
 be a justification: if validators previously cast both target and timeout
 votes at that height, only the timeout quorum may reach~\(q\).
 \end{corollary}
@@ -1723,8 +1801,8 @@ Suppose the shared store after processing a proposal has
 \(\Sigma.h_{\max}=H\), so the
 height-filter postcondition permits an honest walk only at~\(H-1\) or~\(H\).
 An honest-proposer round gives all responsive honest validators a common
-height and advances it.  If that height is~\(H-1\), one round brings the common
-chain to~\(H\).  The next timely round, or the next honest proposal after the
+height and its due outcome advances it.  If that height is~\(H-1\), one voting
+round brings the common chain to~\(H\) when its outcome is consumed.  The next timely round, or the next honest proposal after the
 new state is common, acts at~\(H\) unless a certificate has already advanced
 it.  Validators therefore need not all be voting at~\(H\) before the first
 honest proposal.
@@ -1761,7 +1839,8 @@ includes the timeout.
 \begin{lemma}[Votes advancing a common height share a confirmed target]\label{lem:common-target-confirmation}
 Suppose a round satisfying Assumption~\ref{ass:goldfish} has common
 target~\((k,T)\), that~\(T\) is confirmed before FG voting, and responsive
-honest votes of weight at least~\(q\) are processed before the round closes.
+honest votes of weight at least~\(q\) are processed before the round's due
+outcome is consumed.
 Each of these votes is a target or timeout vote cast with a safe-confirmed
 head descending from~\(T\).  Thus every responsive honest signer has
 safe-confirmed~\(T\), and~\(T\) remains a common prefix whether the height
@@ -1770,7 +1849,8 @@ advances by justification or timeout.
 
 \begin{proof}
 Every responsive honest safe-confirmed head lies on the common chain at height
-at least~\(k\), hence above its authenticated current-height target~\(T\).
+at least~\(k\), hence above its authenticated stored or deterministically
+derived current-height target~\(T\).
 For a lock, Lemma~\ref{lem:lock-alignment} gives either an already
 completed transition or equality with~\(T\); in the nonadvanced case
 Definition~\ref{def:fg-rule} makes it repeat that same~\(T\).  A validator that
@@ -1844,8 +1924,8 @@ begins, have \(\nj=\mathsf{true}\) in its height-\(H\) state, and suppose
 either:
 \begin{enumerate}[label=(\alph*)]
   \item a round has a common target at~\(H\), that target is confirmed before
-    FG voting, and the responsive honest votes are processed before the round
-    closes; or
+    FG voting, and the responsive honest votes are processed before that
+    round's due outcome; or
   \item a valid timeout certificate has already advanced~\(H\), and all
     responsive honest validators use its resulting height-\(H+1\) state.
 \end{enumerate}
@@ -1873,17 +1953,20 @@ round advances to~\(H+1\) by timeout, unless a certificate has already made
 the same transition.  In either case, the next step starts from a common state
 at height~\(H+1\).
 
-If the next round meets the timing conditions stated after
-Definition~\ref{def:round-close}, the first block at height~\(H+1\) is
-given Goldfish available votes and confirmed before the next SG and FG votes.  All responsive
-honest validators then have one chain, height, and current-height target, and
-the delivered SG pre-votes make the target grade-0 clear before the FG action.
-Otherwise wait for the next honest proposer after the transition state is
-common.  Its proposal descends from that state by
+On the block path, the block~\(B\) that consumes the first due outcome has a
+height-\(H+1\) post-state and is itself~\(T_{H+1}\).  If that next round meets
+the timing conditions stated after Definition~\ref{def:round-close}, Goldfish
+confirms~\(B\) before that round's SG and FG votes, so those votes can already
+target~\(B\) in the same slot.  On the empty path, or without continuous
+timely processing, wait for the first later honest proposal after the
+transition state is common.  That proposal is the first later block and hence
+the target; it descends from the common state by
 Assumption~\ref{ass:recovery-delivery}.  Unless a certificate
 has already advanced the height, its common height is~\(H+1\), and
 Lemma~\ref{lem:honest-proposer-confirmation} confirms its common target before FG
-voting.
+voting.  In either case, all responsive honest validators have one chain,
+height, and action target, and the delivered SG pre-votes make the target
+grade-0 clear before the FG action.
 
 If no intervening certificate has yet advanced~\(H+1\),
 Lemmas~\ref{lem:aligned-height-advance}
@@ -1911,19 +1994,24 @@ the assumptions hold.
 \end{proof}
 
 \begin{remark}[Number of honest proposers]\label{rem:honest-proposers}
-One honest-proposer round is sufficient for one height advance, not necessarily
-for a justification (Corollary~\ref{cor:honest-round-advance}).  Therefore two
+One honest-proposer voting round is sufficient for one height advance when its
+due outcome is consumed, not necessarily for a justification
+(Corollary~\ref{cor:honest-round-advance}).  Therefore two
 honest-proposer rounds, the second beginning after the first transition state
 is common, suffice for \(H\to H+1\to H+2\) if timely processing does not
 continue from one round to the next.  They need not be consecutive wall-clock
 rounds, but this gives no bound on the intervening rounds.
+
+The round counts below count voting rounds.  In a one-slot-round profile, the
+last counted round's result becomes state during the following slot's
+settlement phase; this is not an additional voting round.
 
 After the available chain is stable, an honest proposer at an ordinary height
 with no previous honest votes produces a JC\@.  The following finality-piggyback
 round does \emph{not} require an honest
 first-slot proposer: it requires only that the common JC state be known before
 the FG action and that the finality votes be included before the finality check
-at round close.  Starting from a walk at~\(d-1\), or first entering a
+when that round's due outcome is consumed.  Starting from a walk at~\(d-1\), or first entering a
 nonjustifiable height, adds the rounds counted in
 Theorem~\ref{thm:finality-liveness}.  Thus two consecutive honest proposers
 followed by one arbitrary proposer suffice only when the second honest-proposer
@@ -1986,7 +2074,8 @@ justification at such a height can predate the shared store.  This proves~(iv).
 After the available chain has stabilized, consider an honest-proposer round
 whose proposal includes all blocks and still-valid honest votes received
 before the proposal deadline.  Let~\(\Sigma\) be the shared store after processing
-that proposal, its signed messages, and any preceding round state transition,
+that proposal, its signed messages, and any due outcome consumed after its
+operation phase,
 but before the available-vote action.  Write
 \[
  d=\Sigma.h_{\max}.
@@ -2003,8 +2092,9 @@ timeout, finality vote, or lock above~\(d\) from before this store.
 Let~\(h^\ast>d\) be a common ordinary height reached before any honest
 validator has cast a target or timeout vote there.  Let~\(U=T_{h^\ast}\) be
 its common current-height target.  If~\(U\) is confirmed before FG voting and
-responsive honest votes of weight at least~\(q\) are included before the round
-closes, then~\(U\) is justified and the chain advances to~\(h^\ast+1\).
+responsive honest votes of weight at least~\(q\) are included before the
+round's due outcome is consumed, then~\(U\) is justified and the chain advances
+to~\(h^\ast+1\).
 \end{lemma}
 
 \begin{proof}
@@ -2022,8 +2112,8 @@ their next FG action, suppose they have safe-confirmed a block whose state has
 latest justified pair through collection of that action's finalize pairs; in
 particular, no intervening state transition or branch change sets a newer
 pair.  Every one of those validators then carries the finality commitment
-\((h^\ast,U)\).  If those messages are included and processed at round close,
-\(U\) finalizes there.  The round's first-slot proposer need not
+\((h^\ast,U)\).  If those messages are included before the round's due outcome
+is consumed, \(U\) finalizes there.  The round's first-slot proposer need not
 be honest.
 \end{lemma}
 
@@ -2033,7 +2123,7 @@ knows the justification.  Since it is still the latest justified pair at the
 action, the signer satisfies Definition~\ref{def:finality-vote} and records its
 lock on~\(U\), regardless of whether its new voted checkpoint is
 target, timeout, or empty.  These commitments add signer weight at least~\(q\)
-to~\(P\).  Since finality is checked first at round close, it sets
+to~\(P\).  Since finality is checked first when the due outcome is consumed, it sets
 \((F,h_F)=(U,h^\ast)\) before a simultaneous target quorum can set a newer
 justification and reset~\(P\).  This is why the lemma requires \((U,h^\ast)\) to
 remain the latest justification until all finalize pairs are collected.
@@ -2045,7 +2135,8 @@ Assumption~\ref{ass:recovery-delivery}.  After the available chain has stabilize
 let~\(d\) be as in Definition~\ref{def:height-bound-recovery}.  Consider five
 consecutive rounds \(r_1,\ldots,r_5\).  In each round, responsive honest
 validators of total weight at least~\(q\) complete the available, SG, and FG
-steps, and their votes are included by that round's close.  Whenever a round
+steps, and their votes are included before that round's due outcome is
+consumed.  Whenever a round
 advances the height, before the next round's SG and FG votes every responsive
 honest validator has the same resulting state and has safe-confirmed a block
 carrying that state.  In particular, if the advance forms a justification, it
@@ -2053,14 +2144,16 @@ is the latest justification in that state.  The first
 round has an honest first-slot proposer and a common proposal before the
 available-vote action.  Later rounds need not have honest proposers.
 
-Counting \(r_1\) as the first round, finalization occurs by \(r_5\).  It occurs
-by \(r_4\) if height~\(d+1\) is ordinary.  It occurs by \(r_3\) only when the
-first common walk has height \(k=d\) and height~\(d+1\) is ordinary.
+Counting \(r_1\) as the first round, finalization occurs when \(r_5\)'s due
+outcome is consumed.  It occurs by consumption of \(r_4\)'s outcome if
+height~\(d+1\) is ordinary, and by consumption of \(r_3\)'s outcome only when
+the first common walk has height \(k=d\) and height~\(d+1\) is ordinary.
 
 Without five consecutive rounds satisfying these conditions, finality still
 resumes if an honest proposer later reaches a common ordinary height~\(h^\ast>d\)
 before any honest validator votes there, its target~\(U\) is confirmed before FG
-voting, and the target votes are included at round close.  Before the next FG
+voting, and the target votes are included before that round's due outcome.
+Before the next FG
 action, every responsive honest validator must safe-confirm a block carrying
 the resulting justification.  The justification must remain latest until that
 action's finalize pairs are collected, and the included finality votes must
@@ -2092,9 +2185,9 @@ action.  Every
 justification quorum contains honest weight, and~\(d\)
 bounds all heights previously reached or signed at by honest validators.
 Therefore no branch state with a higher justification can predate the shared
-store.
-Because the height rules run only at round close, they set no newer
-justification before the finalize pairs are collected, so
+store.  The theorem assumes that the chosen justification remains latest while
+the finalize pairs are collected, and the due-outcome rule checks finality
+before it can install a newer justification, so
 Lemma~\ref{lem:later-finalization} finalizes the latest justified target.
 
 If \(k=d\), entry into~\(d+1\), its ordinary justification, and its finality
@@ -2188,16 +2281,18 @@ fixes one validator set and weight function.  An executable profile with
 validator churn must separately prove the required old/new quorum overlap
 from its rate limits and weak-subjectivity rules; merely assigning one common
 electorate to each height is not enough.  Checkpoint sync must authenticate
-\texttt{current\_height\_target} together with the
-current height and finalized state.  Figure~\ref{alg:state-machine} enters a
-new height at a slot boundary with an empty target, then records the first
-block in that height once its root is available.  The executable profile
-currently marks the outcome due at the round boundary and consumes it after
-the next slot's block operations, or after that slot's empty operation phase.
-That one-slot grace lets final-slot attestations satisfy their inclusion delay;
-it does not make closing a block-supplied choice.  Both models derive the
-outcome from the slot schedule and require no \(\mathsf{closes\_round}(B)\)
-flag.  A valid vote that refers to an unknown block must be queued and replayed
+\texttt{current\_height\_target} and
+\texttt{current\_height\_start\_slot} together with the current height and
+finalized state; at a transition-block checkpoint it must also authenticate
+the head used by the same-slot derivation.  Figure~\ref{alg:state-machine} enters a
+new height after the inclusion-opportunity slot's block operations, or after
+that slot's empty operation phase.  On the block path, the transition block is
+the new target; its root is stored by the following slot transition, while
+same-slot voters derive it from the authenticated head.  On the empty path,
+the first later block becomes the target.  The one-slot grace lets final-slot
+attestations satisfy their inclusion delay; it does not make closing a
+block-supplied choice.  The outcome is derived from the slot schedule and
+requires no \(\mathsf{closes\_round}(B)\) flag.  A valid vote that refers to an unknown block must be queued and replayed
 when the block arrives.  The companion note
 \texttt{paper-spec-status.md} records the remaining specification details.
 
