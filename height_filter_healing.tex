@@ -477,8 +477,8 @@ specification.
     \textbf{assert} \(i\in V\) and \(a\) is well formed and validly signed by \(i\)
   \State \(\mathit{target\_vote}\gets
     (a.\height=\sigma.h)\wedge
-    (\sigma.\currentHeightTarget\neq\bot)\wedge
     (a.\target=\sigma.\currentHeightTarget)\wedge
+    (a.\target\neq\bot)\wedge
     (a.\target\prec\sigma.L)\)
   \State \(\mathit{timeout\_vote}\gets
     (a.\height=\sigma.h)\wedge(a.\target=\bot)\)
