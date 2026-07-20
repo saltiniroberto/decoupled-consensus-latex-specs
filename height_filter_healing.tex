@@ -368,7 +368,10 @@ tick; \(\mathsf{state\_transition}\) replays the same intervening slot
 transitions before a later block.  A boundary sets
 \(\pendingHeightOutcome\); the following slot consumes it after block
 operations, or \(\mathsf{process\_slot}\) consumes it once that slot is known
-to be empty.  A block never supplies a separate close flag.  The
+to be empty.  In the latter case the invariant
+\(\sigma.L.\slot<\sigma.s\) proves that no block was processed in the
+inclusion-opportunity slot; otherwise \(\mathsf{process\_block}\) would already
+have cleared the pending outcome.  A block never supplies a separate close flag.  The
 \(\mathsf{state\_transition}\) interface starts from the authenticated
 post-state cached for \(B.\parent\), not from a live action state that has
 already processed later empty-slot ticks; this prevents replaying a slot
@@ -421,10 +424,11 @@ executable specification.  In particular,
       \Comment{Its canonical root is now noncircular}
   \EndIf
   \If{\(\sigma.\pendingHeightOutcome\)}
+    \State \textbf{assert} \(\sigma.L.\slot<\sigma.s\)
+      \Comment{The inclusion-opportunity slot was empty}
     \State \(\sigma\gets
       \Call{process\_justification\_and\_finalization}{\sigma,\sigma.s+1}\)
     \State \(\sigma.\pendingHeightOutcome\gets\mathsf{false}\)
-      \Comment{The current slot was empty}
   \EndIf
   \If{\(\roundEnd(\sigma.s)\)}
     \State \(\sigma.\pendingHeightOutcome\gets\mathsf{true}\)
