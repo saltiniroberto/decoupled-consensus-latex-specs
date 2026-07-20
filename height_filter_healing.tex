@@ -80,10 +80,12 @@
 \begin{abstract}
 We describe Fresh Simplex and prove accountable safety and recovery after a
 period of asynchrony.  Quorum checks at a given height use fixed integer
-weights.  A vote for the current-height target and a timeout both count toward
-height advancement, while an empty vote does not.  The chain state records the
-target and therefore needs only one target-participation bit and one timeout
-bit per validator.  Signed votes are still kept as evidence for E1 and E2.
+weights.  A current-height message counts toward height advancement when its
+target is empty (an explicit timeout) or lies on the including chain.  Only a
+vote for the exact current-height target counts toward justification.  An
+empty vote has no height and counts toward neither tally.  The chain state
+therefore needs only one target-participation bit and one timeout bit per
+validator.  Signed votes are still kept as evidence for E1 and E2.
 
 Let~\(H\) be nonjustifiable on every valid branch, including branches revealed
 after recovery begins.  Once the protocol advances from~\(H\) through
@@ -225,15 +227,17 @@ pointer and its finalize pair may support finalization of the latest
 justification.
 \end{definition}
 
-A target vote is valid on a chain at height \(h\) only when its target is
-the stored current-height target \(T=T_h\), and
-\(T\) is a strict ancestor of the block containing the vote.  A signed vote for a
-different target remains usable as E2 evidence but changes neither the target
-bit nor the timeout bit on that chain.  At a nonjustifiable height the state
-machine does not justify a target, but a repeated vote for the stored target
-still sets the timeout bit.  This allows a validator already locked at that
-height to contribute to height advancement without violating E1.  A timeout
-vote is valid only at the chain's current height.  A finalize pair equal to
+A target vote counts toward justification on a chain at height \(h\) only
+when its target is the stored current-height target \(T=T_h\), and \(T\) is a
+strict ancestor of the block containing the vote.  Independently, a message
+counts toward timeout when it names the chain's current height and either has
+an empty target or names any ancestor of the block containing it.  Thus a
+noncanonical but on-chain target sets only the timeout bit; an off-chain
+target sets neither participation bit but remains usable as E2 evidence.  At
+a nonjustifiable height the state machine does not justify a target, but any
+on-chain repeated target still sets the timeout bit.  This allows a validator
+already locked at that height to contribute to height advancement without
+violating E1.  A finalize pair equal to
 \((h_f,T_f)\) is counted only while that pair is the chain's latest
 unfinalized justification, using \(V\) and \(w\).
 
@@ -284,17 +288,20 @@ becomes the new target, while an empty transition waits for the first later
 block.
 
 The bit \(\targetParticipation[i]\) records whether validator~\(i\) has made
-a valid vote for the stored current-height target~\(T_h\).  The bit
-\(\timeouts[i]\) records whether it has made either such a target vote or a
-valid current-height timeout vote.  Thus
+a current-height vote for the exact stored target~\(T_h\), included strictly
+above that target.  Independently, \(\timeouts[i]\) records whether it has
+made a current-height message whose target is empty or is an ancestor of its
+including block.  Thus
 \[
   Q_{\rm target}(\sigma)=\{i:\targetParticipation[i]=\mathsf{true}\},
   \qquad
   Q_{\rm timeout}(\sigma)=\{i:\timeouts[i]=\mathsf{true}\}.
 \]
 The state does not store a target value per validator: the only value that can
-set \(\targetParticipation[i]\) is the stored target~\(T_h\).  The signed messages are kept so
-that E1 and E2 violations can still be proved; an invalid target changes
+set \(\targetParticipation[i]\) is the stored target~\(T_h\).  The signed
+messages are kept so that E1 and E2 violations can still be proved.  A
+noncanonical target may set \(\timeouts[i]\) when it lies on the including
+chain, but it cannot set \(\targetParticipation[i]\); an off-chain target sets
 neither bit.  Different branches may have different current-height targets,
 so their participation bits cannot be combined directly.  Each block state is
 derived only from its parent and the attestations included in that block, as
@@ -306,10 +313,10 @@ pair was the latest unfinalized justification.  After it is finalized, the
 set is ignored.  A newer justification replaces \((J,h_j)\) and resets~\(P\).
 The state does not keep finality tallies for older justifications.
 
-The attestations in a block \(B\) are treated as a set.  A valid vote for
-the current-height target sets both
-\(\targetParticipation[i]\) and \(\timeouts[i]\); a valid timeout sets
-only \(\timeouts[i]\).  A valid finalize commitment to the prestate's current
+The attestations in a block \(B\) are treated as a set.  An exact
+current-height target vote sets \(\targetParticipation[i]\).  Independently,
+any current-height message with an empty or on-chain target sets
+\(\timeouts[i]\).  A valid finalize commitment to the prestate's current
 \((J,h_j)\) adds its signer to~\(P\).  Setting bits and adding elements to a
 set are independent of message order.  A finality commitment to a
 justification created by the same block is not counted.  It must appear in a
@@ -342,17 +349,17 @@ is applied in this order:
 Here \(s_\ast\) is the current block's slot on the block path and the slot
 after the empty inclusion opportunity on the empty path.  Finality is
 processed before a justification or timeout enabled by the same due outcome.
-Since a chain stores one current-height target, all valid target votes
-increment the same bitlist.
+Since a chain stores one current-height target, all votes counted toward
+justification increment the same bitlist.
 
-A target vote therefore has two independent effects: it contributes to
-the current-height target tally and sets that validator's timeout bit.  A
-validator is counted once in \(Q_{\rm timeout}\), even if the stored messages
-later reveal an equivocation.  Justification has priority when the target and
-timeout quorums are simultaneously present; otherwise the timeout quorum
-advances by timeout.  A validator already locked on the unique target at~\(h\)
-need not vote timeout: its existing or repeated target vote already counts
-toward the timeout branch.
+An exact current-height target vote satisfies both predicates and therefore
+sets both bits.  A noncanonical on-chain target sets only the timeout bit, as
+does an explicit timeout.  A validator is counted once in
+\(Q_{\rm timeout}\), even if the stored messages later reveal an equivocation.
+Justification has priority when the target and timeout quorums are
+simultaneously present; otherwise the timeout quorum advances by timeout.  A
+validator already locked on an on-chain target at~\(h\) need not vote timeout:
+its existing or repeated target vote already counts toward the timeout branch.
 
 When a round's due outcome is consumed, finality is checked before
 justification and timeout.
@@ -480,17 +487,18 @@ specification.
     (a.\target=\sigma.\currentHeightTarget)\wedge
     (a.\target\neq\bot)\wedge
     (a.\target\prec\sigma.L)\)
-  \State \(\mathit{timeout\_vote}\gets
-    (a.\height=\sigma.h)\wedge(a.\target=\bot)\)
+  \State \(\mathit{counts\_for\_timeout}\gets
+    (a.\height=\sigma.h)\wedge
+    ((a.\target=\bot)\vee(a.\target\preceq\sigma.L))\)
   \If{\(\sigma.h_j>\sigma.h_F\), \(\sigma.F\preceq\sigma.J\),
       \(a.\finalizeHeight=\sigma.h_j\), and
       \(a.\finalizeTarget=\sigma.J\)}
     \State \(\sigma.P\gets\sigma.P\cup\{i\}\)
   \EndIf
   \If{\(\mathit{target\_vote}\)}
-    \State \(\sigma.\targetParticipation[i]\gets\mathsf{true};\quad
-      \sigma.\timeouts[i]\gets\mathsf{true}\)
-  \ElsIf{\(\mathit{timeout\_vote}\)}
+    \State \(\sigma.\targetParticipation[i]\gets\mathsf{true}\)
+  \EndIf
+  \If{\(\mathit{counts\_for\_timeout}\)}
     \State \(\sigma.\timeouts[i]\gets\mathsf{true}\)
   \EndIf
   \State \Return \(\sigma\)
@@ -542,15 +550,17 @@ target votes of weight at least \(q\), together with state data showing that
 the votes were counted while \(\nj=\mathsf{false}\) and \(T_h=T\), and
 that the justification rule set \((J,h_j)=(T,h)\).  A target quorum observed
 at a nonjustifiable height is not a JC\@.
-A \emph{timeout certificate} \(\mathsf{TC}(h)\) is a set of valid
-current-height target votes, timeout votes, or both, from distinct
-validators with weight at least \(q\).  When no target quorum is selected first, a
+A \emph{timeout certificate} \(\mathsf{TC}(h)\) is a set of signed messages
+from distinct validators with weight at least \(q\), each processed at
+height~\(h\) with either an empty target or a target on the including chain.
+When no target quorum is selected first, a
 \(\mathsf{TC}(h)\) advances height by timeout.
 A \emph{finality certificate} \(\mathsf{FC}(h,T)\) is a
 \(\mathsf{JC}(h,T)\) together with finality commitments to \((h,T)\) of weight
 at least \(q\), collected while \((T,h)\) was the chain state's latest
 justification pair.
-Certificates include the ancestry required to validate every nonempty target.
+Certificates include the ancestry required to validate every nonempty target
+that contributes to either tally.
 Other validators can verify them, but
 receiving a certificate does not change a branch's latest justified block or
 authorize a vote on a conflicting chain.
@@ -581,15 +591,16 @@ increment it by one, and both use the weights required by
 Assumption~\ref{ass:fixed-electorate}.
 \end{proof}
 
-\begin{lemma}[Current-height target validity]\label{lem:height-target-freshness}
-If a target \(T\) is counted at height \(h\) on a chain ending at \(B\), then
-\(T=T_h\preceq B\), and the chain's post-state at \(T\) has current height
-\(h\).
+\begin{lemma}[Current-height target-participation validity]\label{lem:height-target-freshness}
+If a target \(T\) is counted in \(Q_{\rm target}\) at height \(h\) on a chain
+ending at \(B\), then \(T=T_h\prec B\), and the chain's post-state at \(T\)
+has current height \(h\).
 \end{lemma}
 
 \begin{proof}
-Target validity requires \(T\) to be the stored current-height target and a
-strict ancestor of the block containing the vote.  The target is initialized
+The target-participation predicate requires \(T\) to be the stored
+current-height target and a strict ancestor of the block containing the vote.
+The target is initialized
 to genesis for \(h=1\).  At each later height, slot processing records the
 first block at or after the height start slot and replaces it only at the next
 height transition.  The strict-ancestor check ensures that this recording step
@@ -606,10 +617,12 @@ and installing~\(T\) as~\(T_h\).
 \begin{lemma}[Target uniqueness on a chain]\label{lem:chain-target-uniqueness}
 Each reached height has at most one current-height target on a given chain;
 once nonempty, it is the chain's unique first block at that height.  Suppose a
-vote for target~\(T\) is valid on one branch at height~\(h\).  If another
+vote for target~\(T\) counts toward target participation on one branch at
+height~\(h\).  If another
 branch at height~\(h\) has processed beyond~\(T\) and contains~\(T\), then its
-current-height target is also~\(T\), and it accepts the vote.  Distinct targets
-can be accepted only on conflicting branches.
+current-height target is also~\(T\), and it counts the vote toward target
+participation.  Distinct targets can be counted toward target participation
+only on conflicting branches.
 \end{lemma}
 
 \begin{proof}
@@ -619,8 +632,8 @@ Definition~\ref{def:height} stores after its root becomes available and until
 the next transition.  The authenticated post-state of the transition block
 fixes the same start slot on every extension containing it.  If another
 height-\(h\) branch has processed beyond target block~\(T\), it inherits that
-state and has already recorded~\(T\).  The target-validity rule then accepts
-the vote.
+state and has already recorded~\(T\).  The target-participation rule then
+counts the vote.
 \end{proof}
 
 \begin{lemma}[Target participation bits]\label{lem:target-bit-compression}
@@ -635,15 +648,23 @@ Retaining the signed messages is sufficient to prove E1 and E2 violations.
 \end{lemma}
 
 \begin{proof}
-By the target-validity rule and Lemma~\ref{lem:chain-target-uniqueness}, every
-accepted target vote names~\(T_h\).  Its signer set is therefore
+By the target-participation rule and
+Lemma~\ref{lem:chain-target-uniqueness}, every vote counted toward
+justification names~\(T_h\).  Its signer set is therefore
 \(\{i:\targetParticipation[i]=\mathsf{true}\}\).  The set of validators that
-signed either a valid target or a valid timeout is
+supplied a current-height message whose target was empty or on the including
+chain is
 \(\{i:\timeouts[i]=\mathsf{true}\}\), with each validator counted once.
 These are the only two signer sets used by the height transition.  E1 and E2
 are checked from pairs of signed messages, so they do not require target roots
 in the participation state.
 \end{proof}
+
+Counting a noncanonical on-chain target only for timeout cannot move the chain
+behind that target.  The message is processed in a block~\(B\) only when
+\(T\preceq B\).  If the resulting due outcome advances the height, the next
+height's target is~\(B\) or a later descendant.  The transition need not
+install \(T\) as justified, but it preserves \(T\) as a chain prefix.
 
 \begin{lemma}[Past a finalized height]\label{lem:past-finalized}
 Let \(C\) be finalized at height \(h\).  Any block \(B\) whose chain has
@@ -658,13 +679,25 @@ A chain that advances beyond \(h\) contains either a justification certificate
 with signer set \(Q_J\), or a timeout certificate with signer set
 \(Q_{\rm timeout}\).  The finality certificate for \(C\) has signer set~\(Q_F\).
 Either intersection has weight at least \(2q-W\).  Consider any
-non-slashable signer in the relevant intersection.  Its height vote cannot
-be a timeout, nor a target different from~\(C\), because either would conflict
-by E1 with its finality commitment.  It therefore targeted~\(C\).  Target
-validity says that a chain which counted that target vote contains~\(C\).  Thus, if
-\(B\) did not contain~\(C\), every member of the quorum intersection would be
-E1-slashable, contradicting the bound.
+non-slashable signer in the relevant intersection.  If its height message has
+an empty target or a target different from~\(C\), it conflicts by E1 with its
+finality commitment.  The only non-slashable possibility is therefore a
+message targeting~\(C\).  Such a message can set the timeout bit on this chain
+only if \(C\) is an ancestor of its including block.  Thus, if \(B\) did not
+contain~\(C\), every member of the quorum intersection would be E1-slashable,
+contradicting the bound.  This argument does not require timeout support to be
+restricted to the chain's canonical current-height target.
 \end{proof}
+
+The uniform E1 rule is essential here: a finality commitment to~\((h,C)\)
+conflicts with every height-\(h\) message targeting \(X\neq C\), including
+\(X=\bot\).  Under an older, weaker rule that covered only explicit
+empty-target timeouts, noncanonical targets could not safely share the timeout
+tally without an additional argument or separate pool.  Target-target E2 did
+not by itself close that gap: an intersection signer could commit to finalize
+\(C\) and later target nonempty~\(X\) without the commitment itself supplying
+a signed target-\(C\) half of an E2 pair.  Current E1 makes that pair directly
+slashable.
 
 \begin{lemma}[Finalized blocks form a chain]\label{lem:finalized-chain}
 For any finalized pairs \((C,h)\) and \((C',h')\), if \(h\leq h'\) then
@@ -743,10 +776,11 @@ intervening slot transitions, processing the attestations included in that
 block, and then consuming any due outcome.  When two stores are merged, each
 block is replayed with its own included attestation batch.  In particular, target,
 timeout, and finality bitlists from sibling blocks are never combined.  A
-chain accepts only its stored current-height target.  Votes for other targets
-can provide slashing evidence, but do not change that chain's state.  Blocks
-that conflict with the latest finalized block do not affect the protocol
-state.
+chain counts only its stored current-height target toward justification.  A
+vote for another target can still set the timeout bit when that target is on
+the including chain, and can independently provide slashing evidence.  An
+off-chain target changes neither participation bit.  Blocks that conflict
+with the latest finalized block do not affect the protocol state.
 
 \begin{definition}[Store merge]\label{def:store-join}
 For stores \(S_1,S_2\), their merge \(S_1\sqcup S_2\) contains the union of
@@ -1022,8 +1056,10 @@ consensus state and remains fixed while the chain is at height~\(h\).  At a
 nonjustifiable height, the justification branch of the state transition is
 disabled.  Once it has confirmed the height, an honest validator with no
 earlier vote at that height votes for timeout.  A validator locked on the
-chain's current target may repeat that target; the vote sets the timeout bit
-but cannot justify.
+chain may repeat its saved target; whenever that target lies on the including
+chain, the vote sets the timeout bit.  It can justify only if it is also the
+exact current-height target, but justification is disabled at this height in
+either case.
 Every other height is
 \emph{ordinary}.
 
@@ -1586,19 +1622,21 @@ in this order:
 \begin{enumerate}
   \item If \(\Delta.\lambda(k)=\mathsf{true}\), let
     \(T_L=\Delta.T(k)\) and repeat target~\(T_L\) iff
-    \(T_L=T\) and \(C_i\succeq T\); otherwise emit empty.  The vote may be
-    included only on a descendant of~\(T\).  At a nonjustifiable height the repeated
-    target sets the timeout bit but cannot justify.  A locked
+    \(C_i\succeq T_L\); otherwise emit empty.  The vote may be
+    included only on a descendant of~\(T_L\).  If \(T_L=T\), it sets the
+    target-participation bit; whether or not it is canonical, it sets the
+    timeout bit when included on that chain.  At a nonjustifiable height it
+    cannot justify.  A locked
     validator never signs timeout at~\(k\).
   \item If \(\Delta.\tau(k)=\mathsf{true}\), repeat timeout iff
     \(\sigma[C_i].h\geq k\); otherwise emit empty.
   \item If \(\Delta.T(k)=T_0\neq\bot\) and
     \(\Delta.\lambda(k)=\mathsf{false}\), repeat
-    target~\(T_0\) iff \(T_0=T\) and \(C_i\succeq T\).  Such a vote may be
-    included only on a descendant of~\(T\).  Otherwise sign timeout iff
+    target~\(T_0\) iff \(C_i\succeq T_0\).  Such a vote may be
+    included only on a descendant of~\(T_0\).  Otherwise sign timeout iff
     \(\sigma[C_i].h\geq k\); otherwise emit empty.  Thus a validator repeats a
     saved target that is on the current chain, and switches to timeout if that
-    target is not on the chain.  At a nonjustifiable height an exact repeat
+    target is not on the chain.  At a nonjustifiable height an on-chain repeat
     sets the timeout bit but cannot justify.  Signing the timeout
     permanently forfeits finality eligibility for the old target.
   \item With no history at a nonjustifiable height, sign timeout iff
@@ -1614,6 +1652,11 @@ A new target writes \(\Delta.T(k)=T\) before signing; a timeout sets
 a timeout quorum, but still carries that head and the independently computed
 finalize pair.
 \end{definition}
+
+The state bit \(\timeouts[i]\) is a height-progress marker, not the validator's
+durable signing record \(\Delta.\tau(k)\).  Processing a nonempty on-chain
+target may set \(\timeouts[i]\), but only signing an explicit
+empty-target timeout sets \(\Delta.\tau(k)\) and forfeits finality eligibility.
 
 Timeouts require confirmation of the height, but do not require an additional
 grade-0 check.  Once a validator safely confirms the current-height target, it
@@ -1662,8 +1705,8 @@ Suppose that, during recovery, all responsive honest validators use one chain
 at height~\(k\), derive its current-height target~\(T\), and safely confirm
 that target before voting.  If an honest validator is locked at~\(k\), then
 either the chain has already advanced beyond~\(k\), or the validator's saved
-target is~\(T\) and its earlier or repeated target vote contributes to the
-timeout quorum.
+target lies on the safe-confirmed chain and its earlier or repeated target
+vote contributes to the timeout quorum.
 \end{lemma}
 
 \begin{proof}
@@ -1674,28 +1717,34 @@ walk is at height~\(k\) and its safely confirmed target is~\(T\).
 
 If \(T\) is the Simplex root, it is genesis or a justified or finalized target
 at the same height.  Target uniqueness and finalized-chain safety, applied to
-the retained \(\mathsf{JC}(k,T_L)\), give \(T_L=T\) under \(b<2q-W\).
+the retained \(\mathsf{JC}(k,T_L)\), make \(T_L\) compatible with~\(T\) under
+\(b<2q-W\).
 Otherwise, Goldfish confirmed a descendant of~\(T\).  The retained JC for
 \(T_L\) contains an honest signer who also Goldfish-confirmed a descendant of
 \(T_L\) before voting.  Assumption~\ref{ass:goldfish} makes these confirmations
-compatible.  Thus \(T_L\) and~\(T\) lie on one chain; because both are its
-current-height target at height~\(k\), they are equal.  The original
-target vote contributes to the timeout quorum if it has already been included;
-otherwise the validator repeats~\(T\).  It never needs to vote for timeout.
+compatible.  In either case, exact-target validity of the retained JC and
+inheritance of the height state imply \(T_L=T\) while both chains remain
+at~\(k\), and hence \(T_L\preceq C_i\).  The broader timeout predicate needs
+only this ancestry conclusion: the original target vote contributes to the
+timeout quorum if it has already been included on this chain; otherwise the
+validator repeats~\(T_L\).  It never needs to vote for timeout.
 \end{proof}
 
 \begin{remark}[Leak-fairness consequence]\label{rem:leak-fairness}
 The target bit does not assume that competing chains have one shared target.
-Each chain accepts only its own current-height target.  Once an honest proposer
+Each chain counts only its own current-height target toward justification.
+Once an honest proposer
 makes all responsive honest validators use the same chain, an unlocked
 validator repeats a saved target on that chain.  If its saved target is not on
 the chain, it may vote for timeout because it has made no finality commitment.
 A locked validator cannot vote for timeout, but
 Lemma~\ref{lem:lock-alignment} shows that its justified target lies on the
-chain now used by honest validators and equals its current-height target.  Its
-target therefore sets the timeout bit just as a timeout vote would.  The target
-bit therefore preserves every honest validator's contribution to the timeout
-quorum.
+chain now used by honest validators.  Its target therefore sets the timeout
+bit whether or not equality with the chain's current-height target is needed.
+The independent timeout bit therefore preserves every honest validator's
+contribution to the timeout quorum.  This state transition does not set
+\(\Delta.\tau\): the validator has repeated its saved nonempty target, not
+signed an explicit timeout.
 \end{remark}
 
 \section{Healing and finality liveness}\label{sec:healing}
@@ -1787,22 +1836,24 @@ justified.
 \begin{proof}
 Partition the responsive honest validators by their previous votes at
 height~\(k\).  A previously processed target or timeout already set the
-validator's timeout bit.
+validator's timeout bit whenever its target was empty or lay on the including
+chain.
 Validators that previously timed out repeat their timeout.  An unlocked old
-target that lies on the common chain equals its current-height target~\(T\) by
-Lemma~\ref{lem:chain-target-uniqueness} and is repeated; one that does not lie on the
-current confirmed chain votes for timeout.  For a lock,
+target that lies on the common chain is repeated and counts toward timeout,
+whether or not it equals the current-height target~\(T\); one that does not
+lie on the current confirmed chain votes for timeout.  For a lock,
 Lemma~\ref{lem:lock-alignment} says either the height has
-already advanced or the saved target is~\(T\), and its old or repeated vote
-sets the timeout bit.  A validator that has not yet voted at~\(k\) targets~\(T\) at an
+already advanced or the saved target lies on the chain, and its old or
+repeated vote sets the timeout bit.  A validator that has not yet voted at~\(k\) targets~\(T\) at an
 ordinary height and times out at a nonjustifiable height.  Confirmation
 of~\(T\) makes every validator satisfy the corresponding condition in
 Definition~\ref{def:fg-rule}, so none emits an empty vote.
 
 If \(T\) was derived from a same-slot transition block whose stored target was
 still empty, Lemma~\ref{lem:same-slot-target} records~\(T\) before any of these
-votes can be processed.  Thus the exact-target validity check accepts them on
-the common chain.
+new target votes can be processed.  Thus the exact-target predicate counts
+them toward justification on the common chain; older noncanonical targets need
+only satisfy the independent on-chain timeout predicate.
 
 Every responsive honest validator's accepted vote therefore sets its timeout
 bit, and their
@@ -1861,9 +1912,9 @@ chain that includes it.
 The timeout certificate has weight at least~\(q\), while adversarial weight is
 strictly below the quorum-intersection bound and in particular below~\(q\).
 It therefore contains an honest vote.  Every honest target vote
-requires a safe-confirmed head descending the current-height target; every honest
-timeout requires the safe-confirmed head to have reached height~\(h\)
-in the signing view.  An empty vote has no height and is excluded from the
+requires a safe-confirmed head descending its named target on the selected
+chain; every honest timeout requires the safe-confirmed head to have reached
+height~\(h\) in the signing view.  An empty vote has no height and is excluded from the
 timeout quorum.  A timeout therefore proves that an honest signer confirmed some
 block at height~\(h\), but not which target belongs to the chain that later
 includes the timeout.
