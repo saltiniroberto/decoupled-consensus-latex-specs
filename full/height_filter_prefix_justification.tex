@@ -67,7 +67,10 @@
 \newcommand{\targets}{\mathsf{targets}}
 \newcommand{\timeouts}{\mathsf{timeouts}}
 \newcommand{\penalties}{\mathsf{penalties}}
-\newcommand{\jtargets}{\mathsf{jtargets}}
+\newcommand{\fjtargets}{\mathsf{fjtargets}}
+\newcommand{\fjkind}{\mathsf{fjkind}}
+\newcommand{\kjust}{\mathsf{Just}}
+\newcommand{\kfin}{\mathsf{Fin}}
 \newcommand{\fresh}{\mathsf{fresh}}
 \newcommand{\hash}{\mathsf{hash}}
 \newcommand{\hmax}{\ensuremath{h_{\max}}\xspace}
@@ -162,7 +165,7 @@
 This document merges the height-filter/timeout finality gadget of \emph{Fresh Simplex with Height Filter and Timeouts} with the prefix-counting and slashing mechanisms of \emph{Finalization as Notarization}.
 In the base protocol, both justification and finalization require a quorum on a \emph{single, identical} target block, and a single coupled slashing rule ties a validator's finalize commitment to \emph{all} of its votes at that height.
 Here both counts are relaxed to \emph{prefix} counts: votes lying on the same chain but naming different (necessarily comparable) targets combine.
-Justification certifies the deepest block with a quorum of supporting justification votes; finalization sets $F \gets J$ (the justified block) once a quorum has committed to finalize it, exactly as in \emph{Finalization as Notarization}, subject to the \emph{finalize gate} --- a commitment counts only once the caster's justification vote at that height has been processed, and only up to that justification's target --- so a finalize quorum for~$J$ is also a justification quorum for~$J$.
+Both justification and finalization are prefix counts: justification certifies the deepest block with a quorum of supporting justification votes, and finalization advances~$F$ to the deepest block with a quorum of finalize commitments behind it, subject to the \emph{finalize gate} --- a commitment counts only once the caster's justification vote at that height has been processed, and only up to that justification's target. Because finalize commitments for comparable blocks combine, a validator that committed to a shallower prefix still counts toward finalizing it even after the justified block advances deeper at the same height.
 A finalize vote also doubles as a timeout, so a validator that has committed to finalize a height still counts as active there.
 The coupled slashing rule is replaced by three conditions: a validator justifies at most one block per height (E1) and finalizes at most one block per height (E2), and never times out at a height where it has committed to finalize (E3).
 Notably, justifying one block and finalizing a shorter prefix at the same height is allowed --- that is how a validator finalizes the actual justified block $J$ while having justified a deeper guess.
@@ -207,7 +210,7 @@ A vote included on a chain must reference a target (and finalize target, when pr
 \paragraph{State.}
 The \emph{state after block~$B$}, written $\sigma[B]$, is the tuple
 \[
-  (L,\; s,\; h,\; s_h,\; \targets,\; \timeouts,\; \jtargets,\; J,\; h_j,\; F,\; P),
+  (L,\; s,\; h,\; s_h,\; \targets,\; \timeouts,\; \fjtargets,\; \fjkind,\; J,\; h_j,\; F),
 \]
 with components:
 \begin{itemize}
@@ -217,14 +220,14 @@ with components:
   \item $s_h$: the slot of the block whose processing last advanced~$h$ on this chain ($0$ if no advance has occurred).
   \item $\targets[1..n]$: for each validator~$i$, the target of~$i$'s justification vote at the current height ($\bot$ if none processed).
   \item $\timeouts[1..n]$: for each~$i$, a boolean that is \texttt{true} iff~$i$'s vote at the current height set the timeout marker --- a timeout vote ($\target = \bot$), a height-fresh justification vote, or a height-fresh finalize vote for the current height, all on this chain.
-  \item $\jtargets[1..n]$: for each~$i$, the target of~$i$'s justification vote \emph{at the justified height~$h_j$} ($\bot$ if none), snapshotted from $\targets$ when height~$h_j$ was justified. This is what the finalize gate consults.
+  \item $\fjtargets[1..n]$: for each~$i$, a \emph{checkpoint target} at the justified height~$h_j$ --- initially (snapshotted from $\targets$ when height~$h_j$ was justified) the target of~$i$'s justification vote at~$h_j$, then overwritten \emph{in place} by~$i$'s finalize-commitment target once~$i$'s admitted finalize vote for~$h_j$ is processed ($\bot$ if~$i$ cast no justification at~$h_j$).
+  \item $\fjkind[1..n]$: for each~$i$, an enum in $\{\kjust,\, \kfin\}$ recording whether $\fjtargets[i]$ currently holds~$i$'s justification target ($\kjust$) or its finalize-commitment target ($\kfin$). Together with $\fjtargets$ this replaces the finalize set~$P$, letting the single target array carry both the justification snapshot and the finalize commitments.
   \item $J$, $h_j$: the most recently justified block and its height.
   \item $F$: the most recently finalized block.
-  \item $P \subseteq \{1, \ldots, n\}$: the validators whose finalize commitment for the current justified height~$h_j$ has passed the finalize gate (Definition~\ref{def:finalize-gate}); finality fires when $|P| \geq 2n/3$.
 \end{itemize}
 The genesis state is
 \[
-  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 1,\; 0,\; \bot^n,\; \mathtt{false}^n,\; \bot^n,\; \genesis,\; 0,\; \genesis,\; \emptyset),
+  \sigma_{\mathrm{gen}} \coloneqq (\genesis,\; 0,\; 1,\; 0,\; \bot^n,\; \mathtt{false}^n,\; \bot^n,\; \kjust^n,\; \genesis,\; 0,\; \genesis),
 \]
 with $\sigma[\genesis] \coloneqq \sigma_{\mathrm{gen}}$: $\genesis$ is treated as pre-justified and pre-finalized at height~$0$, so the genesis state-height is~$1$ and $h_j = 0$ records the genesis-justification.
 When unambiguous we drop the chain prefix and write $L$, $s$, $h$, etc.\ for the components of $\sigma[L]$.
@@ -251,7 +254,7 @@ Freshness ensures that every justification at height~$h$ is witnessed by targets
 
 \paragraph{Fresh targets on a chain are comparable.}
 Fix a chain head~$L$.
-Every recorded target $\targets[i] \neq \bot$ (and $\jtargets[i] \neq \bot$) was set by a fresh justification vote, hence is a strict ancestor of~$L$.
+Every recorded target $\targets[i] \neq \bot$ (and $\fjtargets[i] \neq \bot$) was set by a fresh justification vote, hence is a strict ancestor of~$L$.
 All such blocks are ancestors of the single block~$L$, so they lie on the path from~$\genesis$ to~$L$ and are \emph{pairwise comparable} under~$\preceq$.
 This is what makes the prefix counts below well defined: the ``deepest block with a quorum behind it'' is unambiguous.
 
@@ -283,27 +286,29 @@ The two height-advance branches are checked in order, justification first (Figur
 \end{definition}
 
 \begin{definition}[Finalize gate]\label{def:finalize-gate}
-A finalize commitment $(\finalizeHeight,\, \finalizeTarget) = (h_j,\, D)$ from validator~$i$ is \emph{admitted} on a chain with head state $\sigma[L]$ (placing $i \in P$) iff
+A finalize commitment $(\finalizeHeight,\, \finalizeTarget) = (h_j,\, D)$ from validator~$i$ is \emph{admitted} on a chain with head state $\sigma[L]$ iff no finalize commitment of~$i$ at~$h_j$ has yet been recorded and
 \[
-  \jtargets[i] \neq \bot \;\wedge\; J \preceq D \preceq \jtargets[i] :
+  \fjkind[i] = \kjust \;\wedge\; \fjtargets[i] \neq \bot \;\wedge\; F \preceq D \preceq \fjtargets[i] :
 \]
-$i$'s justification vote at the justified height~$h_j$ has already been processed on this chain, and~$i$'s finalize target lies between the justified block~$J$ and that justification target.
-An admitted commitment therefore witnesses that~$i$ justified a descendant of~$J$ (namely $\jtargets[i] \succeq D \succeq J$) at height~$h_j$.
+$i$'s justification vote at the justified height~$h_j$ has been processed on this chain (so $\fjtargets[i]$ still holds that vote's target), and~$i$'s finalize target lies between the finalized block~$F$ and that justification target.
+On admission the target is recorded in place, $\fjtargets[i] \gets D$ and $\fjkind[i] \gets \kfin$, so $\fjtargets[i]$ now carries~$i$'s finalize target for the prefix count (Definition~\ref{def:finality}).
+The lower bound is~$F$, not~$J$: a commitment to a block \emph{below} the current justified block still counts, which is exactly what turns finalization into a prefix count and lets a commitment survive the justified block advancing deeper at the same height.
 \end{definition}
 
 \begin{definition}[Finality]\label{def:finality}
-On a chain with head state $\sigma[L]$ whose justified height is~$h_j$, the justified block~$J$ is \emph{finalized at height~$h_j$} once
+On a chain with head state $\sigma[L]$ whose justified height is~$h_j$, a block~$D$ with $F \prec D \preceq J$ is \emph{prefix-finalized at height~$h_j$} iff
 \[
-  |P| \;\geq\; 2n/3 ,
+  \bigl|\{i \,:\, \fjkind[i] = \kfin \;\wedge\; \fjtargets[i] \succeq D\}\bigr| \;\geq\; 2n/3 .
 \]
-i.e., once at least $2n/3$ validators have an admitted finalize commitment (Definition~\ref{def:finalize-gate}) for~$h_j$.
-The finalized block~$F$ is then set to~$J$ (and never regresses); as in \emph{Finalization as Notarization}, finalization assigns the justified block rather than walking a separate longest-common-prefix.
+As with justification, an admitted finalize commitment supports every ancestor of its target, so the prefix-finalized blocks form a nested family and the count is monotone as~$D$ moves toward~$\genesis$.
+The finalized block~$F$ advances to the \emph{deepest} prefix-finalized block (and never regresses).
+Prefix finalization means finalize votes for comparable blocks combine: if some validators commit to~$J$ and others to a deeper $J' \succ J$, all of them count toward~$J$, so~$J$ finalizes even when the commitments do not agree on a single target.
 \end{definition}
 
 \begin{remark}[The gate makes the finalize quorum a justification quorum]\label{rem:gate-prefix-justified}
-Finalizing $F \gets J$ keeps the finalized block equal to the justified block, so it is prefix-justified (Definition~\ref{def:justification}) by construction.
-The role of the finalize gate (Definition~\ref{def:finalize-gate}) is to make each admitted commitment \emph{witness a justification vote for~$J$}: every $i \in P$ has $\jtargets[i] \succeq J$, so $P$ is itself a $\geq 2n/3$ justification quorum for~$J$.
-This is what lets accountable safety tie each finalize commitment back to a justification vote for~$J$ (Section~\ref{sec:safety}).
+A prefix-finalized block~$D$ (Definition~\ref{def:finality}) is itself prefix-justified.
+Each of the $\geq 2n/3$ validators counted for~$D$ has an admitted finalize commitment with target $\succeq D$, and by the finalize gate (Definition~\ref{def:finalize-gate}) that target was, at admission, at most the target of~$i$'s justification vote at~$h_j$; so each such~$i$ cast a justification vote for a block $\succeq D$.
+These $\geq 2n/3$ validators therefore witness the prefix justification of~$D$ --- which is what lets accountable safety tie each finalize commitment back to a justification vote for the finalized block (Section~\ref{sec:safety}).
 \end{remark}
 
 \begin{definition}[Slashing, rules E1--E3]\label{def:slashing}
@@ -328,13 +333,13 @@ After \stateTransition{} returns, $\sigma.s = B.\slot$ and $\sigma.L = B$.
 
 \processSlot is the only routine that increments~$s$.
 It calls \processHeight before incrementing only when the current slot has no block on this chain ($\sigma.L.\slot < \sigma.s$); when $\sigma.L.\slot = \sigma.s$, the block at the current slot was already closed by \stateTransition, so \processSlot only advances the counter.
-\processHeight runs the height-closing logic for the current slot or post-block state by invoking \processHeightEvents, whose branches are checked in order: (i) finality, $F \gets J$ if $|P| \geq 2n/3$ (Definition~\ref{def:finality}); (ii) prefix justification, if the deepest prefix-justified block exists---which also snapshots the current $\targets$ into $\jtargets$ and clears $P$; (iii) timeout cert, if $\geq 2n/3$ entries of $\timeouts$ are \texttt{true}.
+\processHeight runs the height-closing logic for the current slot or post-block state by invoking \processHeightEvents, whose branches are checked in order: (i) prefix finality, advancing $F$ to the deepest prefix-finalized block if one exists (Definition~\ref{def:finality}); (ii) prefix justification, if the deepest prefix-justified block exists---which also snapshots the current $\targets$ into $\fjtargets$ and resets $\fjkind$ to all-$\kjust$; (iii) timeout cert, if $\geq 2n/3$ entries of $\timeouts$ are \texttt{true}.
 Branches (ii) and (iii) both advance height and reset $\targets, \timeouts$, so at most one height-advance fires per invocation of \processHeightEvents.
 
 \processBlock assumes its caller has brought $\sigma$ to slot $B.\slot$; it then sets $L \gets B$ and feeds each vote~$v$ in~$B$ through \processVote.
 A timeout vote ($v.\target = \bot$) at the current height sets $\timeouts[i] \gets \mathtt{true}$.
 A height-fresh justification vote sets both $\targets[i] \gets v.\target$ and $\timeouts[i] \gets \mathtt{true}$.
-The finalize gate (Definition~\ref{def:finalize-gate}) adds~$i$ to~$P$ iff $v.\finalizeHeight = \sigma.h_j$, $\jtargets[i] \neq \bot$, and $\sigma.J \preceq v.\finalizeTarget \preceq \jtargets[i]$ (so~$i$'s justification vote at~$h_j$ is already recorded and~$i$'s finalize target lies between~$J$ and that vote's target); this is independent of the freshness of~$v$'s own justification part.
+The finalize gate (Definition~\ref{def:finalize-gate}) records~$i$'s commitment in place --- $\fjtargets[i] \gets v.\finalizeTarget$ and $\fjkind[i] \gets \kfin$ --- iff $v.\finalizeHeight = \sigma.h_j$, $\fjkind[i] = \kjust$, $\fjtargets[i] \neq \bot$, and $\sigma.F \preceq v.\finalizeTarget \preceq \fjtargets[i]$ (so~$i$'s justification vote at~$h_j$ is already recorded and~$i$'s finalize target lies between~$F$ and that vote's target); this is independent of the freshness of~$v$'s own justification part.
 
 \clearpage
 \begin{figure}[H]
@@ -345,21 +350,18 @@ The finalize gate (Definition~\ref{def:finalize-gate}) adds~$i$ to~$P$ iff $v.\f
 
 \Function{\stateTransition}{$\sigma,\; B$} \Comment{Per-block entry point}
   \While{$\sigma.s < B.\slot$} $\sigma \gets \processSlot(\sigma)$ \EndWhile \Comment{advance intervening slots}
-  \State $\sigma \gets \processBlock(\sigma,\; B)$
-  \State \Return $\processHeight(\sigma)$ \Comment{close events enabled by $B$'s votes}
+  \State $\sigma \gets \processBlock(\sigma,\; B)$; \;\; \Return $\processHeight(\sigma)$ \Comment{close events enabled by $B$'s votes}
 \EndFunction
 \vspace{3pt}
 
 \Function{\processSlot}{$\sigma$}
   \State \textbf{if} $\sigma.L.\slot < \sigma.s$ \textbf{then} $\sigma \gets \processHeight(\sigma)$ \Comment{current slot empty on this chain}
-  \State $\sigma.s \gets \sigma.s + 1$
-  \State \Return $\sigma$
+  \State $\sigma.s \gets \sigma.s + 1$; \;\; \Return $\sigma$
 \EndFunction
 \vspace{3pt}
 
 \Function{\processBlock}{$\sigma,\; B$} \Comment{precondition: caller advanced $\sigma.s = B.\slot$}
-  \State $\sigma.L \gets B$
-  \For{each vote $v$ in $B$} $\sigma \gets \processVote(\sigma,\, v)$ \EndFor
+  \State $\sigma.L \gets B$; \quad \textbf{for each} vote $v$ in $B$: \; $\sigma \gets \processVote(\sigma,\, v)$
   \State \Return $\sigma$
 \EndFunction
 \vspace{3pt}
@@ -373,7 +375,9 @@ The finalize gate (Definition~\ref{def:finalize-gate}) adds~$i$ to~$P$ iff $v.\f
     \State \textbf{if} $\fresh$ \textbf{then} $\sigma.\targets[i] \gets v.\target,\ \ \sigma.\timeouts[i] \gets \mathtt{true}$
   \EndIf
   \State \textbf{if} $v.\finalizeHeight = \sigma.h \,\land\, v.\finalizeTarget \prec \sigma.L \,\land\, v.\finalizeTarget.\slot \geq \sigma.s_h$ \textbf{then} $\sigma.\timeouts[i] \gets \mathtt{true}$ \Comment{finalize vote for current height counts as a timeout}
-  \State \textbf{if} $v.\finalizeHeight = \sigma.h_j \,\land\, \sigma.\jtargets[i] \neq \bot \,\land\, \sigma.J \preceq v.\finalizeTarget \preceq \sigma.\jtargets[i]$ \textbf{then} $\sigma.P \gets \sigma.P \cup \{i\}$ \Comment{finalize gate}
+  \If{$v.\finalizeHeight = \sigma.h_j \,\land\, \sigma.\fjkind[i] = \kjust \,\land\, \sigma.\fjtargets[i] \neq \bot \,\land\, \sigma.F \preceq v.\finalizeTarget \preceq \sigma.\fjtargets[i]$} \Comment{finalize gate}
+    \State $\sigma.\fjtargets[i] \gets v.\finalizeTarget$; \;\; $\sigma.\fjkind[i] \gets \kfin$ \Comment{record in place for the prefix count}
+  \EndIf
   \State \Return $\sigma$
 \EndFunction
 \vspace{3pt}
@@ -384,17 +388,16 @@ The finalize gate (Definition~\ref{def:finalize-gate}) adds~$i$ to~$P$ iff $v.\f
 \vspace{3pt}
 
 \Function{\processHeightEvents}{$\sigma$}
-  \If{$|\sigma.P| \geq 2n/3$} \State $\sigma.F \gets \sigma.J$ \EndIf \Comment{finality}
+  \State $F^* \gets$ deepest $T$ with $\sigma.F \prec T \preceq \sigma.J$ and $|\{i : \sigma.\fjkind[i] = \kfin \land \sigma.\fjtargets[i] \succeq T\}| \geq 2n/3$ \Comment{$\bot$ if none}
+  \If{$F^* \neq \bot$} \State $\sigma.F \gets F^*$ \EndIf \Comment{prefix finality}
   \State $J^* \gets$ deepest $T \prec \sigma.L$ with $T.\slot \geq \sigma.s_h$ and $|\{i : \sigma.\targets[i] \succeq T\}| \geq 2n/3$ \Comment{$\bot$ if none}
   \If{$J^* \neq \bot$} \Comment{prefix justification}
-    \State $\sigma.\jtargets \gets \sigma.\targets$ \Comment{snapshot justify targets at $h_j$}
+    \State $\sigma.\fjtargets \gets \sigma.\targets$, \; $\sigma.\fjkind \gets \kjust^n$ \Comment{snapshot justify targets at $h_j$; none finalized yet}
     \State $\sigma.J \gets J^*$, \; $\sigma.h_j \gets \sigma.h$, \; $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.s$
-    \State reset $\targets, \timeouts$; \quad $\sigma.P \gets \emptyset$
-    \State \Return $\sigma$
+    \State reset $\targets, \timeouts$; \quad \Return $\sigma$
   \EndIf
   \If{$|\{i : \sigma.\timeouts[i] = \mathtt{true}\}| \geq 2n/3$} \Comment{timeout}
-    \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.s$
-    \State reset $\targets, \timeouts$
+    \State $\sigma.h \gets \sigma.h + 1$, \; $\sigma.s_h \gets \sigma.s$; \quad reset $\targets, \timeouts$
   \EndIf
   \State \Return $\sigma$
 \EndFunction
@@ -448,7 +451,7 @@ $J$ and $h_j$ advance only on justification events, and $s_h$ only on height-adv
 \begin{proof}
 Reading off Figure~\ref{alg:state-machine}: $s$ only increases (in \processSlot); $h$ only increases, by~$1$, in the height-advance branches of \processHeightEvents, which also set $h_j \gets h$ on the justification branch and $s_h \gets \sigma.s$ on either branch.
 Slots strictly increase along~$\preceq$ (Definition~\ref{def:block}), so $s_h$ is non-decreasing.
-$F$ updates only via $F \gets J$, so $F \preceq J$ reduces to $J$-monotonicity.
+$F$ advances only to a prefix-finalized block that is $\succ$ the current~$F$ and $\preceq J$ (Definition~\ref{def:finality}), so~$F$ is non-decreasing and $F \preceq J$ holds throughout, given $J$-monotonicity.
 
 \emph{Block field $J$.}
 At a justification advance on chain~$Y$ firing at the deepest prefix-justified block~$J^*$ with pre-state height~$h$, the definition forces $J^* \prec Y$ and $J^*.\slot \geq s_h$.
@@ -474,9 +477,9 @@ If~$C$ is finalized at height~$h$ (Definition~\ref{def:finality}), then~$C$ is p
 \end{lemma}
 
 \begin{proof}
-Finality of~$C$ gives $|P| \geq 2n/3$, with $C = J$ (finality sets $F \gets J$).
-Each $i \in P$ was admitted by the finalize gate (Definition~\ref{def:finalize-gate}), so $\jtargets[i] \succeq J = C$, i.e.,~$i$'s justification vote at height~$h$ has target $\jtargets[i] \succeq C$.
-Thus $P$ witnesses $|\{i : \jtargets[i] \succeq C\}| \geq 2n/3$, which is prefix justification of~$C$ at~$h$.
+Prefix finalization of~$C$ at~$h$ (Definition~\ref{def:finality}) gives a set~$P_C$ of $\geq 2n/3$ validators, each with an admitted finalize commitment for~$h$ whose target is $\succeq C$.
+By the finalize gate (Definition~\ref{def:finalize-gate}), when~$i$'s commitment was admitted its target was at most the target of~$i$'s justification vote at~$h$; so~$i$ cast a justification vote at~$h$ with target $\succeq C$.
+Thus at least $2n/3$ validators justified a block $\succeq C$ at~$h$, which is prefix justification of~$C$ at~$h$.
 \end{proof}
 
 \begin{lemma}[Any chain past a finalized height contains the finalized block]\label{lem:mainsafety}
@@ -485,14 +488,15 @@ Unless $\geq n/3$ validators are slashable: if~$C$ is finalized at height~$h$, t
 
 \begin{proof}
 By Lemma~\ref{lem:heightprog}, some $B^* \preceq B$ advanced height from~$h$ to~$h+1$ via a quorum~$Q$ at height~$h$ on~$B^*$'s chain (prefix justification or timeout cert).
-Finality of~$C$ at~$h$ gives the finalize quorum~$P$ with $|P| \geq 2n/3$ and $C = J$.
-Fix a non-slashable $v \in Q \cap P$ (quorum intersection, $|Q \cap P| \geq n/3$).
-By the finalize gate (Definition~\ref{def:finalize-gate}), $v$ cast a finalize commitment~$b_v$ with $b_v.\finalizeHeight = h$ and $C \preceq b_v.\finalizeTarget \eqqcolon D \preceq \jtargets[v]$, where $\jtargets[v] \neq \bot$ is~$v$'s justification target at height~$h$.
+Prefix finalization of~$C$ at~$h$ gives a set~$P_C$ of $\geq 2n/3$ validators, each with an admitted finalize commitment for~$h$ whose target is $\succeq C$.
+Fix a non-slashable $v \in Q \cap P_C$ (quorum intersection, $|Q \cap P_C| \geq n/3$).
+As $v \in P_C$, $v$ signed a finalize vote~$b_v$ with $b_v.\finalizeHeight = h$ and $b_v.\finalizeTarget \succeq C$; write $D \coloneqq b_v.\finalizeTarget$.
+By the finalize gate (Definition~\ref{def:finalize-gate}), $D \preceq t_v$, where~$t_v$ is the target of~$v$'s justification vote at~$h$ (unique by E1).
 Let~$a$ be the vote by which~$v$ entered~$Q$ at height~$h$ on~$B^*$'s chain.
 
 \emph{$a$ is a timeout.} Then $a.\target = \bot$ and $a.\height = h$, so~$b_v$ and~$a$ satisfy E3 ($b_v.\finalizeHeight = h = a.\height$, $b_v.\finalizeTarget \neq \bot$, $a.\target = \bot$) --- contradicting non-slashability.
 
-\emph{$a$ is a fresh justification vote} (so either~$Q$ is a justification quorum, or~$a$ set~$v$'s timeout marker as a fresh justification, Definition~\ref{def:timeout}). Then $a.\height = h$ and $a.\target \preceq B^*$ by freshness. By E1, all of~$v$'s justification votes at height~$h$ carry a single target, so $a.\target = \jtargets[v] \succeq D \succeq C$. Hence $C \preceq a.\target \preceq B^*$.
+\emph{$a$ is a fresh justification vote} (so either~$Q$ is a justification quorum, or~$a$ set~$v$'s timeout marker as a fresh justification, Definition~\ref{def:timeout}). Then $a.\height = h$ and $a.\target \preceq B^*$ by freshness. By E1, $a.\target = t_v \succeq D \succeq C$. Hence $C \preceq a.\target \preceq B^*$.
 
 \emph{$a$ is a fresh finalize vote for height~$h$} (setting~$v$'s timeout marker, Definition~\ref{def:timeout}). Then $a.\finalizeHeight = h$ and $a.\finalizeTarget \preceq B^*$ by freshness. By E2 applied to~$a$ and~$b_v$ ($a.\finalizeHeight = h = b_v.\finalizeHeight$), non-slashability forces $a.\finalizeTarget = D \succeq C$. Hence $C \preceq a.\finalizeTarget \preceq B^*$.
 
@@ -508,7 +512,7 @@ Unless $\geq n/3$ validators are slashable: any two finalized checkpoints $(C, h
 By Lemma~\ref{lem:fin-just}, both~$C$ and~$C'$ are prefix-justified at height~$h$, so $C \sim C'$ by Lemma~\ref{lem:just-compat}.
 
 \emph{Case $h < h'$.}
-Let~$Z$ be the chain on which~$C'$ was finalized, at the post-state where its finalize quorum closed; then $\sigma[Z].h \geq h' > h$ and $C' \preceq Z$.
+Let~$Z$ be the chain on which~$C'$ was prefix-finalized at~$h'$; then $C' \preceq Z$ and $\sigma[Z].h \geq h' + 1 > h$ (its justified height is~$h'$, so its state-height exceeds~$h'$).
 Lemma~\ref{lem:mainsafety} at~$Z$ gives $C \preceq Z$.
 Both~$C, C'$ lie on~$Z$, hence compatible.
 \end{proof}
@@ -886,7 +890,7 @@ The store of Section~\ref{sec:store} invokes the extended routine through the sa
   \EndIf
   \If{$\sigma_{\mathrm{pre}}.F = \sigma_{\mathrm{post}}.F$ \textbf{and} $\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$} \Comment{Layer~2 finalize}
     \For{each $i \in \{1, \ldots, n\}$}
-      \If{$i \notin \sigma_{\mathrm{pre}}.P$}
+      \If{$\sigma_{\mathrm{pre}}.\fjkind[i] \neq \kfin$ \textbf{or} $\sigma_{\mathrm{pre}}.\fjtargets[i] \not\succeq \sigma_{\mathrm{pre}}.J$} \Comment{no finalize commitment reaching $J$}
         \State $\sigma_{\mathrm{post}}.\penalties[i] \gets \sigma_{\mathrm{post}}.\penalties[i] + 1$
       \EndIf
     \EndFor
@@ -910,7 +914,7 @@ The marker is set by a timeout vote (target~$\bot$) at the current height, a hei
 Every~$i$ with $\sigma_{\mathrm{pre}}.\targets[i] = \bot$ is bumped, i.e.\ every validator that cast no fresh justification vote at the current height (Remark~\ref{rem:leak-prefix}).
 Since no prefix-justified block formed, the total non-$\bot$ target count is $< 2n/3$ (Definition~\ref{def:justification}, applied to the shallowest recorded target), so $|\{i : \sigma_{\mathrm{pre}}.\targets[i] = \bot\}| > n/3$.
 
-\emph{Layer~2 finalize.} Fires when a pending-finality gap is open at the start of the slot ($\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$) and $F$ did not advance; every $i \notin \sigma_{\mathrm{pre}}.P$ is bumped.
+\emph{Layer~2 finalize.} Fires when a pending-finality gap is open at the start of the slot ($\sigma_{\mathrm{pre}}.F \prec \sigma_{\mathrm{pre}}.J$) and $F$ did not advance; every~$i$ that lacks a finalize commitment reaching the justified block --- $\sigma_{\mathrm{pre}}.\fjkind[i] \neq \kfin$ (no commitment) or $\sigma_{\mathrm{pre}}.\fjtargets[i] \not\succeq \sigma_{\mathrm{pre}}.J$ (a commitment strictly below~$J$) --- is bumped.
 The finality branch of \processHeightEvents, when it fires, sets $\sigma_{\mathrm{post}}.F = \sigma_{\mathrm{pre}}.J \succ \sigma_{\mathrm{pre}}.F$, so this guard is skipped automatically.
 
 \subsection{Leak tightness}
@@ -940,7 +944,9 @@ After a transition at~$t$, $\sigma_{\mathrm{post}}^{(t)}.J \succ \sigma_{\mathrm
 \emph{(ii) Per-slot charge $> n/3$.}
 
 \emph{Pending-stuck.} The Layer~2 finalize guard fires at~$t$.
-The finality branch of \processHeightEvents did not fire (else $F$ would advance), so $|\sigma_{\mathrm{pre}}^{(t)}.P| < 2n/3$ and $|\{i : i \notin \sigma_{\mathrm{pre}}^{(t)}.P\}| > n/3$.
+Write $J \coloneqq \sigma_{\mathrm{pre}}^{(t)}.J$, with $J \succ \sigma_{\mathrm{pre}}^{(t)}.F$.
+Since $F$ did not advance, $J$ is not prefix-finalized (otherwise~$F$ would advance to~$J$ or deeper, as $J \succ F$), so fewer than $2n/3$ validators hold a finalize commitment with target $\succeq J$ (Definition~\ref{def:finality}).
+Hence more than $n/3$ validators lack such a commitment, and each is bumped by the Layer~2 finalize charge.
 
 \emph{Stable-stuck.} The Layer~2 target guard fires at~$t$.
 The justification branch did not fire, so no block reached the $2n/3$ prefix count.
@@ -1065,7 +1071,7 @@ Then $t \succeq C_1$ (from~$Q_1$) and $t \succeq C_2$ (from~$Q_2$), so $C_1$ and
 \subsection{Leak fairness}
 
 We fix an honest validator~$i$ with store~$\Sigma$ and auxiliary state~$\Omega$, write $T = \getConfirmed(\Sigma, \Omega)$ for its canonical chain, set $h_c = \sigma[T].h$, and consider the vote~$v$ it produces at the current slot.
-Each vote carries a \emph{protective prefix} $W_v \preceq T$: a block at the current height layer (or~$\bot$) whose presence on a chain makes~$v$ set~$i$'s timeout marker there.
+Each vote carries a \emph{protective prefix} $W_v \preceq T$: a block that is height-fresh at the current height (equivalently $\sigma[W_v].h = h_c$), or~$\bot$, whose presence on a chain makes~$v$ set~$i$'s timeout marker there.
 When~$i$ is unconstrained --- $v$ is a timeout or~$i$'s first vote at~$h_c$ --- the analysis is standard.
 The case that matters is when~$i$ has committed to finalize at~$h_c$: there $W_v$ is the committed block, a common ancestor of the viable chains that in general lies strictly below~$i$'s justification target, so the single finalize vote is includable --- and marker-setting --- on any chain containing it, including a canonical chain that diverges from~$T$ above~$W_v$.
 This is what prefix finalization buys over a fixed-target rule: a committed validator stays protected across divergent views, not only on chains extending its own.
