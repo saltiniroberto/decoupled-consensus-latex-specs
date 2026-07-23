@@ -36,6 +36,18 @@ The shared exclusion logic lives in \texttt{full/lite\_full\_setup.tex}.
   leak fairness), healing from asynchrony with view-merge,
   and a per-round liveness argument over slot ranges (WIP).
 
+\item[\texttt{prefix\_height\_filter\_and\_timeouts.tex}]
+  \textbf{Fresh Simplex with Height Filter and Prefix Justification.}
+  Merges \texttt{height\_filter\_and\_timeouts.tex} with the prefix-counting and
+  slashing mechanisms of \texttt{finalization\_as\_notarization.tex}: both
+  justification and finalization are \emph{prefix} counts, so votes on the same
+  chain naming different (comparable) targets combine, and a finalize vote
+  doubles as a timeout so a validator that has committed to finalize a height
+  still counts as active there. Slashing reduces to three conditions -- one
+  justify and one finalize target per height, and no timeout at a height where
+  a finalize was committed. Covers accountable safety, the fork-choice store,
+  and the inactivity leak (leak tightness and view-independent Layer-1 fairness).
+
 \item[\texttt{finalization\_as\_notarization.tex}] \textbf{Finalization as Notarization.}
   Defines a finality gadget with three vote types (notarize, justify, finalize)
   and a quorum-intersection slashing condition.
