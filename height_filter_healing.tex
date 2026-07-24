@@ -1031,12 +1031,15 @@ dependent operation waits.
 Fork choice is computed from the store of Section~\ref{sec:store} as follows.
 Let \(\Sigma.\T\) be the accepted block tree restricted to descendants
 of the greatest finalized block~\(\Sigma.F\).  Accepted blocks that conflict
-with~\(\Sigma.F\) may remain in the store as evidence, but are not counted by
-fork choice.  Among latest justifications in accepted block states whose
+with~\(\Sigma.F\) may remain in the store as evidence, but their heads supply
+no branch support to fork choice.  Signer-level slashing and round-equivocation
+evidence remains valid independently of the referenced branch.  Among latest
+justifications in accepted block states whose
 blocks descend from~\(\Sigma.F\), let \((\Sigma.J,\Sigma.h_j)\) have the greatest
 height, breaking ties by target hash.  Let
 \(\Sigma.\hmax\) be the greatest state-height of any block in this restricted
-tree.  Blocks outside the subtree of \(\Sigma.F\) do not affect the protocol.
+tree.  Blocks outside the subtree of \(\Sigma.F\) do not supply branch,
+height, or finality support.
 
 \begin{definition}[Viable subtree and Simplex root]\label{def:simplex-root}
 A block is \emph{viable} in~\(\Sigma\) when it has an accepted leaf descendant
@@ -1386,8 +1389,10 @@ Fix honest view~\(u\), action state~\(\Sigma\), support round~\(r\), and
 candidate~\(B\in\mathcal C(\Sigma)\).  Let \(V_u^r(B)\) contain each validator
 from which~\(u\) has a valid round-\(r\) head message whose effective head
 descends from~\(B\).  Let \(E_u^r\) contain each validator for which~\(u\) has
-observed a round-\(r\) equivocation under
-Definition~\ref{def:head-vote}.  Define
+observed two distinct valid signed round-\(r\) messages.  This is
+signer-level evidence: membership in~\(E_u^r\) is retained even if either
+message head has no effective head in the action state.  Such a head still
+supplies no direct support.  Define
 \[
   \mathsf{Direct}_u^r(B)=w(V_u^r(B)),
   \qquad
