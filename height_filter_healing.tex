@@ -87,12 +87,28 @@ empty vote has no height and counts toward neither tally.  The chain state
 therefore needs only one target-participation bit and one timeout bit per
 validator.  Signed votes are still kept as evidence for E1 and E2.
 
+The round proposer synchronizes the available-layer starting root using two
+fixed thresholds.  Write \(q=\lceil2W/3\rceil\) and \(g=2q-W\).  In a counted
+honest-proposer synchronization round, the proposer first requires direct
+previous-round support at least~\(q\) for the Simplex root.  If this check
+fails, it leaves the pointer empty and validators use their local fallback.
+Otherwise it chooses a deepest viable descendant with direct support at
+least~\(g\) and builds the proposal below that root.  A validator uses exactly
+that root when it has credited support
+at least~\(g\) and no viable child has credited support at least~\(q\).  The lower check
+excludes an unsupported branch; the child check prevents regression past a
+quorum-supported child.  Such a counted honest proposal transfers enough
+concrete support to make every responsive honest validator select the same
+root without requiring identical previous-round SG-message views.
+
 Let~\(H\) be nonjustifiable on every valid branch, including branches revealed
 after recovery begins.  Once the protocol advances from~\(H\) through
-\(H+1\) to~\(H+2\), Goldfish confirmation and the stabilization gadget keep
-the confirmed available chain stable.  To exclude an older justification at
-height~\(H+2\) or above, \(H+2\) must be greater than every height previously
-reached or signed at by an honest validator.
+\(H+1\) to~\(H+2\), suppose \(H+2\) is greater than every height previously
+reached or signed at by an honest validator.  Goldfish confirmation and the
+stabilization gadget then keep every later available-layer starting root at
+or below the confirmed prefix, so the available chain remains in its subtree.
+The same height bound excludes a pre-existing justification at height~\(H+2\)
+or above.
 
 Available-chain stability is not by itself a finality result.  Finality also
 requires a later ordinary height at which no honest validator has previously
@@ -110,8 +126,10 @@ uses latest head votes to keep later fork-choice walks on that chain, and the
 finality gadget advances height and finalizes justified blocks.  The
 \(G_0\) test defines a safe-confirmed prefix for target and timeout votes; it
 does not alter Goldfish confirmation.  The recovery proof uses compatible
-Goldfish confirmations during the recovery period, but does not require
-honest validators to have identical vote sets or denominators.
+Goldfish confirmations during the recovery period.  It does not require
+honest validators to have identical previous-round SG-message views or
+denominators; an honest-proposer synchronization round separately assumes the
+same available-layer input~\(\Omega\).
 
 \section{Model and quorum weights}\label{sec:model}
 
@@ -121,20 +139,27 @@ fixed positive integer weight.  Write
 \[
   W=\sum_{i\in V}w(i),
   \qquad
-  q=\left\lceil\frac{2W}{3}\right\rceil.
+  q=\left\lceil\frac{2W}{3}\right\rceil,
+  \qquad
+  g=2q-W.
 \]
 For \(S\subseteq V\), write \(w(S)=\sum_{i\in S}w(i)\).  A quorum is a set
 \(Q\subseteq V\) with \(w(Q)\geq q\).
-All threshold checks use integer weights or the equivalent cross-multiplication
-\(3w(Q)\geq 2W\); no rounded \emph{adjusted denominator} is part of the
-protocol.
+The fixed lower threshold \(g\) is used only by the proposed-root
+synchronization rule.  It is distinct from the local-denominator
+\(\Gzero\) predicate defined below.
+A quorum check against~\(q\) may equivalently use
+\(3w(Q)\geq2W\).  Every other threshold check uses its stated exact integer
+inequality; no rounded \emph{adjusted denominator} is part of the protocol.
 \end{definition}
 
 \begin{assumption}[Fixed electorate and fault bound]\label{ass:fixed-electorate}
-Every chain, height, SG round, and proposer-pointer check uses the fixed
-\(V,w,W,q\) above.  The Byzantine weight \(b\) satisfies
+Every chain and round uses the fixed identities and weights~\(V,w\).
+Finality checks use \(W,q\), proposed-root checks use \(W,g,q\), and ordinary
+SG scoring uses the local live subset and denominator defined below.  The
+Byzantine weight \(b\) satisfies
 \[
-  b < 2q-W.
+  b < g.
 \]
 \end{assumption}
 
@@ -193,7 +218,7 @@ root can be computed; the pre-fork genesis or finalized root is not used.
 \end{definition}
 
 \begin{definition}[Blocks and chains]\label{def:block-chain}
-A block has a parent, a strictly increasing slot, an optional proposer pointer
+A block has a parent, a strictly increasing slot, an optional proposed-root
 \(B.\mathsf{pointer\_root}\), a deterministic finite set of individual signed
 FG attestations, and a post-state.  Its root is known when its post-state is
 recorded; after that point we identify the block with its root.  Blocks form a
@@ -223,7 +248,7 @@ The finalize pair \((v.\finalizeHeight,v.\finalizeTarget)\) is either
 signer's current chain state has latest justified pair
 \((J,h_j)=(T_f,h_f)\).  An empty vote has no height and sets neither
 participation bit.  Even then, \(v.\headf\) may support the next round's
-pointer and its finalize pair may support finalization of the latest
+proposed-root check and its finalize pair may support finalization of the latest
 justification.
 \end{definition}
 
@@ -691,13 +716,11 @@ restricted to the chain's canonical current-height target.
 
 The uniform E1 rule is essential here: a finality commitment to~\((h,C)\)
 conflicts with every height-\(h\) message targeting \(X\neq C\), including
-\(X=\bot\).  Under an older, weaker rule that covered only explicit
-empty-target timeouts, noncanonical targets could not safely share the timeout
-tally without an additional argument or separate pool.  Target-target E2 did
-not by itself close that gap: an intersection signer could commit to finalize
-\(C\) and later target nonempty~\(X\) without the commitment itself supplying
-a signed target-\(C\) half of an E2 pair.  Current E1 makes that pair directly
-slashable.
+\(X=\bot\).  This is what permits noncanonical on-chain targets to share the
+timeout tally.  Target-target E2 alone is insufficient: an intersection signer
+can commit to finalize~\(C\) and later target nonempty~\(X\) without the
+commitment itself supplying a signed target-\(C\) half of an E2 pair.  E1 makes
+that combination directly slashable.
 
 \begin{lemma}[Finalized blocks form a chain]\label{lem:finalized-chain}
 For any finalized pairs \((C,h)\) and \((C',h')\), if \(h\leq h'\) then
@@ -729,7 +752,7 @@ This follows from Lemmas~\ref{lem:target-uniqueness}
 and~\ref{lem:finalized-chain}.
 \end{proof}
 
-The proof does not require synchrony.  It is independent of proposer pointers,
+The proof does not require synchrony.  It is independent of proposed-root selection,
 the available chain, graded agreement, confirmation, and nonjustifiable
 heights.
 
@@ -746,8 +769,9 @@ with:
   \item received signed blocks in \(\mathsf{blocks}\), including blocks whose
     parent is not yet known and finalized-conflicting blocks retained as
     evidence;
-  \item signed finality \(\mathsf{attestations}\), including attestations
-    extracted from received blocks;
+  \item signed \(\mathsf{attestations}\), including standalone SG pre-votes,
+    FG messages received directly, and FG messages extracted from received
+    blocks;
   \item \(\mathsf{timely}\) facts, where
     \(\mathsf{timely}(x,I)\) records that object \(x\) was received by the
     deadline of scheduled step~\(I\);
@@ -764,7 +788,7 @@ The post-state map \(\sigma_S[B]\), pending-reference indices, and the
 fork-choice state~\(\Sigma\) are derived from these raw sets.  They may be
 cached, but are not independent merge inputs.
 
-The fresh-root pointer is not a separate store object.  It is the
+The proposed root is not a separate store object.  It is the
 \(\mathsf{pointer\_root}\) field of a round-start block.  The
 \(\mathsf{on\_block}\) path retains that field with the signed block.
 Consequently, not observing a round-start block is different from observing
@@ -788,17 +812,21 @@ their blocks, attestations, timely facts, and completed-step records.
 Its clock is the greater of the two clocks.  A scheduled step that neither
 copy has completed uses every input object marked timely for that step in
 either copy.  If the timely round-start blocks contain two distinct
-\(\mathsf{pointer\_root}\) values signed by the round's proposer, the step uses
-neither.  If they contain only one value, that pointer remains available.
+\(\mathsf{pointer\_root}\) values signed by the round's proposer, including
+one explicit empty value and one nonempty value, the step uses neither.  If
+they contain exactly one nonempty value, that root remains available for the
+checks below.  An explicit empty value, or no observed proposal, selects the
+fallback.
 
 A merge does not recompute a completed step.  A second proposal learned after
-the pointer deadline is retained as equivocation evidence, but does not
+the action deadline is retained as equivocation evidence, but does not
 invalidate the pointer already chosen.  If the two copies completed the same
 step with different local inputs, the merge retains both histories; it does
 not replace them with a single new version of that past step.  A node can use
 the merged store for a common continuation after all later steps that depend
-on either result have completed.  Conflicting head votes remain stored because
-Definition~\ref{def:fresh-root} counts their signer once.  A valid attestation
+on either result have completed.  Equivocating head messages remain stored because
+Definition~\ref{def:synchronization-root} counts their signer once in each
+proposed-root and child check.  A valid attestation
 whose head is unknown remains stored until that block and its ancestors
 arrive.
 \end{definition}
@@ -847,9 +875,12 @@ at an ordinary height, and any unresolved timely facts.  Validators' signing
 histories are local data rather than part of the network store, and are not
 pruned by this rule.
 
-Figure~\ref{alg:store} gives the store operations using the executable
-specification's \(\mathsf{on\_block}\) and \(\mathsf{on\_attestation}\)
-names.  An attestation with an unknown head remains in the raw store.  It
+Figure~\ref{alg:store} gives the \(\mathsf{on\_block}\) and
+\(\mathsf{on\_attestation}\) store operations.  The
+\(\mathsf{on\_attestation}\) entry point accepts either a standalone
+signed SG pre-vote or a signed FG message; only FG messages can appear in a
+block's state-transition batch, while both kinds can support fork choice.
+An attestation with an unknown head remains in the raw store.  It
 becomes usable by an uncompleted step when the block and ancestry are known
 and were timely for that step; it never changes a completed step.
 The derived state map is rebuilt after a merge.  It processes each block from
@@ -859,7 +890,9 @@ later operation that requires one predecessor result does not run until the
 protocol has a common continuation.  The completed available-vote record stores
 the round's stabilization root, called its \emph{stable root}.  Every later
 \textsf{get\_head} call in that round reads this stable root; later votes do not
-cause the pointer to be accepted or rejected again.  A completed result is usable only when its predecessor chain
+change the proposed-root decision.  An uncompleted action evaluates both the
+lower-support check and every child veto from its unioned timely input.  A
+completed result is usable only when its predecessor chain
 matches the current history and it is the unique such result; otherwise the
 dependent operation waits.
 
@@ -891,7 +924,7 @@ dependent operation waits.
   \ForAll{\(a\in B.\mathsf{attestations}\)}
     \State \(S\gets\Call{on\_attestation}{S,a}\)
   \EndFor
-  \State \Return \(S\) \Comment{\(B.\mathsf{pointer\_root}\) stays with \(B\)}
+  \State \Return \(S\) \Comment{The proposed root stays with \(B\)}
 \EndFunction
 \vspace{2pt}
 
@@ -937,7 +970,10 @@ dependent operation waits.
   \State \(M_I\gets\{x:\mathsf{timely}(x,I)\in S.\mathsf{timely}\text{ and every
     dependency }z\text{ has }\mathsf{timely}(z,I)\in S.\mathsf{timely}\}\)
   \State \(\mathit{deps}_I\gets\) the completed records used by step \(I\)
-  \State \(y\gets\mathsf{execute\_step}(I,M_I,\mathit{deps}_I)\)
+  \State \(y\gets\) the deterministic result prescribed for step \(I\) by
+    Algorithm~\ref{alg:state-machine} and
+    Definitions~\ref{def:walk}, \ref{def:synchronization-root},
+    \ref{def:round-close}, and~\ref{def:fg-rule}, using \(M_I,\mathit{deps}_I\)
   \State \(S.\mathsf{completed\_steps}\gets
     S.\mathsf{completed\_steps}\cup\{(I,M_I,\mathit{deps}_I,y)\}\)
   \State \Return \(S\)
@@ -980,8 +1016,7 @@ dependent operation waits.
 \vspace{2pt}
 
 \Function{get\_head}{$S,I,\Omega,u$}
-  \State \(\Sigma\gets\Call{derive\_fork\_choice}{S}\)
-  \State \(\stableRoot_u^r\gets\) the stable root in the unique
+  \State \((\Sigma,\stableRoot_u^r)\gets\) the action state and stable root in the unique
     history-compatible result for \(I\)
   \State \Return \(\mathsf{walk}(\Sigma,\Omega,u;\stableRoot_u^r)\)
 \EndFunction
@@ -1116,19 +1151,20 @@ the liveness proof.
 \begin{assumption}[Participation during recovery]\label{ass:recovery-weights}
 Let~\(V_{\rm resp}\subseteq V\) be a responsive honest set and write
 \(W_{\rm resp}=w(V_{\rm resp})\), with \(W_{\rm resp}\geq q\).
-In every honest SG view during recovery, let~\(a\) be the total live
-latest-message weight outside~\(V_{\rm resp}\), including
-both adversarial validators and any temporarily nonresponsive honest validator
-whose stale message has not expired.  The exact integer inequality
-\(W_{\rm resp}>2a\)
-holds in every such view.
+For each round used by the recovery proof, let~\(A\subseteq V\setminus
+V_{\rm resp}\) contain every validator outside the responsive set whose data
+can affect any honest view in that round: a live SG latest message, a valid
+head message used by the proposed-root check, or equivocation evidence
+credited by that check.  Write \(a=w(A)\).  The exact integer inequality
+\(W_{\rm resp}>2a\) holds in every such round.
 Every responsive honest validator remains online through the available vote,
 SG pre-vote, FG decision, and message relay in every round used by the recovery
 proof.
 Each responsive honest validator publishes exactly one SG pre-vote in every
 round during recovery, including a round whose FG decision is empty.  Each such
-pre-vote remains live through the immediately following round's pointer and
-fallback checks and is superseded by that validator's next honest
+pre-vote and its ancestry reach every responsive honest validator before the
+immediately following round's proposed-root and fallback checks.  It remains
+live through those checks and is superseded by that validator's next honest
 pre-vote before expiry.  The proof never relies on an expired vote.
 \end{assumption}
 
@@ -1136,6 +1172,25 @@ When \(W\) is divisible by three, \(q=2W/3\) and the quorum-intersection
 bound is \(W/3\).  All
 statements below use the exact integer values or cross-multiplication;
 informal fractions are explanatory only.
+
+\begin{lemma}[Recovery threshold gap]\label{lem:recovery-threshold-gap}
+Under Assumption~\ref{ass:recovery-weights},
+\[
+  a<g
+  \qquad\text{and}\qquad
+  g+a\leq q.
+\]
+\end{lemma}
+
+\begin{proof}
+The sets are disjoint, so \(W_{\rm resp}+a\leq W\).
+Together with \(W_{\rm resp}>2a\), this gives \(W>3a\).  Since
+\(g=2\lceil2W/3\rceil-W\geq W/3\), we obtain \(a<g\).
+Also \(a\leq W-W_{\rm resp}\leq W-q\), and hence
+\[
+  g+a\leq(2q-W)+(W-q)=q.
+\]
+\end{proof}
 
 \begin{definition}[Live latest head vote]\label{def:head-vote}
 After the round's Goldfish confirmation step, validator~\(i\) signs one SG
@@ -1192,7 +1247,8 @@ descendant of stable root~\(S\).  Goldfish confirmation is separate from SG and
 safe confirmation.  It requires a strict majority of the participating
 committee.  A vote for a descendant supports every ancestor back to~\(S\).
 The participating set is fixed after the available vote, and confirmation is
-evaluated one slot later.  During recovery, Goldfish satisfies:
+evaluated at a later action after one network-delivery bound.  During
+recovery, Goldfish satisfies:
 \begin{enumerate}
   \item the available-confirmed heads used when honest validators make the SG
     and FG votes considered here are pairwise compatible, including across
@@ -1202,15 +1258,18 @@ evaluated one slot later.  During recovery, Goldfish satisfies:
     step every responsive honest voter starts from a stable root compatible with
     \(C\) and votes for a descendant of~\(C\), then the delayed evaluation
     makes~\(C\) common to all honest views.  Thereafter, Goldfish from any
-    compatible honest stable root returns a descendant of~\(C\), for as long as
-    the participation and compatible-stable-root assumptions continue to hold;
+    honest stable root that equals or descends from~\(C\) returns a descendant
+    of~\(C\), for as long as the participation and descendant-stable-root
+    assumptions continue to hold;
     and
-  \item in a slot with an honest proposer, let \(c_{\rm honest}\) be the common
-    online honest committee weight and \(c_{\rm adv}\) the committee's total
-    adversarial weight.  Then \(c_{\rm honest}>c_{\rm adv}\).
+  \item in a slot with an honest proposer and a common timely proposal
+    block~\(B_r\), every responsive honest available voter votes for~\(B_r\)
+    or a descendant.  If \(c_{\rm honest}\) is the common online honest
+    committee weight and \(c_{\rm adv}\) is the committee's total adversarial
+    weight, then \(c_{\rm honest}>c_{\rm adv}\).
 \end{enumerate}
-Any block named by a vote or pointer, together with the data needed to validate
-it, is available before the vote or pointer is processed.  The compatibility
+Any block named by a vote or proposed root, together with the data needed to validate
+it, is available before the vote or proposed root is processed.  The compatibility
 assumption applies only to the heads listed in the first condition.  If the
 recovery argument is extended to later rounds, the same conditions must hold
 in those rounds as well.
@@ -1218,11 +1277,11 @@ in those rounds as well.
 
 The third condition holds separately in each view.  Every honest participating
 set contains all common honest committee weight~\(c_{\rm honest}\) and may
-contain an arbitrary adversarial subset of weight~\(a\leq c_{\rm adv}\).  Hence
+contain an arbitrary adversarial subset of weight~\(c_u\leq c_{\rm adv}\).  Hence
 \[
-  c_{\rm honest}>c_{\rm adv}\geq a
+  c_{\rm honest}>c_{\rm adv}\geq c_u
   \quad\Longrightarrow\quad
-  c_{\rm honest}>\frac{c_{\rm honest}+a}{2}.
+  c_{\rm honest}>\frac{c_{\rm honest}+c_u}{2}.
 \]
 The honest proposal therefore has a strict local majority in every honest
 view.  The participating sets and their denominators need not be identical.
@@ -1232,8 +1291,7 @@ different views.
 \begin{definition}[Stable root and walk]\label{def:walk}
 At round~\(r\)'s available-vote action, validator~\(u\) first evaluates the
 round-start proposal's pointed root as in
-Definition~\ref{def:fresh-root}.  If the root~\(B\) is accepted,
-\(\simplexRoot(\Sigma)\preceq B\), and \(B\) is viable, set
+Definition~\ref{def:synchronization-root}.  If the root~\(B\) is accepted, set
 \(\stableRoot_u^r=B\).  Otherwise set
 \(\stableRoot_u^r=\Gone(\Sigma,u)\).  This per-round stabilization root is the
 \emph{stable root}; it always descends from the Simplex root.  From
@@ -1243,11 +1301,10 @@ has state-height below \(\Sigma.h_{\max}-1\), continue through viable children
 using the same previous-slot participating-vote plurality, with deterministic
 ties, until that height bound is met.  The returned block is
 \(\mathsf{walk}(\Sigma,\Omega,u;\stableRoot_u^r)\).  The available-vote step
-stores~\(\stableRoot_u^r\);
-every later walk in the same round uses that stored value and does not evaluate
-the pointer again.  Pointer support is never re-evaluated.  If a later
-authenticated state change makes the stored root unavailable below the current
-Simplex root, that root is inert and the walk uses the current grade-1 fallback.
+stores the action state~\(\Sigma\) and~\(\stableRoot_u^r\).
+Every later walk belonging to that completed action uses the stored state and
+root and does not evaluate the proposal again.  Later state changes apply only
+to later actions.
 \end{definition}
 
 The last step affects only the height of the returned block, not its
@@ -1269,168 +1326,230 @@ head.
 The prefix property follows because every branch conflicting with an ancestor
 of a \(\Gzero\)-clear block also conflicts with that block.
 
-\begin{assumption}[Post-\(\GST\) delivery and an honest proposer]\label{ass:honest-proposer}
+\begin{assumption}[Post-\(\GST\) delivery and a counted honest proposer]\label{ass:honest-proposer}
 After \(\GST\), honest blocks, available votes, SG pre-votes, FG messages, and the
-blocks needed to validate them propagate within~\(\Delta\).  If the first
-proposer of a round is honest, then:
+blocks needed to validate them propagate within~\(\Delta\).  A round is a
+\emph{counted honest-proposer round} when its first proposer is honest and:
 \begin{enumerate}
-  \item the preceding round's responsive honest SG pre-votes reach the proposer
-    before it chooses its root.  The proposal, the block and vote state fixed
-    by that proposal, and the pointed root reach every honest validator
-    at least one delivery bound before the available-vote action;
-  \item the proposer re-sends its supporting votes, so its pointed root has
-    credited support at least~\(q\) in every honest view by
-    Lemma~\ref{lem:fresh-root-sync};
-  \item every honest validator evaluates pointer ancestry and viability using
-    the same state.  If the pointed root passes, all use it; if it fails,
-    all use the same grade-1 fallback.  Thus every honest available voter uses
-    one common viable stable root and votes for the proposal block or a descendant
-    on its walk chain; and
-  \item after delayed confirmation, every honest validator chooses an SG head
-    on a descendant of the same block and obtains the same height and
-    current-height target.  No validator switches to unrelated local state
-    between the available vote and the SG vote.
+  \item every honest validator evaluates the available-vote action from the
+    same post-proposal state~\(\Sigma\) and hence the same viable candidate
+    tree.  The preceding round's responsive honest SG pre-votes reach the
+    proposer before it chooses a root, and each has an effective head in that
+    candidate tree;
+  \item the proposal, its pointed root, its ancestry, and the proposal block
+    reach every honest validator at least one delivery bound before the
+    available-vote action.  The proposer also re-sends concrete signed
+    supporting messages of weight at least~\(g\) before that action;
+  \item the proposal block is a viable descendant of the root selected by the
+    proposer.  Every responsive honest validator has the same available-layer
+    input~\(\Omega\) before the available vote; and
+  \item every validator uses the same action schedule through delayed
+    confirmation and the SG vote, and no validator switches to unrelated
+    local state during those actions.
 \end{enumerate}
 An implementation that spreads these duties across slots must ensure the same
 conditions.  They do not assume a height advance, justification, or finality.
+The third condition is an explicit liveness premise: the construction below
+does not prove that every honest proposer can satisfy it for every
+post-proposal candidate tree.
 \end{assumption}
 
-\section{Fresh-quorum pointers}\label{sec:pointer}
+\section{Grade-gap root synchronization}\label{sec:pointer}
 
-A pointer is a synchronization hint, not a certificate carried by the block.
-Its support is evaluated locally from the immediately preceding round's signed
-head messages.
+The round-start block may point to one root.  The proposal carries only that
+root; signed head messages remain separate network objects.  The decision uses
+the immediately preceding round and is fixed at the available-vote action.
+The proposer first fixes the proposal parent and operations.  From them it
+computes the \emph{selection snapshot}: the resulting finality fields,
+\(h_{\max}\), Simplex root, ancestry, and viability of every pre-existing
+candidate, with the pointer field left as a placeholder.  Filling that field
+does not change any component of this snapshot.  After choosing the pointer,
+the proposer computes the authenticated block and post-state.  Receivers
+reconstruct the same selection snapshot and then the full action state from
+the signed proposal.
 
-\begin{definition}[Credited support and fresh root]\label{def:fresh-root}
-Fix honest view~\(u\), support round~\(r\), and known block~\(B\).  Let
-\(V_u^r(B)\) be the validators from which~\(u\) has a valid round-\(r\) head
-vote descending from~\(B\), and let \(E_u^r\) be the validators for which~\(u\)
-has observed an equivocation under Definition~\ref{def:head-vote}.  Two
-distinct same-round FG messages count even if their head roots agree.  Both
-sets use only messages received by the
-deadline for this round's available vote, as recorded by the store's
-\(\mathsf{timely}\) facts.  A later message may support a later round but does
-not change this decision.  Define
+\begin{definition}[Candidate tree and effective head]\label{def:candidate-tree}
+For an action state~\(\Sigma\), let
 \[
-  \Credit_u^r(B)
-   =w\bigl(V_u^r(B)\cup E_u^r\bigr).
+  \mathcal C(\Sigma)
+  =\{B\in\viableTree(\Sigma):\simplexRoot(\Sigma)\preceq B\}.
 \]
-Each validator is counted once.  An equivocator is credited to~\(B\) even when
-none of the two copies in~\(u\)'s view descends from~\(B\).
-
-The first proposer of round~\(r+1\) may point to one block root~\(B\).  View~\(u\)
-accepts it as a \emph{fresh root} at its available-vote step exactly when
-\(B\) and its ancestry are available,
-\(\Credit_u^r(B)\geq q\), the proposer has not signed a distinct
-pointer for the same round, and the walk checks in
-Definition~\ref{def:walk} (Simplex-root ancestry and viability) pass.  The proposal
-carries only~\(B\), never the votes or an aggregate.
+This is a prefix-closed tree rooted at~\(\simplexRoot(\Sigma)\).  For a signed
+head message naming~\(X\), its \emph{effective head} is the deepest
+\(P\in\mathcal C(\Sigma)\) with \(P\preceq X\).  If no such~\(P\) exists, the
+message supplies no proposed-root support.  Thus projection may move a head
+only to an actual ancestor; it never moves a vote forward or across a fork.
 \end{definition}
 
-Before the deadline, credited support for a fixed~\(B\) can only increase.  A
-supporting vote adds its signer; another vote from the same signer either leaves
-that support unchanged or proves an equivocation, which is also credited.  At
-the deadline, the \(\mathsf{timely}\) records determine which messages are
-used.  Since~\(W\) is fixed, the proposal does not need to carry or negotiate a
-separate quorum snapshot.
+\begin{definition}[Direct and credited support]\label{def:synchronization-root}
+Fix honest view~\(u\), action state~\(\Sigma\), support round~\(r\), and
+candidate~\(B\in\mathcal C(\Sigma)\).  Let \(V_u^r(B)\) contain each validator
+from which~\(u\) has a valid round-\(r\) head message whose effective head
+descends from~\(B\).  Let \(E_u^r\) contain each validator for which~\(u\) has
+observed a round-\(r\) equivocation under
+Definition~\ref{def:head-vote}.  Define
+\[
+  \mathsf{Direct}_u^r(B)=w(V_u^r(B)),
+  \qquad
+  \Credit_u^r(B)=w\bigl(V_u^r(B)\cup E_u^r\bigr).
+\]
+Each validator is counted once.  An equivocator is credited to every tested
+candidate, even when the copies in~\(u\)'s view do not support that candidate.
+Only messages received by the action deadline are used.
 
-\begin{lemma}[Fresh-support intersection]\label{lem:pointer-intersection}
-If two conflicting roots~\(B,B'\) each have credited support at least~\(q\) in
-possibly different honest views for the same support round, at least
-\(2q-W\) weight actually equivocated in that round.  In
-particular, two conflicting fresh roots cannot both be accepted under
-\(b<2q-W\).
+An honest first proposer of round~\(r+1\) first requires
+\(\mathsf{Direct}_p^r(\simplexRoot(\Sigma))\geq q\).  If this check fails, it
+uses an empty pointer.  Otherwise it points to a deepest candidate~\(R\) with
+\(\mathsf{Direct}_p^r(R)\geq g\), breaking equal-depth ties by a deterministic
+root order.  It makes concrete signed supporting messages of total weight at
+least~\(g\) available before the action.  It uses a nonempty pointer only when
+the resulting proposal block descends from~\(R\); otherwise it uses an empty
+pointer.  A Byzantine proposer may choose any pointer value; receivers still
+apply all four checks below.
+
+At the action, view~\(u\) accepts exactly the pointed root~\(R\) when:
+\begin{enumerate}
+  \item the set of pointer values in the proposer's timely round-start blocks
+    is exactly~\(\{R\}\);
+  \item \(R\), its ancestry, and the action state are available, and
+    \(R\in\mathcal C(\Sigma)\);
+  \item \(\Credit_u^r(R)\geq g\); and
+  \item every immediate child~\(C\) of~\(R\) in \(\mathcal C(\Sigma)\) has
+    \(\Credit_u^r(C)<q\).
+\end{enumerate}
+If any check fails or no root is pointed to, the action uses
+\(\Gone(\Sigma,u)\).  If accepted, \(R\) is the stored stable root.
+\end{definition}
+
+The numerical liveness bounds count only counted honest-proposer rounds satisfying
+both the effective-head and proposal-descends-selected-root conditions in
+Assumption~\ref{ass:honest-proposer}.  If proposal processing changes the
+Simplex root so that the preceding responsive heads have no effective heads,
+the honest proposer's direct-\(q\) floor check fails and it uses an empty
+pointer.  If the selected root is not on the fixed proposal-parent chain, it
+also uses an empty pointer.  Either action uses the grade-1 fallback and
+publishes new SG heads under the new action state.  A later proposal satisfying
+both conditions supplies a counted synchronization round; no bound is claimed
+on the wait for that round.
+
+The support and child checks use fixed \(g\) and \(q\), not the local SG
+denominator.  A newly received message can increase support for the proposed
+root, but it can also make a child reach~\(q\); acceptance is therefore
+evaluated once at the deadline and is not monotone before that deadline.  A
+message received later may support a later action but cannot change the
+stored stable root.
+
+\begin{lemma}[A selectable root exists]\label{lem:selectable-root}
+Suppose the effective heads of responsive honest validators of total weight
+at least~\(q\) are defined in the common action state and reach an honest
+proposer before selection.  Then the proposer has a candidate with direct
+support at least~\(g\).
 \end{lemma}
 
 \begin{proof}
-The two credited sets are quorums, so their intersection has weight at least
-\(2q-W\).  A signer explicitly present in either local
-equivocation set has already equivocated.  Otherwise the two views contain one
-signed head from that signer descending~\(B\) and one descending~\(B'\).
-Because the roots conflict, the heads are distinct.  Thus every intersection
-signer actually equivocated, regardless of which copies either verifier saw.
+Their effective heads lie in the finite candidate tree.  Their highest common
+ancestor in that tree has direct support at least~\(q\geq g\).
 \end{proof}
 
-\begin{lemma}[An honest proposer's fresh root is accepted]\label{lem:fresh-root-sync}
-After \(\GST\), suppose the first proposer of round~\(r+1\) is honest and points to
-a root~\(B\) for which it saw round-\(r\) supporting votes of weight at
-least~\(q\), without counting equivocations.  Suppose it re-sends those votes
-at least~\(\Delta\) before every honest available-vote action.  By each such
-action, \(B\) has credited support at least~\(q\) in that validator's view.
-\end{lemma}
-
-\begin{proof}
-For each signer counted directly by the proposer, the proposer re-sends the
-valid supporting head message immediately, though the proposal itself still
-carries only the root.  The post-\(\GST\) delivery schedule puts that message in
-every honest view before the available-vote action.  If a receiver instead has
-two different same-round messages from that signer, it counts the signer as an
-equivocator.  Thus every signer counted by the proposer is counted either as
-support or as an equivocation by every receiver.  Every receiver therefore
-credits at least~\(q\) weight to~\(B\).
-\end{proof}
-
-This is precisely the benefit-of-the-doubt case: the proposer may have seen
-validator~\(i\) vote for~\(B\), while another validator has only two other
-equivocating copies.  The latter still credits~\(i\) to~\(B\).  Synchrony or
-equivocation is enough; no receiver attempts to reconstruct the proposer's
-exact vote set.
-
-\begin{lemma}[A directly supported root exists]\label{lem:fresh-root-exists}
-After one network delay for honest SG votes, the highest common ancestor of all
-responsive honest round-\(r\) heads has direct support of weight at least~\(q\)
-and is known to an honest first proposer of round~\(r+1\).
-\end{lemma}
-
-\begin{proof}
-Each responsive honest validator emits one round-\(r\) pre-vote and their total
-weight is at least~\(q\).  Their highest common ancestor lies on every such
-head.  Delivery makes all these messages and the ancestor available to the
-honest proposer, which therefore sees direct quorum support.
-\end{proof}
-
-An honest proposer chooses the deepest directly quorum-supported root that
-descends from the Simplex root and passes the viability check in the state used for its proposal,
-with a deterministic hash tie-break; if none passes, it omits the pointer and
-the fallback is used.  It broadcasts one proposal.  A
-Byzantine proposer may equivocate.  If both proposals are in a validator's
-view before its pointer deadline, that validator uses neither pointer.  If the second
-proposal arrives later, it is kept as equivocation evidence but does not alter
-the stable root already chosen for that round.  This can delay liveness but cannot
-create two conflicting accepted fresh roots under \(b<2q-W\).  There is
-a new pointer opportunity every round, even when the height has not advanced.
-A pointer applies to one round, not to an entire height.
-
-\begin{lemma}[An honest proposer gives validators the same fork-choice input]\label{lem:pointer-alignment}
+\begin{lemma}[Exact adoption under a counted honest proposer]\label{lem:exact-root-adoption}
 Under Assumptions~\ref{ass:recovery-weights}
-and~\ref{ass:honest-proposer}, an honest first-slot proposer makes every responsive
-honest validator use the same viable stable root at its available-vote action: the
-pointed root if its common checks pass, otherwise the common grade-1 fallback.
-At the later SG action their walk outputs lie on one chain and have one
-state-height~\(k\) and one current-height target~\(T\), even if their pre-round walks
-were split between \(h_{\max}-1\) and \(h_{\max}\).
+and~\ref{ass:honest-proposer}, suppose the preceding responsive honest heads
+have effective heads in the common action state of a counted honest-proposer
+round.  Every responsive honest validator accepts and uses the exact root~\(R\)
+selected by the proposer.
 \end{lemma}
 
 \begin{proof}
-Lemma~\ref{lem:fresh-root-exists} supplies a directly supported root and
-Lemma~\ref{lem:fresh-root-sync} makes its credited support reach~\(q\)
-everywhere.  Those two facts alone do not prove Simplex-root ancestry and
-viability.  Assumption~\ref{ass:honest-proposer} gives them the same state:
-the proposed root either passes everywhere or fails everywhere, in which case
-the same fallback is used.  It then makes all honest available voters follow
-that common stable root's walk chain.  After confirmation, all SG walks remain on
-that chain.
+Every responsive effective head lies in the candidate tree and therefore
+descends from its root.  Hence
+\(\mathsf{Direct}_p^r(\simplexRoot(\Sigma))\geq W_{\rm resp}\geq q\), so the
+counted honest proposer does not select the empty pointer.
+Lemma~\ref{lem:selectable-root} then makes~\(R\) selectable, and
+Assumption~\ref{ass:honest-proposer} makes the proposal block descend
+from~\(R\), so the proposal-construction check also keeps the pointer
+nonempty.  Since~\(R\)
+is deepest among candidates with direct support at least~\(g\), every
+candidate-tree child~\(C\) of~\(R\) has direct support less than~\(g\) in the
+proposer’s view.  The proposer sees every responsive honest head.  A receiver
+can credit to~\(C\) at most that responsive support plus the weight~\(a\)
+outside the responsive set.  Lemma~\ref{lem:recovery-threshold-gap} gives
+\[
+  \Credit_u^r(C)<g+a\leq q.
+\]
+The transferred concrete messages give~\(R\) credited support at least~\(g\)
+in every receiver's view.  A receiver that knows another message from one of
+those signers either still sees the transferred supporting message or counts
+the signer once as an equivocator.  The common action state supplies the same
+ancestry, candidate tree, and viability result.  All four checks therefore
+pass, and every responsive honest validator stores exactly~\(R\).
+\end{proof}
+
+\begin{lemma}[No regression and no unsupported progression]\label{lem:root-validity}
+Fix an honest action view satisfying
+Assumption~\ref{ass:recovery-weights}, and let~\(B\) be in its candidate tree.
+\begin{enumerate}
+  \item If every responsive honest support-round head descends from~\(B\),
+    the action's stable root descends from~\(B\).
+  \item If every responsive honest support-round head is live in the action's
+    SG view, has an effective head, and is an ancestor of~\(B\), the action's
+    stable root is an ancestor of~\(B\).
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+For the first claim, a pointed candidate conflicting with~\(B\) can be
+credited only by validators in~\(A\), so its credit is at most \(a<g\).
+A pointed strict ancestor~\(R\) of~\(B\) has a candidate-tree child on the
+path to~\(B\).  Every responsive honest head supports that child, giving it
+weight at least~\(W_{\rm resp}\geq q\), so the child veto rejects~\(R\).
+Any accepted pointed root therefore descends from~\(B\).
+
+The grade-1 fallback starts at the Simplex root, which is an ancestor of~\(B\).
+Every child on the path to~\(B\) has support at least~\(W_{\rm resp}\), while
+its local denominator is at most~\(W_{\rm resp}+a\).  Since
+\(W_{\rm resp}>2a\),
+\[
+  3W_{\rm resp}>2(W_{\rm resp}+a),
+\]
+so the fallback reaches~\(B\) and can only continue below it.
+
+For the second claim, an accepted pointed root has credited support at
+least~\(g>a\).  It therefore has a responsive honest effective head below it.
+That head is an ancestor of~\(B\), so the pointed root is also an ancestor
+of~\(B\).  For the fallback, a child leaving the path to~\(B\), including a
+child below~\(B\), has support at most~\(a\).  Its denominator is at least
+\(W_{\rm resp}\), and \(3a<2W_{\rm resp}\), so that child cannot meet the
+grade-1 threshold.  The fallback remains on the path to~\(B\).
+\end{proof}
+
+If the proposer signs two distinct pointer values known before the action,
+including an empty and a nonempty value, the validator uses neither and
+selects its fallback.  Evidence learned after the action is retained but does
+not change that action.  The same rule runs in every round, including a round
+in which the height does not advance.
+
+\begin{lemma}[A counted honest proposer gives validators the same fork-choice input]\label{lem:pointer-alignment}
+Under Assumptions~\ref{ass:recovery-weights}
+and~\ref{ass:honest-proposer}, suppose the preceding responsive honest heads
+have effective heads in the common action state.  In a counted honest-proposer
+round, every responsive honest validator uses the same viable stable root and
+the same walk output.  At the later SG action they therefore have one
+state-height~\(k\) and one current-height target~\(T\), even if their pre-round
+walks were split between \(h_{\max}-1\) and \(h_{\max}\).
+\end{lemma}
+
+\begin{proof}
+Lemma~\ref{lem:exact-root-adoption} gives every validator the exact same stable
+root.  Assumption~\ref{ass:honest-proposer} gives them the same action state
+and available-layer input~\(\Omega\).  The Goldfish walk and the height-filter
+descent are deterministic, so their walk output is identical.
 The height and current-height target are read from the slot-advanced action
-states on those walks rather
-than from a receiver's pre-round height, so a prior one-height split does not
-cause pointer rejection.  The remaining conditions of
-Assumption~\ref{ass:honest-proposer} ensure that proposal processing and
-Goldfish confirmation give the same height and current-height target.  If the
-common proposal's operations consume a due outcome and enter a new height,
-its post-state has an empty stored target and a start slot equal to the
-proposal's slot.  Every validator therefore derives that proposal as the
-same-slot action target.  The following slot transition records exactly that
-root before any descendant can include the target votes.
+state on that walk rather than from a receiver's pre-round height.
+If the common proposal's operations consume a due outcome and enter a new
+height, its post-state has an empty stored target and a start slot equal to
+the proposal's slot.  Every validator derives that proposal as the same-slot
+action target.  The following slot transition records exactly that root
+before any descendant can include the target votes.
 \end{proof}
 
 \section{Round schedule and state processing}\label{sec:rounds}
@@ -1442,10 +1561,10 @@ validator after the proposal has received Goldfish available votes and been
 confirmed.  The strict order is
 \[
 \begin{array}{c}
-\text{first-slot proposal and pointer selection}
-\longrightarrow \text{Goldfish available vote}
+\text{first-slot proposal and stable-root selection}
+\xrightarrow{\ \Delta\ }\text{Goldfish available vote}
 \\[-1mm]
-\longrightarrow \text{delayed Goldfish confirmation}
+\xrightarrow{\ \Delta\ }\text{delayed Goldfish confirmation}
 \longrightarrow \text{signed SG head pre-vote}
 \\[-1mm]
 \xrightarrow{\ \Delta\ }
@@ -1462,21 +1581,28 @@ confirmation is evaluated at a later action after those votes, and the SG
 pre-vote is then delivered for one network delay~\(\Delta\) before the FG
 action.  These can be sub-slot actions when one round is one slot.  The next
 slot supplies the minimum inclusion opportunity for the resulting FG vote.
+Every arrow labelled~\(\Delta\) leaves at least one post-\(\GST\) delivery
+bound before the receiving action.
+The one-slot profile therefore requires a slot to contain all three
+network-delay intervals shown above, plus local processing.  If it does not,
+the actions span enough slots to preserve the order, and no same-slot liveness
+bound is claimed.
 
 \begin{lemma}[Delivery before the next step]\label{lem:delivery-before-action}
-After \(\GST\), every message sent by an honest validator in one step is received
-by every honest validator before the next step.  In particular, all honest
+After \(\GST\), every honest message consumed by a later network-dependent
+step is received by every honest validator before that step.  In particular, all honest
 available votes arrive before delayed confirmation, all honest SG pre-votes
 arrive before the FG action, and all honest FG messages arrive within one
 further~\(\Delta\).
 \end{lemma}
 
 \begin{proof}
-Successive steps are separated by at least the post-\(\GST\) delay bound~\(\Delta\),
-and messages that arrive on time are processed before the next step.  Apply this once to each
-arrow in the displayed schedule.  A Byzantine message may arrive before a
-deadline in some views and after it in others; the lemma applies only to
-honestly sent messages.
+The schedule leaves at least the post-\(\GST\) delay bound~\(\Delta\) before
+each network-dependent action consumes the preceding honest messages, and
+processes messages that arrive on time before that action.  Apply this to the
+labelled arrows and to the inclusion deadline for FG messages.  A Byzantine
+message may arrive before a deadline in some views and after it in others; the
+lemma applies only to honestly sent messages.
 \end{proof}
 
 \begin{definition}[Round close]\label{def:round-close}
@@ -1493,10 +1619,9 @@ least~\(q\) complete the available, SG, and FG steps, and their votes are
 included in the following slot before that round's due outcome is consumed.
 If a round's outcome advances the height, before the next SG and FG votes every responsive honest validator uses
 the same resulting state and has safe-confirmed a block carrying it.  The
-first counted round has an honest first-slot proposer whose
-proposal is common before the available-vote action.  Later counted rounds do
-not require honest proposers once the new state and its confirmed chain are
-common.
+first counted round is a counted honest-proposer round whose proposal is
+common before the available-vote action.  Later counted rounds do not require
+honest proposers once the new state and its confirmed chain are common.
 
 This uses the state transition of Section~\ref{sec:state-machine}.  Safety does
 not depend on the one-slot inclusion grace.  The liveness bounds assume that
@@ -1512,11 +1637,11 @@ remains below it while those honest latest messages stay on the chain.
 \end{lemma}
 
 \begin{proof}
-Let \(W_{\rm resp}\) be the common responsive honest weight and \(a\) the
-weight of live latest messages outside that set in one view.  The recovery assumption
-gives \(W_{\rm resp}>2a\).  A conflicting branch has support at most~\(a\), while
-\(\Dvote_u=W_{\rm resp}+a\); hence
-\(3a<W_{\rm resp}+a=\Dvote_u\).  Later honest messages only supersede
+Let \(a_u\leq a\) be the weight of live latest messages outside the responsive
+set in view~\(u\).  The recovery assumption gives
+\(W_{\rm resp}>2a\geq2a_u\).  A conflicting branch has support at most~\(a_u\),
+while \(\Dvote_u=W_{\rm resp}+a_u\); hence
+\(3a_u<W_{\rm resp}+a_u=\Dvote_u\).  Later honest messages only supersede
 same-validator stale messages with another descendant of~\(C\).
 \end{proof}
 
@@ -1527,21 +1652,25 @@ denominator.
 
 \section{Validator voting rule}\label{sec:signer}
 
-An honest validator's durable local signing history~\(\Delta\) records, for
+An honest validator~\(i\)'s durable local signing history~\(\mathcal H_i\)
+records, for
 each height~\(h\),
 \[
-  \Delta.T(h),\qquad \Delta.\tau(h),\qquad \Delta.\lambda(h).
+  \mathcal H_i.T(h),\qquad
+  \mathcal H_i.\tau(h),\qquad
+  \mathcal H_i.\lambda(h).
 \]
-Here \(\Delta.T(h)\) is the first nonempty target signed at~\(h\), or
-\(\bot\); \(\Delta.\tau(h)\) records whether the validator has signed a
-timeout at~\(h\); and \(\Delta.\lambda(h)\) records whether it has committed
-to finalize \(\Delta.T(h)\).
+Here \(\mathcal H_i.T(h)\) is the first nonempty target signed at~\(h\), or
+\(\bot\); \(\mathcal H_i.\tau(h)\) records whether the validator has signed a
+timeout at~\(h\); and \(\mathcal H_i.\lambda(h)\) records whether it has
+committed to finalize \(\mathcal H_i.T(h)\).
 It also records its SG and FG messages for every round.  These records are
 written before the validator releases a signature.  After a restart, the
 validator does not sign until it has recovered them.  A lock retains the
 corresponding justification certificate and ancestry;
-\(\Delta.T(h)\) is written at most once, while \(\Delta.\tau(h)\) and
-\(\Delta.\lambda(h)\) can change only from false to true.  Once validators
+\(\mathcal H_i.T(h)\) is written at most once, while
+\(\mathcal H_i.\tau(h)\) and \(\mathcal H_i.\lambda(h)\) can change only from
+false to true.  Once validators
 again use the same chain and have confirmed its current-height target, a
 validator repeats its saved target if it is on that chain or, if it is not
 locked, votes for timeout.
@@ -1596,12 +1725,14 @@ the chain state used by the FG action.  An honest validator sets
 \((v.\finalizeHeight,v.\finalizeTarget)=(h_j,J)\) exactly when
 \(h_j>h_F\), \(F\preceq J\), and:
 \begin{enumerate}
-  \item \(\Delta.T(h_j)=J\);
-  \item \(\Delta.\tau(h_j)=\mathsf{false}\);
+  \item \(\mathcal H_i.T(h_j)=J\);
+  \item \(\mathcal H_i.\tau(h_j)=\mathsf{false}\);
   \item it knows the justification certificate for \(J\); and
-  \item \(\Delta.\lambda(h_j)\) is false or already locks that same target.
+  \item \(\mathcal H_i.\lambda(h_j)\) is false or already locks that same
+    target.
 \end{enumerate}
-Before signing, it records \(\Delta.\lambda(h_j)\gets\mathsf{true}\) and
+Before signing, it records
+\(\mathcal H_i.\lambda(h_j)\gets\mathsf{true}\) and
 retains the certificate.  Otherwise it sets
 \[
   (v.\finalizeHeight,v.\finalizeTarget)=(\bot,\bot).
@@ -1620,18 +1751,18 @@ choosing its finalize pair, validator~\(i\) emits an empty voted checkpoint if
 \((v.\height,v.\target)\)
 in this order:
 \begin{enumerate}
-  \item If \(\Delta.\lambda(k)=\mathsf{true}\), let
-    \(T_L=\Delta.T(k)\) and repeat target~\(T_L\) iff
+  \item If \(\mathcal H_i.\lambda(k)=\mathsf{true}\), let
+    \(T_L=\mathcal H_i.T(k)\) and repeat target~\(T_L\) iff
     \(C_i\succeq T_L\); otherwise emit empty.  The vote may be
     included only on a descendant of~\(T_L\).  If \(T_L=T\), it sets the
     target-participation bit; whether or not it is canonical, it sets the
     timeout bit when included on that chain.  At a nonjustifiable height it
     cannot justify.  A locked
     validator never signs timeout at~\(k\).
-  \item If \(\Delta.\tau(k)=\mathsf{true}\), repeat timeout iff
+  \item If \(\mathcal H_i.\tau(k)=\mathsf{true}\), repeat timeout iff
     \(\sigma[C_i].h\geq k\); otherwise emit empty.
-  \item If \(\Delta.T(k)=T_0\neq\bot\) and
-    \(\Delta.\lambda(k)=\mathsf{false}\), repeat
+  \item If \(\mathcal H_i.T(k)=T_0\neq\bot\) and
+    \(\mathcal H_i.\lambda(k)=\mathsf{false}\), repeat
     target~\(T_0\) iff \(C_i\succeq T_0\).  Such a vote may be
     included only on a descendant of~\(T_0\).  Otherwise sign timeout iff
     \(\sigma[C_i].h\geq k\); otherwise emit empty.  Thus a validator repeats a
@@ -1645,8 +1776,8 @@ in this order:
     \(C_i\succeq T\); otherwise sign timeout iff
     \(\sigma[C_i].h\geq k\); otherwise emit empty.
 \end{enumerate}
-A new target writes \(\Delta.T(k)=T\) before signing; a timeout sets
-\(\Delta.\tau(k)=\mathsf{true}\).  Every FG message has
+A new target writes \(\mathcal H_i.T(k)=T\) before signing; a timeout sets
+\(\mathcal H_i.\tau(k)=\mathsf{true}\).  Every FG message has
 \(v.\headf=W_r\), repeating the already-signed SG head.  An empty vote has
 \((v.\height,v.\target)=(\bot,\bot)\) and contributes to neither a target nor
 a timeout quorum, but still carries that head and the independently computed
@@ -1654,9 +1785,10 @@ finalize pair.
 \end{definition}
 
 The state bit \(\timeouts[i]\) is a height-progress marker, not the validator's
-durable signing record \(\Delta.\tau(k)\).  Processing a nonempty on-chain
+durable signing record \(\mathcal H_i.\tau(k)\).  Processing a nonempty on-chain
 target may set \(\timeouts[i]\), but only signing an explicit
-empty-target timeout sets \(\Delta.\tau(k)\) and forfeits finality eligibility.
+empty-target timeout sets \(\mathcal H_i.\tau(k)\) and forfeits finality
+eligibility.
 
 Timeouts require confirmation of the height, but do not require an additional
 grade-0 check.  Once a validator safely confirms the current-height target, it
@@ -1688,7 +1820,7 @@ re-sends:
     branch's latest justified/finalized state, plus any justification
     certificate retained by an active lock; and
   \item every live SG head message needed for the latest-message and
-    previous-round pointer-support checks.
+    previous-round proposed-root checks.
 \end{enumerate}
 Votes whose referenced blocks are not yet known are queued and processed once
 those blocks arrive.  A signature
@@ -1718,7 +1850,7 @@ walk is at height~\(k\) and its safely confirmed target is~\(T\).
 If \(T\) is the Simplex root, it is genesis or a justified or finalized target
 at the same height.  Target uniqueness and finalized-chain safety, applied to
 the retained \(\mathsf{JC}(k,T_L)\), make \(T_L\) compatible with~\(T\) under
-\(b<2q-W\).
+\(b<g\).
 Otherwise, Goldfish confirmed a descendant of~\(T\).  The retained JC for
 \(T_L\) contains an honest signer who also Goldfish-confirmed a descendant of
 \(T_L\) before voting.  Assumption~\ref{ass:goldfish} makes these confirmations
@@ -1733,7 +1865,7 @@ validator repeats~\(T_L\).  It never needs to vote for timeout.
 \begin{remark}[Leak-fairness consequence]\label{rem:leak-fairness}
 The target bit does not assume that competing chains have one shared target.
 Each chain counts only its own current-height target toward justification.
-Once an honest proposer
+Once a counted honest proposer
 makes all responsive honest validators use the same chain, an unlocked
 validator repeats a saved target on that chain.  If its saved target is not on
 the chain, it may vote for timeout because it has made no finality commitment.
@@ -1743,8 +1875,8 @@ chain now used by honest validators.  Its target therefore sets the timeout
 bit whether or not equality with the chain's current-height target is needed.
 The independent timeout bit therefore preserves every honest validator's
 contribution to the timeout quorum.  This state transition does not set
-\(\Delta.\tau\): the validator has repeated its saved nonempty target, not
-signed an explicit timeout.
+\(\mathcal H_i.\tau\): the validator has repeated its saved nonempty target,
+not signed an explicit timeout.
 \end{remark}
 
 \section{Healing and finality liveness}\label{sec:healing}
@@ -1762,20 +1894,23 @@ validator may retain additional evidence that cannot affect that step.
 After \(\GST\), every message sent by an honest validator in one step arrives at
 every honest validator before the next step and before the deadline at which
 it is used.  Honest current-height and finality votes are included on the
-common chain before the applicable round's due outcome is consumed.  There is a future honest
-first-slot proposer.  After each common height transition, another honest
-proposer eventually proposes a descendant of the new state.
+common chain before the applicable round's due outcome is consumed.  There is
+a future counted honest-proposer round satisfying
+Assumption~\ref{ass:honest-proposer}.  After each common height transition,
+another such counted honest proposer eventually proposes a descendant of the
+new state.
 
 The numerical round bounds require this timely processing in every counted
 round, with the additional conditions stated after
 Definition~\ref{def:round-close}.  Without continuous timely processing, the
-same argument gives eventual height advance by waiting for an honest proposal
-after each transition.  Eventual finality then requires a later ordinary
+same argument gives eventual height advance by waiting for a counted honest
+proposal after each transition.  Eventual finality then requires a later ordinary
 height above every height previously reached or signed at by an honest
 validator, reached before any honest validator votes at that height.  Its
 target votes and the following finality votes must also be included by their
-respective deadlines.  Recurring honest proposers alone do not guarantee such
-a height, because votes may be cast there before the chain becomes common.
+respective deadlines.  Recurring counted honest proposers alone do not
+guarantee such a height, because votes may be cast there before the chain
+becomes common.
 \end{assumption}
 
 \begin{definition}[Common target before FG voting]\label{def:common-target}
@@ -1791,11 +1926,12 @@ safe-confirmed head lies on that chain at height at least~\(k\).  Every such
 head then descends~\(T\).
 \end{definition}
 
-\begin{lemma}[An honest proposer gives validators a common confirmed target]\label{lem:honest-proposer-confirmation}
-Under Assumptions~\ref{ass:goldfish} and~\ref{ass:honest-proposer}, a post-\(\GST\)
-round with an honest first-slot proposer has a common target that is confirmed
-before the round's FG action, after processing any preceding due outcome in
-the proposal block.
+\begin{lemma}[A counted honest proposer gives validators a common confirmed target]\label{lem:honest-proposer-confirmation}
+Under Assumptions~\ref{ass:recovery-weights}, \ref{ass:goldfish},
+and~\ref{ass:honest-proposer}, a post-\(\GST\)
+counted honest-proposer round has a common target that is confirmed before the
+round's FG action, after processing any preceding due outcome in the proposal
+block.
 \end{lemma}
 
 \begin{proof}
@@ -1806,13 +1942,13 @@ applicable deadline.  Its operation phase then consumes any outcome due from
 the preceding round.  If that advances the height, \(B_r\)'s post-state enters
 the new height and the same-slot target rule gives \(T=B_r\).  Otherwise the
 stored target satisfies \(T\preceq B_r\).  In either case every honest available voter votes for
-\(B_r\) or a descendant.  Write~\(a\leq c_{\rm adv}\) for the adversarial
+\(B_r\) or a descendant.  Write~\(c_u\leq c_{\rm adv}\) for the adversarial
 weight in one honest view.  Assumption~\ref{ass:goldfish} gives
 \(c_{\rm honest}>c_{\rm adv}\), hence
-\(c_{\rm honest}>(c_{\rm honest}+a)/2\).  Delayed evaluation therefore confirms~\(B_r\), and its
+\(c_{\rm honest}>(c_{\rm honest}+c_u)/2\).  Delayed evaluation therefore confirms~\(B_r\), and its
 ancestor~\(T\), in every honest view without requiring equal denominators.
 
-Every honest validator then publishes its SG pre-vote on that chain.
+Every responsive honest validator then publishes its SG pre-vote on that chain.
 One delivery bound later Lemma~\ref{lem:head-concentration} makes every
 conflicting branch strictly sub-\(1/3\), so~\(T\) is grade-0 clear as well as
 available-confirmed.  Thus every safe-confirmed head has reached the height
@@ -1866,12 +2002,12 @@ validator that has not yet voted targets~\(T\), and no honest validator has
 timed out.  Target support therefore reaches~\(q\).
 \end{proof}
 
-\begin{corollary}[One honest-proposer round advances one height]\label{cor:honest-round-advance}
-A post-\(\GST\) round satisfying Assumption~\ref{ass:goldfish}, with an honest
-first-slot proposer and the message inclusion of
-Assumption~\ref{ass:recovery-delivery}, advances the common height when the round
-outcome is consumed, unless a certificate has already advanced it.  The advance need not
-be a justification: if validators previously cast both target and timeout
+\begin{corollary}[One counted honest-proposer round advances one height]\label{cor:honest-round-advance}
+Under Assumptions~\ref{ass:recovery-weights}, \ref{ass:goldfish},
+\ref{ass:honest-proposer}, and~\ref{ass:recovery-delivery}, a post-\(\GST\)
+counted honest-proposer round advances the common height when the round outcome
+is consumed, unless a certificate has already advanced it.  The advance need
+not be a justification: if validators previously cast both target and timeout
 votes at that height, only the timeout quorum may reach~\(q\).
 \end{corollary}
 
@@ -1881,22 +2017,25 @@ and~\ref{lem:aligned-height-advance}.
 \end{proof}
 
 \begin{corollary}[At most one round is needed to reach \(h_{\max}\)]\label{cor:height-catchup}
-Suppose the shared store after processing a proposal has
+Under Assumptions~\ref{ass:recovery-weights}, \ref{ass:goldfish},
+\ref{ass:honest-proposer}, and~\ref{ass:recovery-delivery}, suppose the shared
+store after processing a proposal has
 \(\Sigma.h_{\max}=H\), so the
 height-filter postcondition permits an honest walk only at~\(H-1\) or~\(H\).
-An honest-proposer round gives all responsive honest validators a common
-height and its due outcome advances it.  If that height is~\(H-1\), one voting
-round brings the common chain to~\(H\) when its outcome is consumed.  The next timely round, or the next honest proposal after the
-new state is common, acts at~\(H\) unless a certificate has already advanced
-it.  Validators therefore need not all be voting at~\(H\) before the first
-honest proposal.
+A counted honest-proposer round gives all responsive honest validators a
+common height and its due outcome advances it.  If that height is~\(H-1\), one
+voting round brings the common chain to~\(H\) when its outcome is consumed.
+The next timely round, or the next counted honest proposal after the new state
+is common, acts at~\(H\) unless a certificate has already advanced it.
+Validators therefore need not all be voting at~\(H\) before that counted
+proposal.
 \end{corollary}
 
 \begin{proof}
 Lemma~\ref{lem:pointer-alignment} derives one height from the common
 post-proposal walk.  Corollary~\ref{cor:honest-round-advance} advances that
-height exactly once.  The next timely round, or the next honest proposal,
-starts from the resulting common state.
+height exactly once.  The next timely round, or the next counted honest
+proposal, starts from the resulting common state.
 \end{proof}
 
 \begin{lemma}[A timeout quorum contains an honest confirmation]\label{lem:timeout-honest-confirmation}
@@ -1951,7 +2090,7 @@ height does not change the common confirmed prefix established by these votes.
 
 \begin{lemma}[Later Simplex roots are compatible with a safe-confirmed block]\label{lem:simplex-root-compatible}
 Let~\(C\) be safe-confirmed during an interval in which
-Assumption~\ref{ass:goldfish} holds.  Under \(b<2q-W\), every Simplex root
+Assumption~\ref{ass:goldfish} holds.  Under \(b<g\), every Simplex root
 selected at that or a later action in the same interval is compatible
 with~\(C\).
 \end{lemma}
@@ -1972,136 +2111,6 @@ root is either~\(F\) or~\(J\), later updates to either value preserve the
 result.
 \end{proof}
 
-\begin{lemma}[Delivered SG votes exclude later conflicting stable roots]\label{lem:no-conflicting-stable-root}
-Suppose~\(C\) is on the common safe-confirmed chain, all responsive honest
-available voters perform one post-\(\GST\) available-vote action on descendants
-of~\(C\) from compatible stable roots, and all responsive honest validators then
-publish that round's SG pre-votes for descendants of~\(C\).  After their
-delivery, no stable root adopted by an honest validator in that or a later round
-in which Assumption~\ref{ass:goldfish} holds conflicts with~\(C\).
-\end{lemma}
-
-\begin{proof}
-The walks descend both their fixed stable roots and~\(C\).  Their stable roots
-are therefore compatible.  Lemma~\ref{lem:simplex-root-compatible} makes every
-later Simplex root compatible with~\(C\).  After the SG votes are delivered,
-Lemma~\ref{lem:head-concentration} leaves every conflicting branch below the
-grade-0 threshold.  A grade-1 fallback descent from a compatible root cannot
-enter such a branch because every step needs at least two-thirds support.
-
-For a pointed stable root, let~\(B_C\) be the highest common ancestor of the
-preceding round's responsive honest pre-vote heads.  It descends from~\(C\) and
-has direct support at least~\(q\).  If an honest view credited a conflicting
-pointed root~\(B'\) with weight~\(q\), intersect its credited signer set with
-the direct signer set of~\(B_C\).  The intersection argument of
-Lemma~\ref{lem:pointer-intersection} forces at
-least \(2q-W\) actual equivocation; \(B_C\) need not itself have appeared in a
-proposal.  Thus no conflicting pointer is accepted under \(b<2q-W\).
-The persistence condition in Assumption~\ref{ass:goldfish} keeps the resulting
-walks on~\(C\)'s chain, so later honest pre-votes do the same.  The result
-follows by induction over later rounds in which the assumption holds.
-\end{proof}
-
-\begin{theorem}[Two advances from a nonjustifiable height stabilize the available chain]\label{thm:available-healing}
-Let every valid branch reaching~\(H\), including one imported after recovery
-begins, have \(\nj=\mathsf{true}\) in its height-\(H\) state, and suppose
-either:
-\begin{enumerate}[label=(\alph*)]
-  \item a round has a common target at~\(H\), that target is confirmed before
-    FG voting, and the responsive honest votes are processed before that
-    round's due outcome; or
-  \item a valid timeout certificate has already advanced~\(H\), and all
-    responsive honest validators use its resulting height-\(H+1\) state.
-\end{enumerate}
-Suppose Assumption~\ref{ass:recovery-delivery} continues to hold and every later
-step considered here satisfies Assumption~\ref{ass:goldfish}.  An honest
-proposer at~\(H\) gives case~(a) unless it observes that case~(b) has already
-occurred.  Then the common height eventually advances
-\[
-  H\longrightarrow H+1\longrightarrow H+2.
-\]
-After the SG votes for the second advance are delivered, there is a common
-safe-confirmed prefix~\(C\).  Normally \(C=T_{H+1}\).  If a certificate has
-already advanced~\(H+1\), let~\(C\) be the common target in the first later
-round in which the target is confirmed before FG voting.  No honest validator
-then adopts a conflicting stable root in any later round satisfying the same
-assumptions.  Neither FG, SG, nor Goldfish can move the canonical
-available chain to a branch that conflicts with~\(C\).
-\end{theorem}
-
-\begin{proof}
-In case~(b), the first transition is already complete.  Since justification is
-disabled at the nonjustifiable height~\(H\), it occurred by timeout.  In
-case~(a), Lemma~\ref{lem:aligned-height-advance} gives a timeout quorum and the
-round advances to~\(H+1\) by timeout, unless a certificate has already made
-the same transition.  In either case, the next step starts from a common state
-at height~\(H+1\).
-
-On the block path, the block~\(B\) that consumes the first due outcome has a
-height-\(H+1\) post-state and is itself~\(T_{H+1}\).  If that next round meets
-the timing conditions stated after Definition~\ref{def:round-close}, Goldfish
-confirms~\(B\) before that round's SG and FG votes, so those votes can already
-target~\(B\) in the same slot.  On the empty path, or without continuous
-timely processing, wait for the first later honest proposal after the
-transition state is common.  That proposal is the first later block and hence
-the target; it descends from the common state by
-Assumption~\ref{ass:recovery-delivery}.  Unless a certificate
-has already advanced the height, its common height is~\(H+1\), and
-Lemma~\ref{lem:honest-proposer-confirmation} confirms its common target before FG
-voting.  In either case, all responsive honest validators have one chain,
-height, and action target, and the delivered SG pre-votes make the target
-grade-0 clear before the FG action.
-
-If no intervening certificate has yet advanced~\(H+1\),
-Lemmas~\ref{lem:aligned-height-advance}
-and~\ref{lem:common-target-confirmation} advance it to~\(H+2\) and give
-\(C=T_{H+1}\).  If a certificate has already made that transition, use the
-next round meeting the conditions after Definition~\ref{def:round-close}, or
-wait for the next honest proposer.  Its common target is confirmed before FG
-voting by the round's timing or by Lemma~\ref{lem:honest-proposer-confirmation}; take
-that target as~\(C\).  The two height advances are already complete in this
-case, and the SG votes establish the same property for~\(C\).
-
-By Lemma~\ref{lem:nonjustifiable-fg}, while
-\(h_{\max}=H+1\), no height-\(H\) justification exists and the Simplex root
-is~\(F\), so FG
-cannot interfere with the available walk.  Once \(h_{\max}=H+2\), any
-eligible height-\(H+1\) justification root is compatible with honest safe confirmations by
-Lemma~\ref{lem:simplex-root-compatible}.  Lemma~\ref{lem:common-target-confirmation} makes
-\(C\) common and safe-confirmed.  The Goldfish persistence assumption and the
-SG pre-votes keep votes on descendants of~\(C\).
-Lemma~\ref{lem:no-conflicting-stable-root} then shows that fallback stable roots cannot
-choose a branch conflicting with~\(C\), while a conflicting pointed root would
-require at least~\(2q-W\) equivocation.  Hence the confirmation
-established after the second advance persists for every later round in which
-the assumptions hold.
-\end{proof}
-
-\begin{remark}[Number of honest proposers]\label{rem:honest-proposers}
-One honest-proposer voting round is sufficient for one height advance when its
-due outcome is consumed, not necessarily for a justification
-(Corollary~\ref{cor:honest-round-advance}).  Therefore two
-honest-proposer rounds, the second beginning after the first transition state
-is common, suffice for \(H\to H+1\to H+2\) if timely processing does not
-continue from one round to the next.  They need not be consecutive wall-clock
-rounds, but this gives no bound on the intervening rounds.
-
-The round counts below count voting rounds.  In a one-slot-round profile, the
-last counted round's result becomes state during the following slot's
-settlement phase; this is not an additional voting round.
-
-After the available chain is stable, an honest proposer at an ordinary height
-with no previous honest votes produces a JC\@.  The following finality-piggyback
-round does \emph{not} require an honest
-first-slot proposer: it requires only that the common JC state be known before
-the FG action and that the finality votes be included before the finality check
-when that round's due outcome is consumed.  Starting from a walk at~\(d-1\), or first entering a
-nonjustifiable height, adds the rounds counted in
-Theorem~\ref{thm:finality-liveness}.  Thus two consecutive honest proposers
-followed by one arbitrary proposer suffice only when the second honest-proposer
-round is already at an ordinary height with no previous honest votes.
-\end{remark}
-
 \begin{definition}[Maximum previous honest height]\label{def:previous-honest-votes}
 Consider the first shared store with \(\Sigma.h_{\max}=H+2\) after the two
 advances.  Let~\(m\) be an upper bound on:
@@ -2119,8 +2128,170 @@ either \(H+1\) or \(H+2\), as permitted by the height filter.  The next honest
 proposer makes the choice common.
 \end{definition}
 
+\begin{lemma}[Delivered SG votes keep later stable roots below the confirmed prefix]\label{lem:descendant-stable-root}
+Let~\(\Sigma_0\) be a shared action state with
+\(h_0=\Sigma_0.h_{\max}\).  Suppose that, before~\(\Sigma_0\), no responsive
+honest validator signed a target or timeout at height~\(h_0\) or above.
+Let~\(C\) be on its
+common safe-confirmed chain and have an accepted descendant of state-height
+at least \(h_0-1\).  At the first proposed-root action after~\(\Sigma_0\),
+suppose every responsive honest validator has a live, delivered support-round
+SG pre-vote for a descendant of~\(C\).  Those pre-votes may have been
+published before~\(\Sigma_0\).  Every stable root adopted by a responsive
+honest validator in that or a later recovery round equals or descends
+from~\(C\), provided
+Assumptions~\ref{ass:fixed-electorate}, \ref{ass:recovery-weights},
+and~\ref{ass:goldfish} continue to hold.
+Every resulting honest walk and SG pre-vote also descends from~\(C\).
+\end{lemma}
+
+\begin{proof}
+We prove jointly that~\(C\) remains viable and that the stable roots and walks
+remain below it.  The accepted descendant in the premise makes~\(C\) viable
+in the initial action state.
+
+Consider a later proposed-root action.  By
+Lemma~\ref{lem:simplex-root-compatible}, its Simplex root is compatible
+with~\(C\).  If the Simplex root descends from~\(C\), every permitted stable
+root descends from~\(C\) immediately.  Otherwise the Simplex root is an
+ancestor of~\(C\).  Since~\(C\) is viable, it lies in the action's candidate
+tree.  The first part of Lemma~\ref{lem:root-validity} makes both an accepted
+pointed root and the grade-1 fallback descend from~\(C\).
+
+Goldfish starts at that descendant stable root, so the persistence condition
+in Assumption~\ref{ass:goldfish} makes the walk and the next responsive honest
+SG heads descend from~\(C\).  It remains to preserve viability if a later
+store raises \(h_{\max}\) to~\(x\).  A block first reaching state-height~\(x\)
+contains or descends from a quorum that advanced height~\(x-1\).  Weight
+outside \(V_{\rm resp}\) is at most \(W-W_{\rm resp}\leq W-q<q\), so that
+quorum contains a responsive honest signer.  Since \(x>h_0\), the quorum’s
+height \(x-1\geq h_0\).  The premise excludes a pre-\(\Sigma_0\) responsive
+signature at that height, so this responsive signer acted after the shared
+base state.  The signing rule and the induction hypothesis therefore give an
+accepted descendant of~\(C\) at state-height at least~\(x-1\).  Data delivery
+makes that block and its ancestry available in the action state, so~\(C\)
+remains viable.  The delivered heads supply the premise for the next action,
+completing the induction.
+\end{proof}
+
+\begin{theorem}[Two advances from a nonjustifiable height stabilize the available chain]\label{thm:available-healing}
+Under Assumptions~\ref{ass:fixed-electorate}, \ref{ass:recovery-weights}, \ref{ass:goldfish},
+\ref{ass:honest-proposer}, and~\ref{ass:recovery-delivery}, let every valid
+branch reaching~\(H\), including one imported after recovery
+begins, have \(\nj=\mathsf{true}\) in its height-\(H\) state, and suppose
+either:
+\begin{enumerate}[label=(\alph*)]
+  \item a round has a common target at~\(H\), that target is confirmed before
+    FG voting, and the responsive honest votes are processed before that
+    round's due outcome; or
+  \item a valid timeout certificate has already advanced~\(H\), and all
+    responsive honest validators use its resulting height-\(H+1\) state.
+\end{enumerate}
+Suppose these assumptions continue through every later step considered here.
+A counted honest proposer at~\(H\) gives case~(a) unless it observes that
+case~(b) has already occurred.  Then the common height eventually advances
+\[
+  H\longrightarrow H+1\longrightarrow H+2.
+\]
+Let~\(\Sigma_2\) be the resulting first shared store with
+\(\Sigma_2.h_{\max}=H+2\), and define~\(m\) there as in
+Definition~\ref{def:previous-honest-votes}.
+After the SG votes establishing~\(C\) are delivered, there is a common
+safe-confirmed prefix~\(C\).  Normally \(C=T_{H+1}\).  If a certificate has
+already advanced~\(H+1\), let~\(C\) be the common target in the first later
+round whose action state is shared and in which the target is confirmed before
+FG voting.  If \(H+2>m\), and in this latter case no responsive honest FG
+action intervenes between~\(\Sigma_2\) and that round, then no responsive
+honest validator adopts either a strict ancestor of~\(C\) or a root
+conflicting with~\(C\) in any later round satisfying the same assumptions.
+Every later stable root and available head descends from~\(C\).
+\end{theorem}
+
+\begin{proof}
+In case~(b), the first transition is already complete.  Since justification is
+disabled at the nonjustifiable height~\(H\), it occurred by timeout.  In
+case~(a), Lemma~\ref{lem:aligned-height-advance} gives a timeout quorum and the
+round advances to~\(H+1\) by timeout, unless a certificate has already made
+the same transition.  In either case, the next step starts from a common state
+at height~\(H+1\).
+
+On the block path, the block~\(B\) that consumes the first due outcome has a
+height-\(H+1\) post-state and is itself~\(T_{H+1}\).  If that next round meets
+the timing conditions stated after Definition~\ref{def:round-close} and the
+one-slot condition in Section~\ref{sec:rounds}, Goldfish confirms~\(B\) before
+that round's SG and FG votes, so those votes can already target~\(B\) in the
+same slot.  On the empty path, or without continuous
+timely processing, wait for the first later counted honest proposal after the
+transition state is common.  That proposal is the first later block and hence
+the target; it descends from the common state by
+Assumption~\ref{ass:recovery-delivery}.  Unless a certificate
+has already advanced the height, its common height is~\(H+1\), and
+Lemma~\ref{lem:honest-proposer-confirmation} confirms its common target before FG
+voting.  In either case, all responsive honest validators have one chain,
+height, and action target, and the delivered SG pre-votes make the target
+grade-0 clear before the FG action.
+
+If no intervening certificate has yet advanced~\(H+1\),
+Lemmas~\ref{lem:aligned-height-advance}
+and~\ref{lem:common-target-confirmation} advance it to~\(H+2\) and give
+\(C=T_{H+1}\).  If a certificate has already made that transition, use the
+next round meeting the conditions after Definition~\ref{def:round-close}, or
+wait for the next counted honest proposer.  Its common target is confirmed before FG
+voting by the round's timing or by Lemma~\ref{lem:honest-proposer-confirmation}; take
+that target as~\(C\).  The two height advances are already complete in this
+case, and the SG votes establish the same property for~\(C\).
+
+By Lemma~\ref{lem:nonjustifiable-fg}, while
+\(h_{\max}=H+1\), no height-\(H\) justification exists and the Simplex root
+is~\(F\), so FG
+cannot interfere with the available walk.  Once \(h_{\max}=H+2\), any
+eligible height-\(H+1\) justification root is compatible with honest safe confirmations by
+Lemma~\ref{lem:simplex-root-compatible}.  Lemma~\ref{lem:common-target-confirmation} makes
+\(C\) common and safe-confirmed.  The Goldfish persistence assumption and the
+SG pre-votes keep votes on descendants of~\(C\).
+The height-filtered common walk that establishes~\(C\) is an accepted
+descendant of~\(C\) at state-height at least the action's \(h_{\max}-1\).
+The bound \(H+2>m\) excludes any height-advance quorum at \(H+2\) or above
+before the first shared store.  In the later-\(C\) case, the absence of an
+intervening responsive FG action preserves this fact until the action that
+establishes~\(C\), whose action state is shared, because all weight outside
+\(V_{\rm resp}\) is less than~\(q\).
+Lemma~\ref{lem:descendant-stable-root} then shows that every later stable root
+descends from~\(C\); neither an ancestor nor a conflicting root can reset the
+available-layer walk.  Hence the confirmation
+established for~\(C\) persists for every later round in which the assumptions
+hold.
+\end{proof}
+
+\begin{remark}[Number of counted honest proposers]\label{rem:honest-proposers}
+One counted honest-proposer voting round is sufficient for one height advance
+when its due outcome is consumed, not necessarily for a justification
+(Corollary~\ref{cor:honest-round-advance}).  Therefore two
+counted honest-proposer rounds, the second beginning after the first transition
+state is common, suffice for \(H\to H+1\to H+2\) if timely processing does not
+continue from one round to the next.  They need not be consecutive wall-clock
+rounds, but this gives no bound on the intervening rounds or on when such a
+round can be constructed.
+
+The round counts below count voting rounds.  In a one-slot-round profile, the
+last counted round's result becomes state during the following slot's
+settlement phase; this is not an additional voting round.
+
+After the available chain is stable, a counted honest proposer at an ordinary
+height with no previous honest votes produces a JC\@.  The following
+finality-piggyback round does \emph{not} require an honest
+first-slot proposer: it requires only that the common JC state be known before
+the FG action and that the finality votes be included before the finality check
+when that round's due outcome is consumed.  Starting from a walk at~\(d-1\), or first entering a
+nonjustifiable height, adds the rounds counted in
+Theorem~\ref{thm:finality-liveness}.  Thus two consecutive counted honest
+proposers followed by one arbitrary proposer suffice only when the second
+counted honest-proposer round is already at an ordinary height with no
+previous honest votes.
+\end{remark}
+
 \begin{lemma}[No pre-existing justification at \(H+2\) or above]\label{lem:no-preexisting-high-j}
-Let~\(C\) be the persistent safe-confirmed prefix from
+Under Assumption~\ref{ass:fixed-electorate}, let~\(C\) be the persistent safe-confirmed prefix from
 Theorem~\ref{thm:available-healing}.  Suppose the first shared store with
 \(\Sigma.h_{\max}=H+2\) satisfies \(H+2>m\) in
 Definition~\ref{def:previous-honest-votes}.  No pre-existing justification can redirect
@@ -2155,8 +2326,8 @@ justification at such a height can predate the shared store.  This proves~(iv).
 \end{proof}
 
 \begin{definition}[Height bound after recovery]\label{def:height-bound-recovery}
-After the available chain has stabilized, consider an honest-proposer round
-whose proposal includes all blocks and still-valid honest votes received
+After the available chain has stabilized, consider a counted honest-proposer
+round whose proposal includes all blocks and still-valid honest votes received
 before the proposal deadline.  Let~\(\Sigma\) be the shared store after processing
 that proposal, its signed messages, and any due outcome consumed after its
 operation phase,
@@ -2214,19 +2385,21 @@ remain the latest justification until all finalize pairs are collected.
 \end{proof}
 
 \begin{theorem}[Finality after recovery]\label{thm:finality-liveness}
-Assume \(H+2>m\) as in Definition~\ref{def:previous-honest-votes} and
-Assumption~\ref{ass:recovery-delivery}.  After the available chain has stabilized,
+Under Assumptions~\ref{ass:fixed-electorate}, \ref{ass:recovery-weights}, \ref{ass:goldfish},
+\ref{ass:honest-proposer}, and~\ref{ass:recovery-delivery}, assume
+\(H+2>m\) as in Definition~\ref{def:previous-honest-votes}.  After the available chain has stabilized,
 let~\(d\) be as in Definition~\ref{def:height-bound-recovery}.  Consider five
 consecutive rounds \(r_1,\ldots,r_5\).  In each round, responsive honest
 validators of total weight at least~\(q\) complete the available, SG, and FG
 steps, and their votes are included before that round's due outcome is
-consumed.  Whenever a round
+consumed.  Each counted round has a common target in the sense of
+Definition~\ref{def:common-target}, confirmed before its FG action.  Whenever a round
 advances the height, before the next round's SG and FG votes every responsive
 honest validator has the same resulting state and has safe-confirmed a block
 carrying that state.  In particular, if the advance forms a justification, it
-is the latest justification in that state.  The first
-round has an honest first-slot proposer and a common proposal before the
-available-vote action.  Later rounds need not have honest proposers.
+is the latest justification in that state.  The first round is a counted
+honest-proposer round and has a common proposal before the available-vote
+action.  Later rounds need not have honest proposers.
 
 Counting \(r_1\) as the first round, finalization occurs when \(r_5\)'s due
 outcome is consumed.  It occurs by consumption of \(r_4\)'s outcome if
@@ -2234,9 +2407,10 @@ height~\(d+1\) is ordinary, and by consumption of \(r_3\)'s outcome only when
 the first common walk has height \(k=d\) and height~\(d+1\) is ordinary.
 
 Without five consecutive rounds satisfying these conditions, finality still
-resumes if an honest proposer later reaches a common ordinary height~\(h^\ast>d\)
-before any honest validator votes there, its target~\(U\) is confirmed before FG
-voting, and the target votes are included before that round's due outcome.
+resumes if a counted honest proposer later reaches a common ordinary
+height~\(h^\ast>d\) before any honest validator votes there, its target~\(U\)
+is confirmed before FG voting, and the target votes are included before that
+round's due outcome.
 Before the next FG
 action, every responsive honest validator must safe-confirm a block carrying
 the resulting justification.  The justification must remain latest until that
@@ -2247,10 +2421,10 @@ eventual result has no fixed round bound.
 
 \begin{proof}
 Lemma~\ref{lem:no-preexisting-high-j} excludes every pre-existing justification that could
-move the walk to a conflicting chain, and Lemma~\ref{lem:no-conflicting-stable-root}
+move the walk to a conflicting chain, and Lemma~\ref{lem:descendant-stable-root}
 keeps later walks on the stabilized chain.  In the shared store, \(d\) is the
 value of~\(h_{\max}\) and bounds all heights previously reached or
-signed at by an honest validator.  The height filter and the honest proposal
+signed at by an honest validator.  The height filter and the counted honest proposal
 therefore give a common first decision height \(k\in\{d-1,d\}\).
 Lemmas~\ref{lem:honest-proposer-confirmation}
 and~\ref{lem:aligned-height-advance} advance~\(k\).  If \(k=d-1\), the same
@@ -2289,24 +2463,27 @@ Under Assumptions~\ref{ass:fixed-electorate},
 \ref{ass:honest-proposer}, and~\ref{ass:recovery-delivery}, suppose recovery reaches
 a height~\(H\) that is nonjustifiable on every valid branch, including a
 branch revealed later.  Suppose a shared store has
-\(\Sigma.h_{\max}=H\), and a future round has an honest first-slot proposer
-using that store.  Its common height is in \(\{H-1,H\}\).  If it is~\(H-1\),
+\(\Sigma.h_{\max}=H\), and a future counted honest-proposer round uses that
+store.  Its common height is in \(\{H-1,H\}\).  If it is~\(H-1\),
 suppose either the next round satisfies the timing conditions after
-Definition~\ref{def:round-close}, or a later honest proposer uses the resulting
-shared state.  Corollary~\ref{cor:height-catchup} then brings the shared chain
-to~\(H\).  If the common height is already~\(H\), no preliminary round is
-needed.  In either case Theorem~\ref{thm:available-healing} applies.  Suppose also that the
-first shared store with \(h_{\max}=H+2\) satisfies \(H+2>m\) as in
-Definition~\ref{def:previous-honest-votes}.  For finality, additionally suppose that
-the conditions of Theorem~\ref{thm:finality-liveness} hold.  Then:
+Definition~\ref{def:round-close}, or a later counted honest proposer uses the
+resulting shared state.  Corollary~\ref{cor:height-catchup} then brings the
+shared chain to~\(H\).  If the common height is already~\(H\), no preliminary round is
+needed.  In either case Theorem~\ref{thm:available-healing} applies.  Then:
 \begin{enumerate}
   \item the common height advances through \(H\to H+1\to H+2\);
-  \item after the SG votes for the second advance are delivered, the available
-    chain never switches to a chain conflicting with the resulting
-    safe-confirmed prefix during any
-    later action in which Assumption~\ref{ass:goldfish} holds; and
-  \item the target at a later ordinary height with no previous honest votes is
-    justified and finalized.
+  \item let~\(\Sigma_2\) be the resulting first shared store with
+    \(\Sigma_2.h_{\max}=H+2\), and define~\(m\) there as in
+    Definition~\ref{def:previous-honest-votes}.  If \(H+2>m\), and if the
+    exceptional later-\(C\) branch of
+    Theorem~\ref{thm:available-healing} has no intervening responsive honest
+    FG action, then after the SG votes establishing~\(C\) are delivered the
+    available layer uses only stable roots and heads that equal or descend
+    from~\(C\) during any later action in which the recovery assumptions
+    hold; and
+  \item under the conditions of item~2, if the conditions of
+    Theorem~\ref{thm:finality-liveness} also hold, then the target at a later
+    ordinary height with no previous honest votes is justified and finalized.
 \end{enumerate}
 The accountable-safety theorem does not use the synchrony or participation
 assumptions.
@@ -2315,17 +2492,20 @@ assumptions.
 \begin{proof}
 Corollary~\ref{cor:height-catchup} gives the first case of
 Theorem~\ref{thm:available-healing} immediately or after one preliminary round,
-unless a certificate has already given its second case.  That theorem proves
-the two advances and stability of the available chain.  Lemma~\ref{lem:no-preexisting-high-j}
-excludes any remaining hidden justification that could affect fork choice.
-Theorem~\ref{thm:finality-liveness} then gives a new justification and
+unless a certificate has already given its second case.  That theorem first
+proves the two advances.  Under item~2's fresh-height and timing conditions it
+also proves stability of the available chain, and
+Lemma~\ref{lem:no-preexisting-high-j} excludes any remaining hidden
+justification that could affect fork choice.  Under item~3's additional
+conditions, Theorem~\ref{thm:finality-liveness} gives a new justification and
 finalizes it within its stated round bound.
 \end{proof}
 
 \begin{corollary}[Recurring healing]\label{cor:recurring-healing}
 If every later finite disruption is followed by another uninterrupted window
-satisfying the theorem's premises at a new height that is nonjustifiable on
-every valid branch, then another block is finalized after each disruption.
+satisfying the hypotheses of Theorem~\ref{thm:eventual-healing}, including
+item~3's conditional premises, at a new height that is nonjustifiable on every
+valid branch, then another block is finalized after each disruption.
 Finitely many disruptions followed by one stable period are the special case
 in which finality resumes.  Continued ordinary finality additionally uses the
 usual delivery, participation, and inclusion assumptions, which are not proved
@@ -2356,13 +2536,13 @@ stalled checkpoint, but the practical gain is limited because the inactivity
 leak quickly removes positive rewards during a stall.  The liveness proof is
 independent of that choice.
 
-\section{Relation to the executable specification}\label{sec:refinement}
+\section{Implementation requirements}\label{sec:refinement}
 
-The proof places SG and FG votes after Goldfish confirmation, while an
-executable protocol may spread these duties across a round.  Such a schedule
+SG and FG votes used by the proof occur after Goldfish confirmation.  A
+concrete protocol may spread these duties across a round, but its schedule
 must preserve the same order for every vote used in the proof.  The paper
 fixes one validator set and weight function.  An executable profile with
-validator churn must separately prove the required old/new quorum overlap
+validator churn must separately prove the required overlap between successive quorums
 from its rate limits and weak-subjectivity rules; merely assigning one common
 electorate to each height is not enough.  Checkpoint sync must authenticate
 \texttt{current\_height\_target} and
@@ -2377,32 +2557,59 @@ the first later block becomes the target.  The one-slot grace lets final-slot
 attestations satisfy their inclusion delay; it does not make closing a
 block-supplied choice.  The outcome is derived from the slot schedule and
 requires no \(\mathsf{closes\_round}(B)\) flag.  A valid vote that refers to an unknown block must be queued and replayed
-when the block arrives.  The companion note
-\texttt{paper-spec-status.md} records the remaining specification details.
+when the block arrives.
+
+The proposed-root action uses the fixed values \(g=2q-W\) and~\(q\);
+ordinary \(\Gone\) and \(\Gzero\) calculations continue to use their local
+live denominators.  The action state determines one prefix-closed viable
+candidate tree.  Head messages project only to actual ancestors in that tree.
+An honest proposer first requires direct support at least~\(q\) for the
+Simplex root.  If that floor is not met, it leaves the pointer empty and the
+action uses the local grade-1 fallback.  After fixing the proposal parent and
+operations, it selects a deepest candidate with direct support at
+least~\(g\).  If that selected root is on the fixed proposal-parent chain, it
+includes the pointer and transfers concrete signed support of weight at
+least~\(g\).  Otherwise it leaves the pointer empty and the action uses the
+fallback.
+The receiver applies both the root-support check and the
+\(q\)-supported-child veto once at the action deadline.  The resulting stable
+root and action state remain fixed for every later operation belonging to
+that action.  Blocks, ancestry, support messages, and equivocation evidence
+needed by these checks must be available and authenticated by the same
+deadline.
 
 \section{Conclusion}\label{sec:conclusion}
 
 Fresh Simplex uses one fixed weighted validator set, E1 and E2, and one
-target-participation bit and one timeout bit per validator.  A proposer may
-point to a root supported in the previous round.  Goldfish first confirms the
-proposal chain; SG and FG then vote from that confirmed chain.
+target-participation bit and one timeout bit per validator.  In a counted
+honest-proposer synchronization round, the proposer first requires direct
+previous-round support at least~\(q\) for the Simplex root; otherwise it leaves
+the pointer empty and the action uses its local fallback.  When the floor is
+met, it chooses a deepest viable descendant of the Simplex root with direct
+support at least~\(g\) and builds the proposal below that root.
+A validator adopts exactly that root when its credited support reaches~\(g\)
+and every viable child remains below~\(q\); otherwise it uses the local
+grade-1 fallback.  Goldfish first confirms the proposal chain; SG and FG then
+vote from that confirmed chain.
 
 The recovery argument begins at a height~\(H\) that is nonjustifiable on every
 valid branch, including a branch revealed later.  Advancing through
-\(H\to H+1\to H+2\) makes the confirmed available prefix stable.  Excluding an
-old justification at height~\(H+2\) or above requires \(H+2>m\), where \(m\)
-bounds every height previously reached or signed at by an honest validator.
+\(H\to H+1\to H+2\) makes the confirmed available prefix stable when
+\(H+2>m\), where \(m\) bounds every height previously reached or signed at by
+an honest validator.  The same condition excludes a pre-existing
+justification at height~\(H+2\) or above.
 Finality additionally requires a later ordinary height with no previous honest
 votes, timely inclusion of its target votes, and a following round in which
 that justification remains latest until the finality votes are included.
 
 The result assumes responsive honest validators of total weight at least~\(q\),
 fixed weights during the
-recovery interval, data and ancestry availability, compatible and persistent
-Goldfish confirmations, an honest proposer to make the chain and target
-common, and timely delivery and inclusion for the rounds being counted.  With
-only recurring honest proposers the height still advances, but there is no
-fixed round bound and finality needs a later ordinary height above all previous
+recovery interval, less than~\(g\) outside weight affecting a proposed-root
+action, data and ancestry availability, descendant-root Goldfish persistence,
+a counted honest proposer to make the chain and target common, and timely
+delivery and inclusion for the rounds being counted.  With only recurring
+counted honest proposers the height still advances, but there is no fixed
+round bound and finality needs a later ordinary height above all previous
 honest votes before any honest validator votes there.
 
 \end{document}
