@@ -59,6 +59,7 @@
 \newcommand{\hmax}{h_{\max}}
 \newcommand{\Supp}{S}
 \newcommand{\Dvote}{D}
+\newcommand{\Credit}{\mathsf{Credit}}
 \newcommand{\simplexRoot}{\mathsf{simplex\_root}}
 \newcommand{\stableRoot}{\mathsf{stable\_root}}
 \newcommand{\Gone}{G_1}
@@ -90,16 +91,25 @@ validator.  Signed votes are still kept as evidence for E1 and E2.
 
 Recovery rounds use a time-shifted quorum (TSQ) over SG head votes.  Write
 \(q=\lceil2W/3\rceil\).  Before the proposal, each validator freezes its
-support-round view.  The proposer later chooses the deepest viable root with
-current-view support at least~\(q\) and proposes a descendant of it.  At the available
-vote, a validator chooses the deepest viable root supported by weight~\(q\)
-through the same signed heads in both its frozen and current views.  This is
-its lock and available-layer starting root.  The time shift makes every
-honest lock visible in an honest proposer's later view, so the honest
-proposal extends every lock.  The proposal itself is never installed as a
-stable root merely because the proposer sent it.  A signer with two eligible
-support-round heads is excluded and supplies no TSQ support, and no lower positive
-synchronization threshold exists.
+support-round view.  The proposer later chooses the deepest viable root~\(A\)
+with current-view support at least~\(q\), names~\(A\) in its proposal, and
+relays a weight-\(q\) witness and, for each represented signer, its sole
+support-round head or a pair proving equivocation.  At the
+available-vote action, validator~\(u\) computes a local lock~\(L_u\) from the
+same signed heads present in both its frozen and current views, excluding
+equivocators.  It uses the proposed root itself as the round's stable root
+exactly when the root has credited support at least~\(q\), extends~\(L_u\),
+and passes the fixed action-state checks.  For this acceptance check only, a
+signer is credited when it supplied a supporting head or when the receiver
+has eligible equivocation evidence.  Thus later discovery of a conflicting
+copy cannot remove support seen by the proposer.  Time-shifted delivery makes
+an honest proposer's deepest quorum root extend every honest lock and makes
+its quorum evidence visible to every receiver, so all honest validators use
+the exact same root.  Within one common pinned TSQ instance, a malicious
+proposer may make an attempt fail or cause partial adoption of compatible
+roots, but cannot install a root below a receiver's lock or a root with no
+honest support.  No positive
+synchronization threshold below~\(q\) exists.
 
 Let~\(H\) be nonjustifiable on every valid branch, including branches revealed
 after recovery begins.  Once the protocol advances from~\(H\) through
@@ -119,9 +129,11 @@ voted.  The votes at that height must be included on time, the resulting
 justification must be known before the following finality votes, and it must
 remain the latest justification until those votes are included.  Under these
 conditions the ordinary height is justified and then finalized.
-The cross-round compatibility of the SG and available-confirmation layer is
-an explicit external graded-agreement composition premise; it is not derived
-from TSQ or synchrony in this paper.
+The ordinary Goldfish view merge is then evaluated from one exact stable
+root.  The paper does not assume that Goldfish converges from merely
+compatible roots at different depths.  The separate cross-round
+compatibility of historical SG and available confirmations remains an
+explicit composition premise; exact-root TSQ does not derive it retroactively.
 \end{abstract}
 
 \section{Protocol overview}\label{sec:overview}
@@ -134,7 +146,9 @@ finality gadget advances height and finalizes justified blocks.  The
 does not alter Goldfish confirmation.  The recovery proof uses compatible
 Goldfish confirmations during the recovery period.  It does not require
 honest validators to have identical SG-message views or denominators.  TSQ
-uses one fixed absolute quorum for synchronization; the ordinary \(G_1\)
+uses one fixed absolute quorum for synchronization; an accepted proposal
+supplies one exact recovery root rather than merely compatible local roots.
+The ordinary \(G_1\)
 root selection and \(G_0\) conflict veto retain their local \(2/3\) and \(1/3\)
 tests.  In particular, one-third support is never a positive instruction to
 adopt a root.
@@ -160,10 +174,13 @@ inequality; no rounded \emph{adjusted denominator} is part of the protocol.
 Every chain and round uses the fixed identities and weights~\(V,w\).
 Finality and TSQ checks use \(W,q\), while ordinary SG scoring uses the local
 live subset and denominator defined below.  The Byzantine weight \(b\)
-satisfies
+satisfies the exact below-one-third bound
 \[
-  b < 2q-W.
+  3b<W.
 \]
+Consequently \(b<2q-W\), so every two quorums intersect in non-Byzantine
+weight.  Recovery liveness additionally requires responsive honest weight at
+least~\(q\), as stated below.
 \end{assumption}
 
 The paper does not model validator churn.  An implementation with changing
@@ -221,8 +238,11 @@ root can be computed; the pre-fork genesis or finalized root is not used.
 \end{definition}
 
 \begin{definition}[Blocks and chains]\label{def:block-chain}
-A block has a parent, a strictly increasing slot, a deterministic finite set
-of individual signed FG attestations, and a post-state.  Its root is known when its post-state is
+A block has a parent, a strictly increasing slot, an optional
+recovery-anchor root, a deterministic finite set of individual signed FG
+attestations, and a post-state.  A recovery proposal signs its synchronization
+instance identifier, selection-state commitment, anchor, and the commitment
+to the support evidence it relays.  Its root is known when its post-state is
 recorded; after that point we identify the block with its root.  Blocks form a
 tree rooted at genesis.
 Write \(B\preceq C\) when \(B\) is an ancestor of \(C\), and \(B\sim C\) when
@@ -238,6 +258,10 @@ with fields
    v.\finalizeHeight,\ v.\finalizeTarget).
 \]
 The head field \(v.\headf\) is a block root and is the SG latest message.
+Signed messages have one canonical encoding and unforgeable identity.
+Equivocation evidence consists of two distinct valid canonical messages for
+the same signer and logical round; two encodings of one message are not
+distinct evidence.
 The pair \((v.\height,v.\target)\) is the voted checkpoint and has one of
 three forms:
 \[
@@ -801,11 +825,15 @@ cached, but are not independent merge inputs.
 A completed TSQ freeze records the exact signed SG heads and equivocation
 evidence received at its deadline, together with which named blocks and
 ancestries were then available.  This fixes frozen support eligibility; later
-ancestry does not change it.  The corresponding available-vote action records its later current
-view, its computed lock, and the proposal, if any, that was eligible from that
-lock.  These are completed-step records, not mutable fields on a proposal
+ancestry does not change it.  The corresponding available-vote action records
+its complete later current view, the pinned selection and action states,
+electorate, committee, expiry and equivocation maps, Goldfish input, computed
+lock, proposed recovery anchor and credited support, and resulting stable
+root.  These are completed-step records, not mutable fields on a proposal
 block.  A later head or equivocation may affect a later TSQ instance, but it
-does not rewrite a completed freeze or lock.
+does not rewrite a completed freeze or action.  In particular, a TSQ lock
+belongs only to its own available-vote action; it is not carried into or
+imposed as a constraint on a later TSQ instance.
 \end{definition}
 
 A block's post-state is obtained from its parent's post-state by replaying
@@ -827,7 +855,10 @@ copy has completed uses every input object marked timely for that step in
 either copy.  If the timely input contains two distinct round-start blocks
 signed by the same proposer, the proposer has equivocated and the
 synchronization action treats neither as its proposal.  This does not alter
-the action's independently computed TSQ lock.
+the action's independently computed TSQ lock.  If two completed histories
+used different accepted recovery anchors, the merge retains both results.
+Future continuation may use their compatible descendants, but the merge does
+not manufacture a single common past action.
 
 A merge does not recompute a completed step.  A second proposal learned after
 the action deadline is retained as equivocation evidence.  If the two copies completed the same
@@ -836,7 +867,8 @@ not replace them with a single new version of that past step.  A node can use
 the merged store for a common continuation after all later steps that depend
 on either result have completed.  Equivocating head messages remain stored as
 evidence; Definition~\ref{def:synchronization-root} excludes their signer
-from TSQ support when two heads are eligible for that TSQ instance.  A valid attestation
+from lock support when two heads are eligible for that TSQ instance, while
+the separate recovery-anchor check credits that signer at most once.  A valid attestation
 whose head is unknown remains stored until that block and its ancestors
 arrive.
 \end{definition}
@@ -909,9 +941,10 @@ later operation that requires one predecessor result does not run until the
 protocol has a common continuation.  The completed available-vote record stores
 the round's stabilization root, called its \emph{stable root}.  Every later
 \textsf{get\_head} call in that round reads this stable root; later votes do not
-change it.  A synchronization action first reads the completed frozen view and
-then computes the fixed-\(q\) TSQ lock from that view and its timely current
-view.  A
+change it.  A synchronization action first reads the completed frozen view,
+computes the fixed-\(q\) TSQ lock from that view and its timely current view,
+and then either accepts the proposal's exact recovery anchor or retains that
+same-instance lock.  A
 completed result is usable only when its predecessor chain
 matches the current history and it is the unique such result; otherwise the
 dependent operation waits.
@@ -1241,20 +1274,22 @@ subtree supports sum to at most~\(\Dvote_u\).  \(\Gzero\)-clearance is a predica
 not a selected block.
 
 \begin{assumption}[SG/AC composition safety and Goldfish properties]\label{ass:goldfish}
-Write~\(\Omega\) for the available-layer blocks and votes used for one round's
-walk and confirmation.  The function
-\(\mathsf{goldfishHead}(S,\Omega)\) deterministically chooses a viable
-descendant of stable root~\(S\).  Goldfish confirmation is separate from SG and
-safe confirmation.  It requires a strict majority of the participating
-committee.  A vote for a descendant supports every ancestor back to~\(S\).
-The participating set is fixed after the available vote, and confirmation is
-evaluated at a later action after one network-delivery bound.  During
-recovery, Goldfish satisfies:
+Write~\(\Omega^{-}\) for the complete proposal-independent Goldfish input at
+the proposer cutoff and~\(\Omega^+_u\) for validator~\(u\)'s later complete
+confirmation input.  Each includes its pinned block tree, committee, eligible
+votes, expiry and equivocation decisions, and deadlines.
+The function \(\mathsf{goldfishHead}(S,\cdot)\) deterministically chooses a
+viable descendant of stable root~\(S\).  Goldfish confirmation is separate
+from SG and safe confirmation.  It requires a strict majority of the
+participating committee.  A vote for a descendant supports every ancestor
+back to~\(S\).  The participating set is fixed after the available vote, and
+confirmation is evaluated at a later action after one network-delivery bound.
+During recovery, Goldfish satisfies:
 \begin{enumerate}
   \item the available-confirmed heads used when honest validators make the SG
     and FG votes considered here are pairwise compatible, including across
     rounds.  This includes the confirmations underlying every saved target,
-    active lock, and pre-existing justification or finalization that can later
+    active FG lock, and pre-existing justification or finalization that can later
     become a Simplex root during the recovery window;
   \item if an honest view confirms~\(C\), and at one post-\(\GST\) available-vote
     step every responsive honest voter starts from a stable root compatible with
@@ -1269,12 +1304,14 @@ recovery, Goldfish satisfies:
     preserves the premise inductively; in particular, starting from a
     compatible ancestor does not let an arbitrary proposal displace~\(C\);
     and
-  \item in a slot with an honest proposer and a common timely proposal
-    block~\(B_r\) that descends from every responsive honest stable root and
-    from every available-confirmed prefix common to those honest views,
-    every responsive honest available voter votes for~\(B_r\).  Delayed
-    Goldfish evaluation from any of those roots returns~\(B_r\), or the same
-    deterministic descendant when the profile permits one before evaluation.
+  \item if an honest-proposer round gives every responsive honest voter the
+    same exact stable root~\(A\), the same complete pinned
+    input~\(\Omega^{-}\),
+    and a timely valid proposal~\(P\) constructed by the ordinary Goldfish
+    proposer rule from \(\mathsf{goldfishHead}(A,\Omega^{-})\), then every
+    such voter casts its available vote for~\(P\).  If those votes are
+    included in each later pinned input~\(\Omega^+_u\), delayed evaluation
+    confirms~\(P\) in every responsive honest view.
     If \(c_{\rm honest}\) is the common online honest committee weight and
     \(c_{\rm adv}\) is the committee's total adversarial weight, then
     \(c_{\rm honest}>c_{\rm adv}\).
@@ -1296,9 +1333,12 @@ The other clauses are Goldfish liveness and persistence properties.  In
 particular, the paper never infers the first clause merely from the existence
 of a nonjustifiable height or from TSQ.
 
-The third condition holds separately in each view.  Every honest participating
-set contains all common honest committee weight~\(c_{\rm honest}\) and may
-contain an arbitrary adversarial subset of weight~\(c_u\leq c_{\rm adv}\).  Hence
+The third condition is an exact-input view-merge interface, not a convergence
+claim for unequal starting roots.  The protocol first synchronizes the one
+root~\(A\); only then does ordinary Goldfish view merge pin~\(\Omega^{-}\)
+and construct~\(P\).  Every honest participating set contains all common honest
+committee weight~\(c_{\rm honest}\) and may contain an arbitrary adversarial
+subset of weight~\(c_u\leq c_{\rm adv}\).  Hence
 \[
   c_{\rm honest}>c_{\rm adv}\geq c_u
   \quad\Longrightarrow\quad
@@ -1306,24 +1346,29 @@ contain an arbitrary adversarial subset of weight~\(c_u\leq c_{\rm adv}\).  Henc
 \]
 The honest proposal therefore has a strict local majority in every honest
 view.  The participating sets and their denominators need not be identical.
-The first condition above provides the only compatibility assumption between
-different views.
+Nothing here says that compatible but unequal stable roots produce the same
+Goldfish head.  The first condition above remains a separate compatibility
+premise for historical confirmations.
 
 \begin{definition}[Stable root and walk]\label{def:walk}
 At an ordinary round's available-vote action, validator~\(u\) sets
 \(\stableRoot_u^r=\Gone(\Sigma,u)\).  At a TSQ synchronization action it
-instead uses the frozen/current lock of
-Definition~\ref{def:synchronization-root} when that lock is viable in the
-action state~\(\Sigma\) and descends from \(\simplexRoot(\Sigma)\); otherwise
-it uses \(\Gone(\Sigma,u)\).  When no strict descendant has fixed-\(q\)
-support in the selection state, the computed lock is that selection state's
-Simplex root.  This
-per-round stabilization root is the \emph{stable root}; it always descends
-from the Simplex root.  A proposal is eligible only when it descends from the
-stable root.  Only an eligible proposal receives any proposal-specific
-Goldfish treatment; an ineligible proposal remains stored as an ordinary
-block and as evidence but is ignored as the distinguished proposal.  The
-proposal itself never replaces the stable root.  From
+first computes the instance-local lock~\(L_u\) of
+Definition~\ref{def:synchronization-root}.  If the unique timely recovery
+proposal names an anchor~\(A\) that passes that definition's credited-support,
+lock-extension, proposal-ancestry, viability, and action-state Simplex-root
+checks, then \(\stableRoot_u^r=A\).  Otherwise
+\(\stableRoot_u^r=L_u\), provided \(L_u\) is viable in the action state and
+descends from \(\simplexRoot(\Sigma)\); an action outside the theorem uses
+\(\Gone(\Sigma,u)\) if that check fails.  When no strict descendant has
+fixed-\(q\) lock support in the selection state, \(L_u\) is that selection
+state's Simplex root.  This per-round stabilization root is the
+\emph{stable root}; it always descends from the action-state Simplex root.
+A proposal is eligible only when it descends from the stable root.  Only an
+eligible proposal receives proposal-specific Goldfish treatment; an
+ineligible proposal remains stored as an ordinary block and as evidence but
+is ignored as the distinguished proposal.  The proposal block~\(P\) is never
+itself installed as the stable root merely because it was proposed.  From
 \(\stableRoot_u^r\), follow
 \(\mathsf{goldfishHead}(\stableRoot_u^r,\Omega)\) inside the viable subtree.  If the result
 has state-height below \(\Sigma.h_{\max}-1\), continue through viable children
@@ -1366,32 +1411,35 @@ synchronization round, its first proposer is honest, and:
     viable candidate tree and Simplex root.  Every responsive honest
     support-round SG head has an effective head in that tree.  At the later
     available-vote action, every honest validator uses the same
-    post-proposal action state~\(\Sigma\), and every computed TSQ lock is
-    viable there and descends from \(\simplexRoot(\Sigma)\), so no fallback is
-    used;
+    post-proposal action state~\(\Sigma\).  Every computed TSQ lock and the
+    proposer's selected anchor are viable there and descend from
+    \(\simplexRoot(\Sigma)\), so no ordinary-\(\Gone\) fallback is used;
   \item each validator freezes its support-round view at least one delivery
     bound before the proposal.  A signed head or conflicting copy received by
     an honest validator is forwarded.  At selection the proposer separately
-    re-gossips every valid support-round head, conflicting copy, named block,
-    and ancestry it knows, including messages excluded as equivocations.
+    re-gossips, for every signer represented in its view, its sole valid
+    support-round head or a canonical pair proving equivocation, together
+    with every named block and ancestry needed to validate those messages.
     Those messages, the proposal block, and its ancestry reach every honest
     validator at least one delivery bound before the available-vote action;
-  \item the proposal block is a viable descendant of both the proposer
-    candidate of Definition~\ref{def:synchronization-root} and the proposer's
-    current available-confirmed head.  It therefore extends every available
-    prefix already common to the responsive honest views.  Every responsive honest
-    validator has the same available-layer input~\(\Omega\) before the
-    available vote; and
+  \item the recovery proposal names exactly the proposer candidate
+    \(A=C_p\) of Definition~\ref{def:synchronization-root}, commits to the
+    instance, selection state, and relayed evidence, and its block~\(P\) is a
+    viable descendant of~\(A\).  Standard Goldfish view merge gives every
+    responsive honest validator the same complete proposal-independent pinned
+    input~\(\Omega^{-}\);
+    the honest proposer constructs~\(P\) by the ordinary Goldfish proposer
+    rule from \(\mathsf{goldfishHead}(A,\Omega^{-})\); and
   \item every validator uses the same action schedule through delayed
     confirmation and the SG vote, and no validator switches to unrelated
     local state during those actions.
 \end{enumerate}
 An implementation that spreads these duties across slots must ensure the same
 conditions.  They do not assume a height advance, justification, or finality.
-The proposal-descends-candidate-and-current-head and common-\(\Omega\)
-conditions are explicit liveness premises: the construction below does not
-prove that every honest proposer can satisfy them for every selection-state
-candidate tree.
+The common-\(\Omega^{-}\) condition is the ordinary Goldfish view-merge
+requirement applied only after exact anchor agreement.  The recovery
+construction does not assume, and Goldfish need not provide, convergence from
+compatible anchors at different depths.
 \end{assumption}
 
 \section{Time-shifted-quorum root synchronization}\label{sec:tsq}
@@ -1400,10 +1448,11 @@ A TSQ synchronization round has a public freeze deadline~\(d_F\).  Its
 support round is the latest scheduled SG pre-vote action whose publication
 deadline is no later than \(d_F-\Delta\).  Each validator first freezes the
 support-round heads it has received.  At least one
-delivery bound later the proposer selects its candidate from its then-current
-view.  At least one further delivery bound later each validator computes a
-lock from the intersection of its frozen and current views and performs the
-available vote.
+delivery bound later, at a public time no earlier than \(d_F+\Delta\), the
+proposer selects its candidate from its then-current view.  At least one
+further delivery bound later each validator computes a lock from the
+intersection of its frozen and current views, checks the proposed anchor, and
+performs the available vote.
 
 A fixed public, unbounded round schedule designates TSQ synchronization
 rounds.  The support-round mapping above is fresh and deterministic: it is a
@@ -1414,22 +1463,26 @@ use the ordinary \(\Gone\) stable root.  The healing theorem requires
 designated rounds satisfying the counted-round assumptions; the schedule
 alone does not make a disrupted network synchronous.
 
-Before candidate selection, each TSQ instance pins a
-proposal-independent \emph{selection state}~\(\Sigma^\star\): its block tree,
-finality fields, \(h_{\max}\), Simplex root, and viable candidate tree are
-fixed for the whole instance.  It is the derived state at the public selection
-cutoff immediately before proposal construction, after processing every
-earlier-deadline input and before admitting the new proposal or later input.
-The proposer and receivers project every support head into this same state in
-a counted round.  The proposer then computes its candidate and constructs an
-ordinary proposal descending from it.  At the later available-vote
-action, the proposal produces the action state~\(\Sigma\).  A computed TSQ
-lock is used only when it is viable in~\(\Sigma\) and descends from
-\(\simplexRoot(\Sigma)\); otherwise that uncounted action uses its ordinary
-\(\Gone(\Sigma,u)\) root.  The counted-round assumption guarantees a common
-\(\Sigma^\star\), a common~\(\Sigma\), and no such fallback.  The proposal
-does not carry a protocol-selected root, and TSQ changes no consensus-state
-field.
+Before candidate selection, each TSQ instance pins a proposal-independent
+\emph{selection state}~\(\Sigma^\star\): its block tree, finality fields,
+\(h_{\max}\), Simplex root, viable candidate tree, electorate and weights,
+support-round identity, deadlines, expiry and equivocation decisions, and
+data-availability results are fixed for the whole instance.  It is the
+derived state at the public selection cutoff immediately before proposal
+construction, after processing every earlier-deadline input and before
+admitting the new proposal or later input.  The proposer and receivers
+project every support head into this same state in a counted round.  The
+proposer computes its candidate, names that exact root as the recovery anchor,
+and constructs an ordinary proposal descending from it.  At the later
+available-vote action, the proposal produces the pinned action
+state~\(\Sigma\), and the committee, proposal-independent
+input~\(\Omega^{-}\), and later confirmation inputs~\(\Omega^+_u\) are fixed
+at their respective public cutoffs.
+A computed lock or proposed anchor is used only when it is viable
+in~\(\Sigma\) and descends from \(\simplexRoot(\Sigma)\); otherwise that
+uncounted action uses its ordinary \(\Gone(\Sigma,u)\) root.  The counted-round
+assumption guarantees common pinned inputs and no such fallback.  TSQ changes
+no consensus-state field.
 
 \begin{definition}[Candidate tree and effective head]\label{def:candidate-tree}
 For a fork-choice state~\(\Sigma\), let
@@ -1444,30 +1497,29 @@ message supplies no TSQ support.  Thus projection may move a head
 only to an actual ancestor; it never moves a vote forward or across a fork.
 \end{definition}
 
-\begin{definition}[TSQ candidate and lock]\label{def:synchronization-root}
+\begin{definition}[TSQ lock, anchor credit, and acceptance]\label{def:synchronization-root}
 Fix selection state~\(\Sigma^\star\), its publicly assigned support round~\(r\),
-and a view~\(X\) containing
-signed round-\(r\) SG pre-votes and the round-head equivocation evidence of
-Definition~\ref{def:head-vote}.  Apply that definition's finalized-conflict
-filter before testing TSQ usability or equivocation.  A head is eligible
-in~\(X\) only when its
-named block and ancestry were available by~\(X\)'s deadline and it has an
-effective head in~\(\Sigma^\star\).  Later ancestry arrival cannot
-retroactively make a frozen head eligible.  A signer is usable in~\(X\)
-when~\(X\) contains exactly one eligible logical round head from it and no
-other eligible message that constitutes a round equivocation under
-Definition~\ref{def:head-vote}.  In particular, two distinct eligible complete
-messages exclude the signer even if they name the same block root.  Raw
-ineligible copies remain evidence but do not affect TSQ support.  For
-\(B\in\mathcal C(\Sigma^\star)\), write
+and a view~\(X\) containing signed round-\(r\) SG pre-votes and the
+round-head equivocation evidence of Definition~\ref{def:head-vote}.  Apply
+that definition's finalized-conflict filter before testing TSQ usability or
+equivocation.  A head is eligible in~\(X\) only when its named block and
+ancestry were available by~\(X\)'s deadline and it has an effective head
+in~\(\Sigma^\star\), and its public expiry is strictly after this TSQ
+instance's action cutoff.  Later ancestry arrival cannot retroactively make a
+frozen head eligible.
+
+A signer is \emph{usable} in~\(X\) when~\(X\) contains exactly one eligible
+logical round head from it and no other eligible message that constitutes a
+round equivocation under Definition~\ref{def:head-vote}.  Two distinct
+eligible complete messages exclude the signer even if they name the same
+block root.  Raw ineligible copies remain evidence but do not affect lock
+support.  For \(B\in\mathcal C(\Sigma^\star)\), write
 \[
   \mathsf{support}_X(B)
   =
   \sum_{\substack{i\text{ usable in }X\\
                    B\preceq\mathsf{effective\_head}_X(i)}}w(i).
 \]
-A signer with eligible round-equivocation evidence is excluded and supplies
-no TSQ support.
 
 For two views \(X,Y\), a signer is usable in \(X\cap Y\) only when the
 \emph{same signed pre-vote} is present and eligible under both views'
@@ -1479,18 +1531,38 @@ that constitutes a round equivocation.  Define
   \sum_{\substack{i\text{ usable in }X\cap Y\\
                    B\preceq\mathsf{effective\_head}(i)}}w(i).
 \]
-All these tests use the fixed threshold~\(q\), not a local SG denominator.
+Thus equivocation supplies no lock support.
+
+Anchor acceptance uses a separate monotone credit rule.  Let
+\(\mathsf{direct}_X(B)\) be the signers for which~\(X\) contains an eligible
+head whose effective head descends from~\(B\), whether or not~\(X\) also
+contains a conflicting copy.  Let \(\mathsf{equiv}_X\) be the signers for
+which~\(X\) contains two distinct eligible canonical support-round messages.
+Each signer is counted at most once, and
+\[
+  \Credit_X(B)
+  =
+  \sum_{i\in\mathsf{direct}_X(B)\cup\mathsf{equiv}_X}w(i).
+\]
+Equivocation credit is used only to decide whether the proposal's named
+anchor retains a quorum that the proposer could have seen.  It is not added
+to ordinary SG support and cannot create or deepen a lock.  All support and
+credit tests use the fixed threshold~\(q\), not a local SG denominator.
 
 At proposal time, proposer~\(p\) has current view~\(U_p\) and selects
 \[
   C_p
   =
   \text{the deepest }B\in\mathcal C(\Sigma^\star)
-  \text{ with }\mathsf{support}_{U_p}(B)\geq q,
+  \text{ with }\mathsf{support}_{U_p}(B)\geq q.
 \]
-or \(C_p=\simplexRoot(\Sigma^\star)\) when no strict descendant qualifies.  A
-counted TSQ honest proposer publishes a proposal block~\(P\) descending from
-both~\(C_p\) and its current available-confirmed head.
+If no such root exists, the proposer supplies no recovery anchor and the
+round has no exact-anchor liveness claim.  Otherwise it names
+\(A=C_p\), publishes a proposal block~\(P\) descending from~\(A\), and
+re-gossips a weight-\(q\) direct supporting witness together with, for every
+signer represented in its view, the signer's sole valid support-round head or
+a canonical pair proving equivocation, plus the required named blocks and
+ancestry.  Duplicates and further conflicting copies are irrelevant.
 
 At the later available-vote action, validator~\(u\) has its completed frozen
 view~\(F_u\) and current view~\(U_u\).  It sets
@@ -1501,11 +1573,28 @@ view~\(F_u\) and current view~\(U_u\).  It sets
   \text{ with }\mathsf{support}_{F_u\cap U_u}(B)\geq q,
 \]
 or \(L_u=\simplexRoot(\Sigma^\star)\) when no strict descendant qualifies.
-When \(L_u\) passes the action-state viability and Simplex-root checks above,
-it is the synchronization round's stable root.  A unique timely
-proposal is eligible only when it descends from~\(L_u\).  Two distinct timely
-blocks signed by the proposer make neither distinguished as the proposal.
-Later messages do not change \(F_u\), \(L_u\), or the completed action.
+The lock is local to this TSQ instance.
+
+Validator~\(u\) accepts the exact proposed anchor~\(A\) if and only if:
+\begin{enumerate}
+  \item exactly one timely proposal from the assigned proposer is valid, and
+    its signature binds the TSQ instance, selection-state commitment,
+    anchor~\(A\), and relayed-evidence commitment;
+  \item \(A\in\mathcal C(\Sigma^\star)\),
+    \(\Credit_{U_u}(A)\geq q\), and \(L_u\preceq A\preceq P\);
+  \item \(A\) and~\(P\) are viable in the pinned action state~\(\Sigma\), and
+    \(\simplexRoot(\Sigma)\preceq A\); and
+  \item all named blocks, ancestry, committee, expiry, equivocation, and
+    Goldfish inputs required by this action match the public pinned cuts and
+    the proposal commitments that apply at proposal time.
+\end{enumerate}
+If all checks pass, \(\stableRoot_u^r=A\).  Otherwise the action retains
+\(L_u\) as its stable root when the action-state checks on~\(L_u\) pass, and
+uses ordinary \(\Gone(\Sigma,u)\) only outside the counted theorem when they
+do not.  Two distinct timely blocks signed by the proposer make neither the
+distinguished proposal.  Later messages do not change \(F_u\), \(L_u\),
+anchor acceptance, or the completed action.  Neither an accepted nor a
+rejected lock constrains a later TSQ instance.
 \end{definition}
 
 The numerical liveness bounds count only TSQ rounds satisfying
@@ -1514,7 +1603,13 @@ Simplex root so that a computed lock fails the action-state check, if the
 required common selection or action state is unavailable, or if the proposer
 cannot publish a descendant of its candidate, that round is not counted.  It
 may still run safely, but no synchronization or numerical liveness conclusion
-is drawn from it.
+is drawn from it.  In a common pinned instance, a Byzantine proposer may
+cause some honest validators to accept and others to retain their locks.
+Definition~\ref{def:synchronization-root} does not promise exact agreement in
+that case; it promises only the compatibility proved below.  If honest
+validators do not share the pinned selection state, no cross-state
+compatibility claim is made.  In either case, those locks disappear with the
+instance and do not constrain the next attempt.
 
 \begin{lemma}[Quorum-supported roots form a chain]\label{lem:tsq-root-chain}
 In one view with at most one usable head per signer, any two roots with
@@ -1553,11 +1648,26 @@ signed head, its named block, and its ancestry by the freeze and forwarded
 them.  The delivery interval before proposal selection places that same
 message in~\(U_p\).  If the proposer knew another support-round head from the
 same signer that was eligible in~\(U_p\), it separately re-gossiped that
-conflicting copy at selection; the delivery interval before the action would
+signer's canonical equivocation pair at selection; the delivery interval before the action would
 then make it eligible in~\(U_u\) and make~\(u\) exclude the signer.
 Thus every signer still counted by~\(u\) is usable with the same head in
 \(U_p\).  The whole weight-\(q\) supporting set transfers.
 \end{proof}
+
+\begin{remark}[Why the proposer relays every conflict]\label{rem:tsq-full-relay}
+Relaying only the proposed anchor's quorum witness is insufficient.  For
+example, let \(W=100\), \(q=67\), and Byzantine weight be~\(33\).  Suppose
+honest weight~\(34\) votes below \(B\), the other honest weight~\(33\) votes
+at its ancestor~\(A\), and the Byzantine validators send \(B\)-supporting
+heads to receiver~\(u\) but conflicting copies to the proposer.  The proposer
+excludes the Byzantine signers, sees only weight~\(34\) below~\(B\), and
+selects~\(A\) from all honest weight~\(67\).  Receiver~\(u\), unless shown
+the conflicts, computes a weight-\(67\) lock at~\(B\) and rejects~\(A\).
+Relaying the conflicting copies makes~\(u\) exclude the Byzantine signers,
+so that false deeper lock disappears.  The complete relay in
+Assumption~\ref{ass:honest-proposer}, rather than the anchor witness alone, is
+therefore load-bearing for exact agreement.
+\end{remark}
 
 \begin{lemma}[An honest TSQ candidate extends every receiver lock]\label{lem:tsq-candidate-lock}
 Under Assumption~\ref{ass:honest-proposer}, the candidate~\(C_p\) of a
@@ -1574,28 +1684,94 @@ gives \(L_u\preceq C_p\).  The counted-round construction gives
 \(C_p\preceq P\).
 \end{proof}
 
+\begin{lemma}[An honest proposer's anchor credit transfers]\label{lem:tsq-credit-transfer}
+Under Assumption~\ref{ass:honest-proposer}, every responsive honest validator
+has \(\Credit_{U_u}(C_p)\geq q\) at its available-vote action.
+\end{lemma}
+
+\begin{proof}
+The honest proposer selected~\(C_p\) from a direct, non-equivocating
+supporting set of weight at least~\(q\).  It re-gossips each of those signed
+heads and its required data before the action.  For every signer in that set,
+validator~\(u\) therefore either has an eligible head descending from~\(C_p\)
+or has eligible same-round equivocation evidence.  The first case gives
+direct credit and the second gives equivocation credit.  Discovery of
+additional conflicting copies cannot remove a signer from the union defining
+\(\Credit\).  Every witness signer is therefore still counted once, so the
+credited weight is at least~\(q\).
+\end{proof}
+
+\begin{lemma}[Accepted anchors have honest direct support]\label{lem:tsq-anchor-honest-support}
+If an honest validator accepts anchor~\(A\), then validators of weight at
+least \(q-b\) signed eligible support-round heads descending from~\(A\).
+Consequently at least one honest signer Goldfish-confirmed a descendant
+of~\(A\) before signing.
+\end{lemma}
+
+\begin{proof}
+Acceptance gives credited weight at least~\(q\).  At most~\(b\) of that
+weight is Byzantine.  An honest signer cannot supply eligible equivocation
+evidence and therefore receives credit only through an eligible head
+descending from~\(A\).  Removing all Byzantine credited weight leaves at
+least \(q-b>0\) honest direct support.  Thus the anchor cannot be an
+adversarial leaf unsupported by honest SG votes.  The SG schedule signs each
+such head only after its Goldfish confirmation.
+\end{proof}
+
+\begin{lemma}[Same-instance accepted roots are compatible]\label{lem:tsq-accepted-compatible}
+Fix one TSQ instance with one common pinned selection state.  Under \(3b<W\),
+any anchor accepted by an honest validator is compatible with every anchor
+accepted by another honest validator and with every honest validator's
+retained lock in that instance.
+\end{lemma}
+
+\begin{proof}
+Two credited anchor sets, or one credited anchor set and one nondefault
+lock-support set, each have weight at least~\(q\).  Their intersection has
+weight at least \(2q-W>b\), so it contains an honest signer.  Honest signers
+do not equivocate.  The signer's one eligible head descends from both roots,
+which therefore cannot conflict.  A default lock is the selection-state
+Simplex root and is an ancestor of every candidate.  This proves all cases.
+\end{proof}
+
+\begin{lemma}[An honest TSQ proposer gives exact anchor agreement]\label{lem:tsq-exact-anchor}
+Every responsive honest validator in a counted TSQ honest-proposer round
+accepts \(A=C_p\) and uses that exact root as its stable root.
+\end{lemma}
+
+\begin{proof}
+Lemma~\ref{lem:tsq-candidate-lock} gives \(L_u\preceq C_p\) for every
+receiver.  Lemma~\ref{lem:tsq-credit-transfer} gives
+\(\Credit_{U_u}(C_p)\geq q\).  The honest proposal uniquely names~\(C_p\),
+descends from it, binds the common pinned inputs, and arrives before the
+action.  Assumption~\ref{ass:honest-proposer} supplies the common viability
+and action-state Simplex-root checks.  Every acceptance condition in
+Definition~\ref{def:synchronization-root} therefore holds, so every receiver
+sets \(\stableRoot_u^r=C_p\).
+\end{proof}
+
 \begin{lemma}[An honest TSQ proposer aligns the available vote]\label{lem:tsq-alignment}
 Under Assumptions~\ref{ass:recovery-weights},
 \ref{ass:goldfish}, and~\ref{ass:honest-proposer}, every responsive honest
 validator in a counted TSQ honest-proposer round makes its available vote on
 the proposal~\(P\)'s chain, and delayed evaluation confirms~\(P\) in every
 responsive honest view.  The later SG action has one chain, one state-height
-\(k\), and one current-height target~\(T\), even if the locks have different
-depths or the pre-round walks were split between \(h_{\max}-1\) and
+\(k\), and one current-height target~\(T\), even if the pre-round walks were
+split between \(h_{\max}-1\) and
 \(h_{\max}\).
 \end{lemma}
 
 \begin{proof}
-Lemma~\ref{lem:tsq-candidate-lock} makes the common timely proposal descend
-from every responsive honest stable root.  The honest-proposal clause of
-Assumption~\ref{ass:goldfish}, together with the common input~\(\Omega\),
-therefore makes every responsive honest available voter vote for~\(P\), and
-delayed evaluation returns the same head on~\(P\)'s chain.  This is stronger
-than mere compatibility of the locks: the
-proposal path has a strict local committee majority from every starting
-depth.  Delayed evaluation confirms~\(P\).  From the common returned head,
-the common action state, available input, and deterministic height-filter
-step give the same SG walk output.
+Lemma~\ref{lem:tsq-exact-anchor} gives every responsive honest validator the
+same exact stable root~\(A=C_p\).  The exact-input Goldfish clause of
+Assumption~\ref{ass:goldfish}, together with the common pinned
+input~\(\Omega^{-}\), makes every responsive honest available voter vote
+for~\(P\).  Every later pinned input~\(\Omega^+_u\) contains those votes, so
+delayed evaluation confirms~\(P\) in every responsive honest view.  From that
+common confirmed
+head, the common action state, available input, and deterministic
+height-filter step give the same SG walk output.  No claim that Goldfish
+converges from unequal compatible roots is used.
 
 The height and current-height target are read from the slot-advanced action
 state on that chain rather than from a receiver's pre-round height.  No round
@@ -1612,13 +1788,16 @@ the same~\(T\).
 Let \(C\in\mathcal C(\Sigma^\star)\).  If signed heads of weight at least~\(q\)
 descend from~\(C\), and those same heads are usable in both \(F_u\) and
 \(U_u\), then the TSQ lock~\(L_u\) descends from~\(C\).
+If the action uses no ordinary-\(\Gone\) fallback, its stable root also
+descends from~\(C\).
 \end{lemma}
 
 \begin{proof}
 The root~\(C\) itself has frozen/current support at least~\(q\).  It therefore
 qualifies in the deepest-root calculation, so the selected lock cannot be a
 strict ancestor.  Lemma~\ref{lem:tsq-root-chain} excludes a conflicting
-qualifying root.
+qualifying root.  An accepted anchor extends~\(L_u\); a rejected anchor leaves
+\(L_u\) as the stable root.
 \end{proof}
 
 \begin{lemma}[TSQ gives no positive power to subquorum support]\label{lem:tsq-no-active-reorg}
@@ -1629,25 +1808,28 @@ support-round head is usable in each relevant frozen/current view, every respons
 present and live in each honest view under consideration, and all those heads
 descend from~\(C\); every responsive honest available
 voter participates and its latest vote entering the action descends
-from~\(C\); and the weight
-outside the responsive honest set is both less than~\(q\) and less than the
-responsive honest weight.  Then the actual stable root, including an ordinary
-\(\Gone\) fallback, is compatible with~\(C\), and Goldfish keeps the honest
-available votes and head in the subtree of~\(C\).  A sub-\(q\) set of heads
-cannot by itself support any strict-descendant TSQ candidate or lock, cannot
-support a root conflicting with~\(C\), and no proposal field installs a root.
+from~\(C\); and the weight outside the responsive honest set is both less
+than~\(q\) and less than the responsive honest weight.  Then the actual stable
+root, including an accepted anchor or an ordinary \(\Gone\) fallback, is
+compatible with~\(C\), and Goldfish keeps the honest available votes and head
+in the subtree of~\(C\).  A sub-\(q\) set cannot by itself support a
+strict-descendant TSQ candidate or lock, nor can equivocation credit make a
+conflicting anchor acceptable.
 \end{lemma}
 
 \begin{proof}
-A root conflicting with~\(C\) can be supported only by the remaining
-validators and therefore cannot reach~\(q\).  Since the selection-state
-Simplex root is compatible with~\(C\), every TSQ lock is either an ancestor or
-a descendant of~\(C\).  If the lock is rejected by the action-state check,
-the ordinary \(\Gone\) walk starts at the compatible action-state Simplex
-root.  At every fork from the path to~\(C\), a conflicting child has support
-at most the outside weight, which is less than half the live weight, and so
-cannot meet the two-thirds \(\Gone\) threshold.  The fallback therefore also
-remains compatible with~\(C\).  The compatible-ancestor clause of
+A root conflicting with~\(C\) can receive direct support only from the
+remaining validators and therefore cannot reach~\(q\).  Honest validators do
+not equivocate, so a conflicting proposed anchor receives no honest
+equivocation credit either; its total credited weight is still below~\(q\).
+Since the selection-state Simplex root is compatible with~\(C\), every TSQ
+lock and every accepted anchor is therefore either an ancestor or a
+descendant of~\(C\).  If the lock is rejected by the action-state check, the
+ordinary \(\Gone\) walk starts at the compatible action-state Simplex root.
+At every fork from the path to~\(C\), a conflicting child has support at most
+the outside weight, which is less than half the live weight, and so cannot
+meet the two-thirds \(\Gone\) threshold.  The fallback therefore also remains
+compatible with~\(C\).  The compatible-ancestor clause of
 Assumption~\ref{ass:goldfish} now keeps the available head and votes in
 \(C\)'s subtree, regardless of the proposal.  Once responsive honest
 descendant heads also cross a freeze and remain usable at its action,
@@ -1661,6 +1843,20 @@ one-third support as a positive root-selection signal.  The TSQ liveness stateme
 require responsive honest weight at least~\(q\).  The weaker, below-one-half
 statement is only that a subquorum adversary cannot actively reorg an
 otherwise Goldfish-stable chain; it is not a TSQ liveness claim.
+
+\begin{remark}[Scope above one third]\label{rem:tsq-above-third}
+The exact-anchor theorem is a below-one-third recovery result.  It does not by
+itself establish SG stabilization for every Byzantine weight below one half.
+If \(b\geq W/3\), all honest weight may be below~\(q\).  Even when every
+honest support-round head descends from a block~\(B\), the fixed-\(q\) lock
+may then remain at an ancestor~\(A\), while all honest and Byzantine heads
+together give~\(A\) credited support at least~\(q\).  A proposal for~\(A\)
+can pass the rule.  Thus the rule alone does not exclude ancestor regression
+outside the paper's \(3b<W\) assumption.  A profile claiming full
+below-one-half SG safety while this recovery action is enabled needs an
+additional lower-bound rule and a new liveness proof, or must discharge the
+separate Goldfish-persistence premise for that case.
+\end{remark}
 
 \section{Round schedule and state processing}\label{sec:rounds}
 
@@ -1676,7 +1872,7 @@ confirmed.  The strict order is
 \xrightarrow{\ \Delta\ }\text{candidate selection}
 \\[-1mm]
 \longrightarrow \text{proposal}
-\xrightarrow{\ \Delta\ }\text{TSQ lock and available vote}
+\xrightarrow{\ \Delta\ }\text{TSQ lock, anchor check, and available vote}
 \xrightarrow{\ \Delta\ }\text{delayed Goldfish confirmation}
 \\[-1mm]
 \longrightarrow \text{new SG head pre-vote}
@@ -2389,7 +2585,9 @@ eligibility and relay premises make that weight usable in the frozen/current
 pair.  If the selection-state Simplex root is an ancestor of~\(C\),
 Lemma~\ref{lem:tsq-frozen-prefix} makes the lock descend from~\(C\); if that
 root already descends from~\(C\), so does every possible lock.  If the lock
-passes the action-state checks, it is therefore a descendant stable root.
+passes the action-state checks, a rejected anchor retains that descendant
+lock, while an accepted anchor extends it.  The stable root is therefore a
+descendant of~\(C\) in either case.
 
 It remains to cover an ordinary action or a TSQ lock that falls back to
 \(\Gone\).  Every responsive honest latest head descends from~\(C\).  Each
@@ -2855,26 +3053,36 @@ when the block arrives.
 TSQ uses only the fixed value~\(q\); ordinary \(\Gone\) and \(\Gzero\)
 calculations continue to use their local live denominators.  Each TSQ instance
 uses the public deadline-based support round defined in
-Section~\ref{sec:tsq} and pins one
-proposal-independent selection state~\(\Sigma^\star\), including its Simplex
-root and prefix-closed viable candidate tree.  It later records the
-post-proposal action state~\(\Sigma\).  Head messages project only to actual
-ancestors in the selection-state tree.  A head can enter the frozen view only
-when its named block and ancestry are already available.  A computed lock is
-used only if it remains viable in the action state and descends from the
-action-state Simplex root; otherwise the action uses ordinary \(\Gone\).
+Section~\ref{sec:tsq} and pins the full selection input, including
+\(\Sigma^\star\), its Simplex root and viable candidate tree, electorate,
+weights, deadlines, expiry decisions, equivocation map, and available data.
+It later pins the post-proposal action state~\(\Sigma\), committee,
+proposal-independent Goldfish input~\(\Omega^{-}\), and the later
+confirmation inputs~\(\Omega^+_u\).  Head messages project only to actual ancestors in
+the selection-state tree.  A head can enter the frozen view only when its
+named block and ancestry are already available.  A computed lock or proposed
+anchor is used only if it remains viable in the action state and descends from
+the action-state Simplex root; otherwise the action uses ordinary \(\Gone\).
 
 The implementation must retain the exact frozen view.  It leaves one delivery
 bound after the freeze before candidate selection and another after candidate
-selection before the lock action.  Honest nodes relay every valid
-support-round message, named block, ancestry, and conflicting copy.  The
-proposer selects the deepest current-view fixed-\(q\) candidate and publishes
-a descendant.  Each receiver independently selects the deepest fixed-\(q\)
-frozen/current lock, excluding signers with two eligible heads.  The lock, not a proposer field,
-is the TSQ round's stable root.  The ordinary proposal is merely eligible
-when it descends from that lock and is then evaluated by Goldfish.  The
-completed freeze, action state, lock, and current input remain fixed for all
-later operations belonging to that action.
+selection before the lock action.  Honest nodes relay each valid
+support-round message, named block, ancestry, and first conflicting copy.  The
+proposer selects the deepest current-view fixed-\(q\) candidate, names it as
+the recovery anchor, publishes a descendant, and re-gossips both a
+weight-\(q\) direct witness and, for each represented signer, either its sole
+head or a canonical equivocation pair.  Each receiver independently selects the deepest fixed-\(q\)
+frozen/current lock, excluding signers with two eligible heads.  For anchor
+acceptance only, it credits a signer with either a supporting head or eligible
+same-round equivocation evidence, counted once.  It adopts the exact named
+anchor only when credited weight reaches~\(q\), the anchor extends its lock
+and the action-state Simplex root, the proposal extends the anchor, and every
+pinned validity check passes.  Otherwise it retains its same-instance lock.
+Locks do not persist into later instances.  Canonical signed-message identity
+is required; two conflicting messages per signer and support round suffice to
+retain and relay equivocation evidence.  The completed freeze, action state,
+lock, credit calculation, anchor decision, stable root, and current input
+remain fixed for all later operations belonging to that action.
 
 The public synchronization-round schedule must recur independently of local
 fork state.  A deployment that does not fit the freeze, proposal, action,
@@ -2894,13 +3102,20 @@ Fresh Simplex uses one fixed weighted validator set, E1 and E2, and one
 target-participation bit and one timeout bit per validator.  In a counted TSQ
 honest-proposer round, each validator freezes the support-round SG heads.  The
 proposer later chooses the deepest viable fixed-\(q\) candidate and publishes
-a descendant.  Each validator later chooses the deepest fixed-\(q\)
-frozen/current lock as its stable root.  Time-shifted delivery proves that an
-honest proposal extends every such lock, even when the locks have different
-depths.  Goldfish therefore confirms the common proposal chain; SG and FG
-then vote from that confirmed chain.  The proposal never becomes a stable
-root by itself, signers with two eligible heads are excluded, and \(1/3\)
-support remains only a \(\Gzero\) veto.
+that candidate as its exact recovery anchor together with a descendant
+proposal block.  Each validator later computes the deepest fixed-\(q\)
+frozen/current lock.  It accepts the proposed anchor only if it extends that
+lock and itself has credited support at least~\(q\), counting a signer once
+when a later view reveals support or equivocation.  Time-shifted delivery
+proves that every validator accepts the same anchor from a counted honest
+proposer.  Goldfish then runs from that one exact root and complete pinned
+input, confirms the common proposal, and SG and FG vote from the confirmed
+chain.  Within a common pinned instance, a malicious proposer obtains at most
+compatible partial adoption; every accepted anchor has direct honest support
+of weight at least~\(q-b\).
+The proposal block is not installed merely because it was proposed, lock
+support excludes equivocators, and \(1/3\) support remains only a
+\(\Gzero\) veto.
 
 The recovery argument begins at a height~\(H\) that is nonjustifiable on every
 valid branch, including a branch revealed later.  Advancing through
@@ -2916,8 +3131,7 @@ votes, timely inclusion of its target votes, and a following round in which
 that justification remains latest until the finality votes are included.
 
 The result assumes responsive honest validators of total weight at least~\(q\),
-fixed weights during the
-recovery interval, Byzantine weight below \(2q-W\), data and ancestry
+fixed weights during the recovery interval, \(3b<W\), data and ancestry
 availability, the stated external SG/AC composition-safety and Goldfish
 persistence properties, a counted TSQ
 honest proposer to make the chain and target common, and timely delivery,
