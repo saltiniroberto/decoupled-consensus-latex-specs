@@ -90,10 +90,14 @@ slots of length \(4\Delta\), the slot layout of Goldfish's optimistic
 fast confirmations, as the phase list below states.
 
 \emph{Proposer selection.}
-Ordinary Goldfish proposer selection is receiver-local: at vote time each validator takes
-the winning eligible proposal among the round proposals in its own view,
-as the source's algorithm prescribes, so two honest validators holding
-different proposal sets may take different winners.  The \emph{round
+Ordinary Goldfish proposer selection is receiver-local: at vote time
+each validator takes the winning eligible proposal among the round
+proposals in its own inclusive vote-time view, as the source's
+algorithm prescribes, so two honest validators holding different
+proposal sets may take different winners.  Recognition additionally
+requires the winner to be timely --- received strictly before the vote
+time, per Definition~\ref{def:stable-root} --- so a boundary-arriving
+winner yields the failed-proposal branch, never acceptance.  The \emph{round
 proposer at} validator \(u\) is the signer of \(u\)'s local winner.
 Round \(r\) \emph{has an honest round proposer} when one honest
 validator's first-slot proposal is the local winner at every honest
@@ -111,12 +115,16 @@ for every validator, and the state is derived from everything received
 strictly before it.  The proposal is a scheduled action with the
 inclusive deadline input \(M_I\) of the store definition; the selection
 state is a \emph{derived} quantity, computed from the sub-view of that
-input received strictly before \(d_r\), so the immutable record stores
-the full inclusive input while the derivation discards boundary
-receipts.  This is the one deliberate exception to the
-inclusive view convention of Assumption~\ref{ass:recovery-network},
-whose boundary-irrelevance sentence is scoped to delivery deadlines, not
-to this schedule cutoff: the exclusion keeps the round's own proposal,
+input received strictly before \(d_r\) --- a function of the record,
+which stores each input's first-receipt time --- so the immutable
+record fixes both the full inclusive input and the discarded boundary
+receipts.  This is one of the paper's two deliberate strict thresholds
+against the inclusive view convention of
+Assumption~\ref{ass:recovery-network}, whose boundary-irrelevance
+sentence is scoped to delivery deadlines, not to schedule cutoffs; the
+other is the timeliness test of Definition~\ref{def:stable-root}, a
+strict receipt condition evaluated inside the inclusive vote-time
+view.  The selection exclusion keeps the round's own proposal,
 broadcast at \(d_r\), out of the state that chose its root, and the
 single-signer rule covers the proposal as it covers every scheduled
 action.  The grade
@@ -1083,7 +1091,7 @@ and which conflicts with no finalized root whose evidence the proposer
 has processed --- the same processed-finality guard every grade use
 obeys --- and supplies a \emph{grade-2 witness}: a set of signed preceding-round SG
 heads of weight at least \(m\), each supporting \(A_p^r\).  Witness
-validity is positive-only --- signatures, round, and eligibility --- and
+validity is positive-only --- signatures and the eligible round --- and
 never asserts the absence of other messages from the proposer's view;
 the receiver's own raw \(\Gone_u\) predicate, whose favorable counting
 tolerates equivocation copies the proposer may have omitted, supplies the
@@ -1437,8 +1445,9 @@ one proposal every honest voter acts on.
 
 \begin{proof}
 Three conditions make a proposal the distinguished proposal at a
-receiver (Definition~\ref{def:recovery-proposal}): the receiver's
-vote-time view contains it, it is the receiver's local selection winner,
+receiver (Definition~\ref{def:recovery-proposal}): it is the
+receiver's local selection winner, it is timely --- received strictly
+before the vote time, which puts it in the inclusive vote-time view ---
 and the discard-both wrapper does not fire.  The honest proposal,
 broadcast at \(d_r\), reaches every honest validator strictly before
 the vote time \(d_r+\Delta\) by
@@ -1812,8 +1821,9 @@ skips every source-state option: it uses \(Y_i=Q_i^r\) and
 \(\sigma_i=\bar\sigma_i=\sigma_a[Q_i^r]\) directly when its deepest
 official confirmation \(Q_i^r\) is nonempty, with the same
 \(k_i,\nu_i,T_i\) assignments as below, and emits no current-height
-pair when \(Q_i^r\) is empty.  When local winners differ or a winner
-equivocated, recognition may differ between honest validators, so this
+pair when \(Q_i^r\) is empty.  When local winners differ, a winner
+is untimely, or a winner equivocated, recognition may differ between
+honest validators, so this
 branch is per-validator; the common-context results below therefore
 always require universal recognition, stated as a premise by
 Definition~\ref{def:usable-honest-round} and discharged at
@@ -2085,7 +2095,9 @@ proof.  Figure~\ref{alg:recovery-action} summarizes one recovery round.
     \State build, sign, and broadcast the valid proposal extending that parent
   \EndIf
   \State at \(X^1\), compute G3 and G1
-  \State validate the unique timely proposal; use none if the vote-time view holds two signed round proposals
+  \State select the winning eligible proposal in the inclusive
+    vote-time view; recognize it only if timely; use none if that
+    view holds two signed round proposals from its proposer
   \State merge only the accepted proposal's ordinary Goldfish view
   \State run ordinary vote-time GHOST and broadcast the raw Goldfish vote
   \State at \(X^2\), compute G0 and freeze the first slot's support view

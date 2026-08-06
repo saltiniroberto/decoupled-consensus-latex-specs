@@ -1221,8 +1221,9 @@ local time \(t\).  Define its first receipt time by
  r_S(x)=\min\{t:\mathsf{received}(x,t)\in S.\mathsf{receipts}\},
 \]
 with \(r_S(x)=\infty\) if the set is empty.  A completed-action record
-\((u,I,M,\Pi,y)\) contains the actor, scheduled action, exact deadline input,
-predecessor records \(\Pi\), and fixed result \(y\).
+\((u,I,M,\tau,\Pi,y)\) contains the actor, scheduled action, exact
+deadline input, the first-receipt time \(\tau=r_S|_M\) of each input
+element, predecessor records \(\Pi\), and fixed result \(y\).
 
 The blocks, attestations, objects, receipt facts, and completed-action
 records are sets.  Every completed-action record in \(S\) has first component \(u\), and
@@ -1239,12 +1240,20 @@ action record.  Its input is
 \[
  M_I(S)=
  \{x:r_S(x)\leq d_I\ \text{and}\ r_S(z)\leq d_I
-       \text{ for every dependency }z\text{ needed to interpret }x\}.
+       \text{ for every non-genesis dependency }z\text{ needed to interpret }x\}.
 \]
-The dependency condition includes the full known block ancestry.  The
+The dependency condition includes the full known block ancestry;
+genesis and its stipulated state are protocol constants, not received
+dependencies, so the closure terminates at genesis without a receipt
+requirement.  The
 \(S\) in this formula is the exact store held at the deadline, and
-the record stores \(M_I(S)\) explicitly; a later merge
-does not reinterpret that past view.  A required predecessor that is absent
+the record stores \(M_I(S)\) explicitly, together with the
+first-receipt time \(r_S(x)\) of each element, so every sub-view of
+the input --- in particular the strict pre-deadline sub-view that one
+scheduled derivation uses --- is a function of the record.  A later
+merge does not reinterpret that past view: the recorded receipt times
+are frozen with the record, even though a merge can lower the live
+\(r_S\) of the same objects.  A required predecessor that is absent
 or non-unique makes the deterministic result \(\mathsf{abstain}\).  After the
 deadline, a missing record means that actor missed the action; it is not
 synthesized later.  No ``open action'' event and no fact for a future action
@@ -1253,7 +1262,11 @@ actually received and action records only for deadlines already reached.
 An honest actor runs one signing process: for each scheduled action,
 exactly one replica --- the actor's active one --- computes the record
 and releases any signature in its result, while a passive replica stores
-and merges data but never completes a signing action.  Divergent
+and merges data but never completes a signing action.  The active role
+moves only to a replica that has merged the currently active store, so
+absent storage recovery an honest actor's active view is monotone:
+evidence processed by one active replica is processed by every later
+one.  Divergent
 completed histories for one action therefore arise only from recovery of
 the actor's own storage, never from two live signers, and one honest
 identity never releases two signed results for one action.  The merge
@@ -1296,7 +1309,14 @@ requires one predecessor result uses it only when it has a unique
 history-compatible predecessor; otherwise that operation records
 \(\mathsf{abstain}\) at its deadline.  A history-compatible predecessor tuple
 contains exactly one required record for each predecessor action and follows
-the exact predecessor names recursively recorded in those records.  Merge
+the exact predecessor names recursively recorded in those records.  A
+record whose own predecessor component is \(\bot\) is a complete
+record for its action --- the recursive condition is vacuous at
+\(\bot\) --- so an abstention never disqualifies its record from
+serving as a predecessor.  The recursively reachable records must also
+agree on every shared predecessor: two reachable records naming one
+action must be equal, so a tuple cannot be assembled from individually
+valid branches that disagree about a shared ancestor.  Merge
 does not manufacture a common past action,
 combine local facts from different actors, or guarantee a continuation from
 two divergent completed executions.  Signed equivocations remain evidence.
@@ -1331,9 +1351,9 @@ provable fault.
 \begin{theorem}[Store merge is associative, commutative, and idempotent]
 \label{thm:store-merge}
 On compatible replicas of one actor, \(\sqcup\) is associative, commutative,
-and idempotent, and both the merged logical evidence and the receipt cutoff
-\(M_I(S)\) of every still-pending action are therefore independent of merge
-order.  The operation does not require the store
+and idempotent, and the merged logical evidence, the receipt cutoff
+\(M_I(S)\) of every still-pending action, and its restricted
+first-receipt map are therefore independent of merge order.  The operation does not require the store
 from which its inputs were copied, and it does not identify distinct
 completed histories.
 
@@ -1347,10 +1367,12 @@ input.  The five evidence and history components --- blocks,
 attestations, objects, receipts, and completed-action records --- use
 set union, and the clock uses maximum.  Both operations are associative, commutative, and idempotent.
 The first-receipt value \(r_S(x)\) is the minimum timestamp in the resulting
-union, so \(M_I(S)\) is also independent of merge order.  The live predicate
+union, so \(M_I(S)\) and its restricted first-receipt map
+\(\tau_I=r_S|_{M_I(S)}\) are also independent of merge order.  The
+live predicate
 is a deterministic filter at the maximum clock.  A pending action with unique
-compatible predecessors is a deterministic function of that cutoff and
-those predecessors.  Completed records are retained rather than recomputed.
+compatible predecessors is a deterministic function of \(M_I(S)\),
+\(\tau_I\), and those predecessors.  Completed records are retained rather than recomputed.
 The theorem makes no non-abstention claim for a successor of divergent
 completed histories or any claim for a merge between different actors.
 \end{proof}
@@ -1360,40 +1382,48 @@ completed histories or any claim for a merge between different actors.
 If compatible replicas belong to actor \(u\), no input store has completed
 \(u\)'s action \(I\), every input clock is at most \(d_I\), and the merged
 store has one history-compatible result for every predecessor of \(I\), every
-finite merge order gives \(I\) the same deadline input \(M_I\) and maximum
-clock.
+finite merge order gives \(I\) the same deadline input \(M_I\), the
+same restricted first-receipt map \(\tau_I=r_S|_{M_I}\), and the same
+maximum clock.
 
 In plain words, all by-deadline objects and already-known dependencies can be
 combined before an action without making it depend on merge order.
 \end{corollary}
 
 \begin{proof}
-This is the set-union and maximum part of
+This is the set-union, minimum-timestamp, and maximum-clock part of
 Theorem~\ref{thm:store-merge}.
 \end{proof}
 
 \begin{definition}[Total raw-block replay]\label{def:total-raw-replay}
 For a stored signed object whose parent has an accepted state, the
 \emph{structural precheck} first verifies canonical decoding, the proposer
-signature and slot assignment, a slot strictly greater than the parent's,
+signature and slot assignment, the absence of self-reference required by
+Definition~\ref{def:block-chain}, a slot strictly greater than the
+parent's,
 the canonical finite attestation list, and every stateless attestation check
 in Definition~\ref{def:valid-attestation-inclusion}.  A failed precheck
 classifies that object as invalid for state derivation without removing it
 from the raw store.
 
-In addition, a block is \emph{slot-eligible} in a view exactly when its
-slot's scheduled start is at or before that view's time --- the store
-clock \(S.\mathsf{time}\) for the main store, the cutoff for a
-deadline sub-view.  A block that is not slot-eligible is not given to
+In addition, a block is \emph{slot-eligible} in a view exactly when
+its slot's scheduled start is admitted by that view's time bound:
+at or before the store clock \(S.\mathsf{time}\) for the main store
+and for inclusive deadline sub-views, and strictly before the cutoff
+for the one exclusive sub-view, the selection state of
+Definition~\ref{def:recovery-timing} --- eligibility inherits the
+deriving view's admission polarity.  A block that is not slot-eligible is not given to
 the transition and remains queued raw, exactly as an unknown-parent
-object does; it becomes eligible when the clock reaches its slot.  This
+object does; it becomes eligible once the deriving view's bound admits
+the slot start.  This
 is the in-limbo rule of the Goldfish source, which keeps future-slot
 messages outside the protocol view until their slot begins.  Eligibility
 is monotone: a merge takes the maximum of the two clocks, so a block
 eligible in a view is eligible in every later view.  Every derived
 state, including the fork-choice state of
 Section~\ref{sec:fork-choice-state}, therefore ranges only over
-accepted blocks whose slots have begun by the deriving view's time.
+accepted blocks whose slot starts are admitted by the deriving view's
+time bound.
 
 Only an object that passes this precheck is given to
 \textsc{state\_transition}.  The transition is evaluated as a total
@@ -1556,14 +1586,15 @@ merge of two replicas.
     \State \Return \(S\) \Comment{Pending before; missed after}
   \EndIf
   \State \(M_I\gets\{x:r_S(x)\leq\mathsf{deadline}(I)\ \text{and every
-    dependency \(z\) needed to interpret \(x\) has }
+    non-genesis dependency \(z\) needed to interpret \(x\) has }
     r_S(z)\leq\mathsf{deadline}(I)\}\)
   \State \(\Pi_I\gets\) the unique history-compatible required predecessor
     records, if they exist; otherwise \(\bot\)
-  \State \(y_I\gets\rho_I(M_I,\Pi_I)\), or \(\mathsf{abstain}\)
+  \State \(\tau_I\gets\) the restriction of \(r_S\) to \(M_I\)
+  \State \(y_I\gets\rho_I(M_I,\tau_I,\Pi_I)\), or \(\mathsf{abstain}\)
     if \(\Pi_I=\bot\) \Comment{\(\rho_I\) is the deterministic
     rule fixed by \(I\)'s defining protocol action}
-  \State add \((u,I,M_I,\Pi_I,y_I)\) to
+  \State add \((u,I,M_I,\tau_I,\Pi_I,y_I)\) to
     \(S.\mathsf{completed\_actions}\)
   \State \Return \(S\)
 \EndFunction
