@@ -2158,7 +2158,7 @@ and affects no honest selection.  The guarded height \(H\) is the
 entry condition with its own recorded finalized height, so \(H\) is
 nonjustifiable on every such branch.  The height below \(H\) is
 ordinary on every branch: \(K\mid H\) and \(K\geq2\) give
-\(K\nmid H-1\), and the nonjustifiable latch requires
+\(K\nmid H-1\), and the flag \(\nj\) is set only at heights with
 \(K\mid h\), so \(\nj=\mathsf{false}\) at \(H-1\) regardless
 of any branch's recorded debt.
 
@@ -2397,7 +2397,7 @@ of the following holds.
 \begin{enumerate}
  \item \(H-h'>D_{\rm debt}\).  Then every branch entering height \(H\)
    while every finalized height yet activated satisfies the same debt
-   condition --- that is, before any later case-2 advance --- latches
+   condition --- that is, before any later case-2 advance --- sets
    \(\nj=\mathsf{true}\), and every
    result stated under ``height \(H\) is nonjustifiable'' continues to
    hold over that span.
@@ -2430,16 +2430,16 @@ healing goal or moves the guarded height one period up.
 \end{lemma}
 
 \begin{proof}
-Definition~\ref{def:nonjustifiable} latches
+Definition~\ref{def:nonjustifiable} sets
 \(\nj=(K\mid H)\wedge(H-h_F>D_{\rm debt})\) at entry, from the entering
-transition's post-finality state, and the latch is immutable until the
+transition's post-finality state, and the flag then stays fixed until the
 next height transition.  \(K\mid H\) holds by the choice of \(H\).
 Activated finalized heights are monotone along one chain by
 Lemma~\ref{lem:finalized-chain}, so in case~1 every finalized height a
 branch can record at entry --- the pre-window value or any advanced value
-up to \(h'\) --- satisfies the debt inequality, every entrant latches
-\(\nj=\mathsf{true}\), and branches that entered earlier keep their
-latch.  For case~2, the first subcase restates the advance itself; the
+up to \(h'\) --- satisfies the debt inequality, every entrant sets
+\(\nj=\mathsf{true}\), and branches that entered earlier keep the
+flag.  For case~2, the first subcase restates the advance itself; the
 second subcase makes no claim beyond the arithmetic of the re-target ---
 \(H\) fails the debt condition against \(h'\), the least qualifying
 \(H''\) satisfies \(H''\leq h'+D_{\rm debt}+K\), and re-targetings are
@@ -2485,9 +2485,9 @@ hypothesis again.
 \begin{proof}
 A justification enters an honest state only on a branch the validator has
 admitted, and an admitted branch is relevant by definition.  A branch
-fixes its nonjustifiable latch at its height-\(H\) entry from its own
+fixes its nonjustifiable flag at its height-\(H\) entry from its own
 on-chain post-finality state (Definition~\ref{def:nonjustifiable}), and
-every descendant still at height \(H\) inherits the latch.  A relevant
+every descendant still at height \(H\) inherits the flag.  A relevant
 branch entering \(H\) satisfies the debt condition at entry: for a branch
 entering before the window this is
 Assumption~\ref{ass:frontier-opportunities}; a branch entering during

@@ -580,7 +580,7 @@ quorum tallies used to leave that height.
 \end{definition}
 
 \begin{definition}[Nonjustifiable height]\label{def:nonjustifiable}
-When a chain enters height \(h\), it latches
+When a chain enters height \(h\), it sets
 \[
  \nj \;=\; (K\mid h)\ \wedge\ (h-h_F>D_{\rm debt})
 \]
@@ -664,7 +664,7 @@ exactly two disclosed items: the progress contribution in
 Definition~\ref{def:vote-contribution}, which accepts an empty target or a
 nonempty target ancestral to the including parent, and the periodic
 nonjustifiable-height guard of Definition~\ref{def:nonjustifiable}, which
-latches the flag \(\nj\) in the chain state and disables the
+sets the flag \(\nj\) in the chain state and disables the
 justification branch at flagged heights.
 
 In plain words, every included attestation reaches the next direct check,
