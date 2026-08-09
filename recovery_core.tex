@@ -386,7 +386,7 @@ choices, not the counted weights: at each fork, a child's weight
 counts every known vote for blocks in that child's subtree of the full
 known block tree, whether or not those blocks are in the candidate
 tree.  Fork weights are therefore independent of each validator's
-viability view, so equal vote views give equal weights.  (Goldfish has
+viability view, so equal counted vote sets give equal weights.  (Goldfish has
 no viability filter, so the counting rule agrees with the source's on
 Goldfish's own trees.)  Blocks on the accepted proposal's path --- the
 proposed root \(A_p^r\) through the parent \(Z_p^r\) to the
@@ -1505,9 +1505,12 @@ its merged proposal view, and extends \(Z\) with block \(B\); every honest
 committee member receives the proposal by the vote time, merges exactly
 the proposal's carried view into its own frozen slot view, and no honest
 committee member wakes or alters its frozen view between that freeze and
-its vote.  Then every honest committee member's merged vote-time view
-equals the proposer's published view together with \(B\), and its GHOST
-walk from the proposer's root \(A\) votes for the exact block \(B\).
+its vote.  Then the votes counted at every honest committee member's
+vote time are exactly those of \(\mathcal V_{p,\rm GF}^r\), every
+counted vote's target resolves at every honest committee member to the
+same block as at the proposer, and every honest committee member's
+GHOST walk from the proposer's root \(A\) votes for the exact block
+\(B\).
 
 The source~\cite{goldfish} proves the corresponding
 genesis-rooted property --- its view-merge lemma, in the analysis
@@ -1518,8 +1521,9 @@ the source's; Remark~\ref{rem:view-merge-discharge} records why
 recovery meets the hypotheses and how the rooted form follows.
 
 In plain words, an honest proposer that includes everything and is
-recognized by everyone hands every honest voter its exact view, so every
-honest vote names its block.  Safety of confirmations does not rest on
+recognized by everyone hands every honest voter its exact counted vote
+set, and carries the blocks those votes name, so every honest vote
+names its block.  Safety of confirmations does not rest on
 this assumption; it comes from Section~\ref{sec:available-confirmation}.
 \end{assumption}
 
@@ -1530,10 +1534,12 @@ Assumption~\ref{ass:recovery-network}: the preceding slot-view freeze is
 one delivery bound before the proposal, so everything an honest member
 held at that freeze has reached the proposer.  The no-wake clause is
 immediate during recovery, where every honest validator is awake
-throughout.  The rooted form follows because equal merged views make the
-walk from the proposer's root replay the proposer's own choice sequence;
-that lift is part of this paper's interface and is not attributed to the
-source.
+throughout.  Target resolution agrees because the carried view is
+consistent and, under Assumption~\ref{ass:crypto}, distinct objects
+have distinct roots.  The rooted form follows because equal counted
+vote sets with agreeing target resolutions make the walk from the
+proposer's root replay the proposer's own choice sequence; that lift is
+part of this paper's interface and is not attributed to the source.
 \end{remark}
 
 \begin{lemma}[A forward root on the proposer's path returns the same vote]
@@ -1551,7 +1557,8 @@ change the vote.
 \end{lemma}
 
 \begin{proof}
-All merged vote-time views are equal by
+All counted vote sets are equal, and every counted vote's target
+resolves to the same block everywhere, by
 Assumption~\ref{ass:recovery-goldfish}, so the vote weights at every fork
 are equal at every honest validator, and the proposer's walk from \(A\)
 is one fixed sequence of child choices whose visited path is the chain
@@ -1561,7 +1568,7 @@ in the proposer's selection tree; \(B\), the fresh child of \(Z\), is
 created at \(d_r\) and enters no selection tree.  A receiver's walk chooses within its candidate tree, but by the
 counting rule of Definition~\ref{def:counting-rule} each child's
 weight counts every known vote through the full known block tree, so
-with equal merged vote views the weight of every child is the same
+with equal counted vote sets the weight of every child is the same
 number at the proposer and at every receiver, whatever their candidate
 trees.  The premise keeps the path to \(B\) inside the receiver's tree.
 At each fork the proposer visited strictly before \(Z\), the chosen
@@ -1617,7 +1624,8 @@ the chain segment from \(A_p^r\) through \(Z_p^r\), and unobstructedness keeps
 that root and \(B\) in the receiver's candidate tree.  Every honest voter
 recognizes the proposal and applies the ordinary proposal-view merge.
 Assumption~\ref{ass:recovery-goldfish} therefore gives every receiver the
-proposer's exact merged view, and Lemma~\ref{lem:forward-root} makes the
+proposer's exact counted vote set with agreeing target resolutions, and
+Lemma~\ref{lem:forward-root} makes the
 receiver's vote-time GHOST return \(B\), even when its candidate tree
 starts after \(A_p^r\).
 \end{proof}
