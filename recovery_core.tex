@@ -783,8 +783,13 @@ by \(d+3\Delta\); in particular its signer is a participant in \(V_v^+\).
 The same holds with \(u\) and \(v\) exchanged.  Now suppose one member
 \(i\) is counted by both \(\operatorname{ts}_u(B)\) and \(\operatorname{ts}_v(B')\).  Then \(u\) holds a
 vote by \(i\) in \(B\)'s subtree and \(v\) holds a vote by \(i\) in
-\(B'\)'s subtree.  Conflicting blocks have disjoint subtrees,
-so these are two distinct votes by \(i\); both were relayed by
+\(B'\)'s subtree.  Conflicting blocks have disjoint subtrees, and both
+evaluators resolve any counted vote to the same target --- a counted
+vote's required ancestry is relayed with it under
+Assumption~\ref{ass:recovery-network}, and, under
+Assumption~\ref{ass:crypto}, distinct objects have distinct roots ---
+so one vote cannot lie in both, and these are two distinct votes by
+\(i\); both were relayed by
 \(d+3\Delta\), so both are in \(V_u^+\) and in \(V_v^+\) at
 \(e=d+6\Delta\), and \(i\) visibly equivocates in both evaluation views.
 Then \(\operatorname{supp}_{V_u^+}(i,B)\) fails, contradicting the count
@@ -819,8 +824,15 @@ in \(X_w\).  Then \(w\) received two distinct votes by \(i\) no later than
 \(e-\Delta\) and relayed them under Assumption~\ref{ass:recovery-network},
 so both are in \(V_u^+\) at \(e\), and \(i\) visibly equivocates there ---
 contradicting \(\operatorname{supp}_{V_u^+}(i,B)\) in the count of
-\(\operatorname{ts}_u(B)\).  Hence \(X_w\) holds exactly one vote by \(i\); that vote is
-the one in \(B\)'s subtree, so \(\operatorname{supp}_{X_w}(i,B)\) holds.
+\(\operatorname{ts}_u(B)\).  Hence \(X_w\) holds exactly one vote by \(i\), the one
+counted at \(u\).  That vote was interpretable in \(V_u^-\), so the
+store's dependency rule placed its target block and full ancestry ---
+including \(B\) --- in \(u\)'s store by the support freeze
+\(f=d+2\Delta\); the vote was relayed with that ancestry under
+Assumption~\ref{ass:recovery-network},
+and, under Assumption~\ref{ass:crypto}, distinct objects have distinct
+roots, so \(w\) resolves it under \(B\) and
+\(\operatorname{supp}_{X_w}(i,B)\) holds.
 
 Every participant in \(X_w\) has a vote that \(w\) received by
 \(e-\Delta\); \(w\)'s relay puts it in \(V_u^+\) by \(e\), so every
