@@ -194,8 +194,9 @@ The action in round \(r+1\), which grades round \(r\)'s SG heads, is the
 \emph{closing action} for round \(r\)'s proposal.
 The public round spacing satisfies
 \[
-  a_r+\Delta\leq d_{r+1}-\Delta,
+  a_r+\Delta\leq d_{r+1}-\Delta
 \]
+for every round, the relay point \(a_0\) included,
 so every honest SG head released in round \(r\) reaches every honest
 validator before the first grade view of round \(r+1\).
 
@@ -441,7 +442,11 @@ own frozen slot view, never an SG head or grade view.
 \label{lem:aged-containment}
 Suppose an honest receiver and an honest round proposer have equal store
 maxima, equal active finality outcomes, and equal processed finalized
-evidence at their round-\(r\) cutoffs.  Then the receiver's aged
+evidence at their round-\(r\) cutoffs.  Equality is meant statewise at
+each compared cutoff: the receiver's grade-root selection state and its
+first-slot vote-time state each agree with the proposer's selection
+state on the store maximum, the active justified and finalized pairs,
+and the processed finalized-evidence set.  Then the receiver's aged
 candidate tree --- its grade-root selection tree and its first-slot
 vote-time tree, excluding the exempted proposal path --- is a subtree of
 the proposer's selection tree.
@@ -457,12 +462,21 @@ received and accepted, with its full ancestry, by the receiver's cutoff
 \(a_{r-1}\).  Each block of that ancestry was received by the receiver
 by \(a_{r-1}\) and relayed on receipt together with its required
 ancestry (Assumption~\ref{ass:recovery-network}), so the proposer
-received and accepted every one of them strictly before
-\(a_{r-1}+\Delta\leq d_r\), and the witness is accepted in the
+received every one of them strictly before \(a_{r-1}+\Delta\leq d_r\);
+by the store's dependency rule the proposer's deterministic replay
+(Definition~\ref{def:total-raw-replay}) then accepts the same blocks
+with the same derived states, and the witness is accepted in the
 proposer's selection state.  With equal maxima, active finality
 outcomes, and processed evidence, the viability threshold and the
-selection root agree, so the witness places the same blocks in the
-proposer's selection tree.
+selection-root identifier agree; the relayed ancestry placed the
+receiver's root block in the proposer's store, and, under
+Assumption~\ref{ass:crypto}, distinct objects have distinct roots, so
+both stores resolve the shared identifier to the same block and the
+selection roots agree as blocks.  Since state-height is nondecreasing
+along an accepted chain, the witness has an accepted leaf descendant
+--- possibly itself --- of state-height at least the threshold, so the
+witness's subtree is viable and the witness places the same blocks in
+the proposer's selection tree.
 \end{proof}
 
 \begin{lemma}[Every recovery walk is total]
