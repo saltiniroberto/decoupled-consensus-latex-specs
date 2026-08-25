@@ -1,0 +1,1353 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{enumitem}
+\usepackage[noend]{algpseudocode}
+\usepackage{capt-of}
+\usepackage{float}
+\usepackage{boxedminipage}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+\makeatletter
+\providecommand*{\theHALG@line}{}
+\renewcommand*{\theHALG@line}{\thefigure.\arabic{ALG@line}}
+\makeatother
+\pagestyle{plain}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\floatpagefraction}{0.8}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% Objects and fields.
+\newcommand{\genesis}{B_{\mathrm{gen}}}
+\newcommand{\slot}{\operatorname{slot}}
+\newcommand{\parent}{\mathsf{parent}}
+\newcommand{\validator}{\mathsf{validator}}
+\newcommand{\round}{\mathsf{round}}
+\newcommand{\confirmedf}{\mathsf{confirmed}}
+\newcommand{\height}{\mathsf{height}}
+\newcommand{\target}{\mathsf{target}}
+\newcommand{\proposalRoot}{\mathsf{proposal\_root}}
+\newcommand{\rootf}{\mathsf{root}}
+\newcommand{\committee}{\mathcal K}
+
+% Chain state.
+\newcommand{\targetParticipation}{\mathsf{target\_participation}}
+\newcommand{\progressBit}{\mathsf{progress}}
+\newcommand{\finalityBit}{\mathsf{finalize}}
+\newcommand{\Qtarget}{Q_{\mathrm{target}}}
+\newcommand{\Qprog}{Q_{\mathrm{prog}}}
+\newcommand{\Qfin}{Q_{\mathrm{finality}}}
+\newcommand{\nj}{\mathsf{nj}}
+
+% Store and fork choice.
+\newcommand{\T}{\mathcal T}
+\newcommand{\liveTree}{\mathcal T_F}
+\newcommand{\viableTree}{\mathcal V}
+\newcommand{\hmax}{h_{\max}}
+\newcommand{\processedFinality}{\mathcal E_F}
+\newcommand{\gfPool}{\mathsf{gf\_votes}}
+\newcommand{\sgPool}{\mathsf{sg\_votes}}
+\newcommand{\fname}[1]{\text{\textsc{#1}}}
+\newcommand{\liveConfirmed}{\mathsf{live\_confirmed}}
+\newcommand{\latestConfirmed}{\mathsf{latest\_confirmed}}
+\newcommand{\timestamp}{\mathsf{timestamp}}
+\newcommand{\freshRoot}{\mathsf{fresh\_root}}
+
+% Grades.
+\newcommand{\Gthree}{\mathsf{G3}}
+\newcommand{\Gtwo}{\mathsf{G2}}
+\newcommand{\Gone}{\mathsf{G1}}
+\newcommand{\Gzero}{\mathsf{G0}}
+
+\title{Decoupled consensus}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Common substrate}\label{sec:substrate}
+
+A fixed validator set~$V$ is given.  Slot~$s$ starts at $t_s=4\Delta s$ and
+has an assigned proposer and a fixed committee $\committee_s\subseteq V$.
+After~$t_{\rm GST}$, $\Delta$ is a strict delivery bound, and an honest node
+relays every object it processes.  A scheduled action uses the store
+immediately before its public time.
+
+Every block~$B$ has a root~$B.\rootf$, slot~$B.\slot$, and parent~$B.\parent$.
+Processed blocks form a parent-closed tree rooted at~$\genesis$.  Write
+$B\preceq C$ when $B=C$ or $B$ is an ancestor of~$C$, and write $B\prec C$
+for strict ancestry.  Two blocks are compatible when one is an ancestor of
+the other, and they conflict otherwise.
+The depth of a block is the number of parent edges from genesis.  ``Deepest''
+means maximum depth; ties use a fixed root order.
+
+$\Sigma.\timestamp(x)$ is the time at which object~$x$ is processed into the
+store.
+
+\section{Goldfish available chain}\label{sec:goldfish}
+
+This section defines block-only Goldfish: the store, view merge, one-slot fork
+choice, and available confirmation.  Later sections add fields to this store
+and add lines to these handlers; they never rename either.
+
+\subsection{Schedule and wire objects}\label{sec:goldfish-schedule}
+
+Slot~$s$ has these public actions:
+\[
+\begin{array}{c@{\qquad}l}
+ t_s             & \text{proposal},\\
+ t_s+\Delta      & \text{Goldfish vote},\\
+ t_s+2\Delta     & \text{support cutoff},\\
+ t_s+3\Delta     & \text{view freeze},\\
+ t_s+6\Delta     & \text{slot-$s$ confirmation evaluation}.
+\end{array}
+\]
+Because $t_s+6\Delta=t_{s+1}+2\Delta$, the last action is also the support
+action of slot~$s+1$.
+
+A Goldfish vote is a tuple $(v,s,B)$ from validator $v\in\committee_s$ with
+head~$B$, where $B.\slot\leq s$.  A block~$B$ carries $B.\parent$,
+$B.\slot$, and a set $B.\gfPool$ of slot-$(B.\slot-1)$ Goldfish votes.  There
+is no proposal envelope: the block is the only wire object a proposer emits,
+and $B.\gfPool$ is the only relay channel in the protocol.
+
+\subsection{Store}\label{sec:goldfish-store}
+
+\begin{definition}[Store]\label{def:store}
+The store is
+\[
+\begin{split}
+ \Sigma=(&t,s,\T,\timestamp[\cdot],\gfPool[\cdot],\\
+  &\liveConfirmed,\latestConfirmed).
+\end{split}
+\]
+$\Sigma.\T$ is the tree of processed blocks and $\Sigma.\gfPool[k]$ the set
+of processed slot-$k$ votes.  Both are timestamped.
+$\Sigma.\gfPool[k]$ keeps at most two distinct votes per validator, which is
+all any rule reads.  $\Sigma.\liveConfirmed$ is the block the last evaluated
+slot confirmed. $\Sigma.\latestConfirmed$ is the
+monotone record the node exposes; no rule in this protocol reads it.
+
+Initially $\Sigma.\T=\{\genesis\}$,
+$\Sigma.\timestamp(\genesis)=-\infty$, and
+$\Sigma.\liveConfirmed=\Sigma.\latestConfirmed=\genesis$; other fields are
+empty.
+\end{definition}
+
+The store keeps messages and their timestamps, and nothing else. Every rule
+below is a timestamp comparison on this one pool.  A validator has equivocated
+as of~$t$ when $\Sigma.\gfPool[k]$ holds two of its votes both timestamped
+before~$t$, so its \emph{equivocation-detection time} is the later of the
+two timestamps, and one cutoff decides which votes are timely and which
+equivocations are.
+
+$\Call{process\_block}{\Sigma,B}$ and
+$\Call{process\_goldfish\_vote}{\Sigma,\mathit{vote}}$
+run once per object.  A block is processed after its parent.  A vote is
+processed on receipt, whether or not the store holds its head; a vote is
+\emph{resolved} when it does.  For a vote with head~$H$, the
+\emph{resolution time} is
+\[
+ \tau(\mathit{vote})=\max\{\Sigma.\timestamp(\mathit{vote}),\
+ \Sigma.\timestamp(H)\},
+\]
+infinite while $H$ is missing.
+
+\subsection{View merge}\label{sec:view-merge}
+
+To run the Goldfish fork-choice in slot $s$, a voter at $t_s+\Delta$ uses 
+the slot-$(s-1)$ votes it saw before the "freeze time" (based on the resolution time)
+at $t_{s-1}+3\Delta$, together with the resolved votes from the current
+block proposal, if there is one. Equivocators (validators with two distinct votes in the
+resolved vote set used by the walk) are counted as voting for every block.
+
+The proposer does not apply the freeze, and instead simply uses all
+resolved votes in the pool when running the fork-choice at $t_s$.
+
+\subsection{Goldfish fork-choice}\label{sec:one-slot-ghost}
+
+\begin{definition}[Goldfish score and walk]\label{def:goldfish-walk}
+Fix a vote slot~$s$ and a set $\mathit{votes}$ of slot-$s$ votes.
+Validator $v\in\committee_s$ \emph{equivocates} when
+$\mathit{votes}$ holds two of its distinct votes, and \emph{participates}
+when it holds at least one; write $N_s(\mathit{votes})$ for the participants.
+$\Call{goldfish\_score}{\mathit{votes},s,B}$ counts every equivocator plus
+every non-equivocating participant whose head descends from~$B$.  An
+equivocator counts for every block and stays among the participants:
+discovering an equivocation cannot make a majority-eligible block
+ineligible, though it can make another block newly eligible.  A non-equivocating validator counts
+once, in one subtree.
+
+Throughout this document, we use this as a building block:
+\[
+ \Call{ghost}
+ {\mathit{anchor},\mathit{tree},\mathit{score},\mathit{eligible}},
+\]
+where $\mathit{score}$ is a function on blocks and $\mathit{eligible}$ a
+predicate on blocks.  It descends from $\mathit{anchor}$ through eligible
+children in $\mathit{tree}$, taking the highest score at each step, and stops
+where no child is eligible.
+
+Goldfish instantiates the walk with
+$\fname{goldfish\_score}(\mathit{votes},s,\cdot)$ and the eligibility
+condition
+\[
+\begin{split}
+ \Call{goldfish\_eligible}{\Sigma,\mathit{votes},s,B}\iff{}
+ &2\,\Call{goldfish\_score}{\mathit{votes},s,B}>\mathit{voters\_count}\\
+ &\text{or }B.\slot=\Sigma.s,
+\end{split}
+\]
+with $\mathit{voters\_count}=
+|\{v\in\committee_s:\mathit{votes}\text{ holds a vote by }v\}|$.
+The majority condition enforces timeliness and other fork-choice conditions, like FOCIL inclusion. It only does not apply to
+proposals from the current slot, which cannot yet have votes.
+\end{definition}
+
+At slot~$0$ the vote set is empty, no child is eligible, and the head is
+genesis.
+
+\captionof{figure}{Goldfish score and walk}\label{alg:goldfish}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{goldfish\_score}{$\mathit{votes},s,B$}
+  \State $\mathit{equivocators}\gets\{v\in\committee_s:
+    \mathit{votes}\text{ holds two distinct votes by }v\}$
+  \State $\mathit{supporters}\gets
+    \{v\in\committee_s\setminus\mathit{equivocators}:
+    (v,s,B')\in\mathit{votes}\text{ with }B\preceq B'\}$
+  \State \Return $|\mathit{equivocators}|+|\mathit{supporters}|$
+  \Comment{equivocators count for every block}
+\EndFunction
+\vspace{1pt}
+\Function{ghost}{$\mathit{anchor},\mathit{tree},
+  \mathit{score},\mathit{eligible}$}
+  \State $H\gets\mathit{anchor}$
+  \Loop
+    \State $\mathit{children}\gets\{B:B\text{ is a child of }H\text{ in }
+      \mathit{tree},\ \mathit{eligible}(B)\}$
+    \If{$\mathit{children}=\emptyset$} \State \Return $H$ \EndIf
+    \State $H\gets\arg\max_{B\in\mathit{children}}\mathit{score}(B)$,
+      ties by root order
+  \EndLoop
+\EndFunction
+\vspace{1pt}
+\Function{goldfish\_eligible}{$\Sigma,\mathit{votes},s,B$}
+  \State $\mathit{voters\_count}\gets
+    |\{v\in\committee_s:\mathit{votes}\text{ holds a vote by }v\}|$
+  \State \Return $2\,\Call{goldfish\_score}{\mathit{votes},s,B}
+    >\mathit{voters\_count}$ or $B.\slot=\Sigma.s$
+\EndFunction
+\vspace{1pt}
+\Function{goldfish\_fork\_choice}{$\Sigma,\mathit{anchor},\mathit{tree},
+  \mathit{votes},s$}
+  \State \Return $\Call{ghost}{\mathit{anchor},\mathit{tree},
+    \fname{goldfish\_score}(\mathit{votes},s,\cdot),
+    \fname{goldfish\_eligible}(\Sigma,\mathit{votes},s,\cdot)}$
+\EndFunction
+\vspace{1pt}
+\Function{get\_head}{$\Sigma,\mathit{votes},s$}
+  \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,\genesis,\Sigma.\T,
+    \mathit{votes},s}$
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{Duties and handlers}\label{sec:goldfish-handlers}
+
+Figure~\ref{alg:goldfish-store} defines the store handlers and the two duties.
+The handlers take the store and change it in place.  Only the two duties
+concern the validator running the node, written~$\ell$; a node whose $\ell$
+holds no duty for the slot simply does not run them.
+
+\captionof{figure}{Goldfish duties and store handlers}
+\label{alg:goldfish-store}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{on\_tick}{$\Sigma,t$}
+  \State $s\gets\lfloor t/(4\Delta)\rfloor$; $(\Sigma.t,\Sigma.s)\gets(t,s)$
+  \If{$s>0$ and $t=t_s$ and $\ell$ is the slot-$s$ proposer}
+    \State \Call{propose\_block}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+\Delta$}
+    \State \Call{goldfish\_vote}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+2\Delta$}
+    \State \Call{update\_confirmation}{$\Sigma,s-1$}
+  \EndIf
+\EndFunction
+\vspace{1pt}
+\Function{process\_block}{$\Sigma,B$}
+  \If{$B.\slot>\Sigma.s$} \State \Return \EndIf
+  \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
+  \ForAll{$\mathit{vote}\in B.\gfPool$}
+    \State \Call{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \EndFor
+\EndFunction
+\vspace{1pt}
+\Function{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \If{$\mathit{vote}.\slot>\Sigma.s$ or
+    $\mathit{vote}\in\Sigma.\gfPool[\mathit{vote}.\slot]$}
+    \State \Return \EndIf
+  \If{$\Sigma.\gfPool[\mathit{vote}.\slot]$ holds two distinct votes by
+    $\mathit{vote}.\validator$}
+    \State \Return
+    \Comment{two witness the equivocation; nothing reads a third}
+  \EndIf
+  \State add $\mathit{vote}$ to $\Sigma.\gfPool[\mathit{vote}.\slot]$;
+    $\Sigma.\timestamp(\mathit{vote})\gets\Sigma.t$
+\EndFunction
+\vspace{1pt}
+\Function{propose\_block}{$\Sigma$}
+  \State $s\gets\Sigma.s$
+  \Comment{runs at $t_s$}
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\Sigma.\gfPool[s-1]:
+    \mathit{vote}\text{ is resolved}\}$
+  \Comment{every resolved vote held}
+  \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},s-1}$
+  \State $B\gets$ a block with $B.\parent=H$, $B.\slot=s$,
+    $B.\gfPool=\mathit{votes}$
+    \Comment{everything, not only the pre-freeze part}
+  \State broadcast $B$; \Call{process\_block}{$\Sigma,B$}
+\EndFunction
+\vspace{1pt}
+\Function{goldfish\_vote}{$\Sigma$}
+  \State $s\gets\Sigma.s$
+  \Comment{runs at $t_s+\Delta$}
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\Sigma.\gfPool[s-1]:
+    \tau(\mathit{vote})<t_{s-1}+3\Delta\}$
+    \Comment{held before the freeze}
+  \ForAll{$B\in\Sigma.\T$ with $B.\slot=s$}
+    \State $\mathit{votes}\gets\mathit{votes}\cup
+      \{\mathit{vote}\in B.\gfPool:\mathit{vote}\text{ is resolved}\}$
+    \Comment{view merge}
+  \EndFor
+  \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},s-1}$
+  \If{$\ell\in\committee_s$}
+    \State $\mathit{vote}\gets(\ell,s,H)$; broadcast $\mathit{vote}$;
+      \Call{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \EndIf
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{Available confirmation}\label{sec:available-confirmation}
+
+Confirmation is the same walk over a stricter vote set and a larger
+denominator.  Let $\mathit{early}$ be the slot-$s$ votes with resolution
+times before $t_s+2\Delta$, and $\mathit{late}$ the slot-$s$ votes
+timestamped before $t_s+6\Delta$, whatever their resolution.  The walk scores
+\[
+ \mathit{votes}=\{\mathit{vote}\in\mathit{early}:
+  \mathit{vote}.\validator\text{ does not equivocate in }\mathit{late}\}
+\]
+against the participant count of $\mathit{late}$.  A validator counts when it
+voted in time and no second vote of its has appeared since; the denominator
+counts everyone who voted at all.
+
+Because $\mathit{early}\subseteq\mathit{late}$, a validator equivocating in
+$\mathit{early}$ equivocates in $\mathit{late}$ too, so $\mathit{votes}$
+holds at most one vote per validator and the equivocator clause of the score
+never fires here.  At most one child can hold a majority, so the descent
+has no choice to make.
+
+Slot~$s$ is evaluated once, at $t_s+6\Delta$, from genesis over the live tree.
+The result is at worst genesis, never empty.
+
+\noindent\begin{minipage}{\linewidth}
+\captionof{figure}{Available confirmation}\label{alg:confirmation}
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{update\_confirmation}{$\Sigma,s$}
+  \Comment{at $t_s+6\Delta$}
+  \State $\mathit{early}\gets\{\mathit{vote}\in\Sigma.\gfPool[s]:
+    \tau(\mathit{vote})<t_s+2\Delta\}$
+  \State $\mathit{late}\gets\{\mathit{vote}\in\Sigma.\gfPool[s]:
+    \Sigma.\timestamp(\mathit{vote})<t_s+6\Delta\}$
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\mathit{early}:
+    \mathit{late}\text{ holds no second distinct vote by }
+    \mathit{vote}.\validator\}$
+  \State $\mathit{voters\_count}\gets
+    |\{v\in\committee_s:\mathit{late}\text{ holds a vote by }v\}|$
+  \State define $\mathit{eligible}(B)$ as
+    $2\,\Call{goldfish\_score}{\mathit{votes},s,B}>\mathit{voters\_count}$
+  \State $H\gets\Call{ghost}{\genesis,\Sigma.\T,
+    \fname{goldfish\_score}(\mathit{votes},s,\cdot),\mathit{eligible}}$
+  \State $\Sigma.\liveConfirmed\gets H$
+  \If{$\Sigma.\latestConfirmed\preceq H$}
+    \State $\Sigma.\latestConfirmed\gets H$
+  \EndIf
+\EndFunction
+\end{algorithmic}
+}
+\end{minipage}
+
+\section{Relative-majority stabilization gadget}\label{sec:majority-sg}
+
+SG means \emph{stabilization gadget}.  This intermediate protocol adds one
+message layer to Goldfish: a relative-majority fork choice over the latest SG
+votes selects the root from which the Goldfish walk starts.
+
+\subsection{Rounds and SG votes}\label{sec:sg-schedule}
+
+Each validator $v\in V$ has a fixed positive integer weight~$w(v)$.  For
+$S\subseteq V$, write $w(S)=\sum_{v\in S}w(v)$ and $W=w(V)$.
+
+For a fixed integer~$R\geq1$, round~$r$ consists of slots $rR,\ldots,rR+R-1$;
+slot~$rR$ is its \emph{opening slot}, and $\round(s)=\lfloor s/R\rfloor$.
+Each round has one SG vote time~$a_r$, a public parameter in this
+intermediate protocol.
+
+An SG vote is a tuple $(v,r,C)$ from validator $v\in V$ with confirmed
+block~$C$, a block or~$\bot$.  At~$a_r$, an honest validator votes its current
+$\liveConfirmed$, which is a block; the empty value appears only in
+adversarial votes here, and in the timeout votes of the graded protocol.  A
+round-$r$ vote is read from round~$r+1$ on.
+
+\subsection{Store}\label{sec:sg-store}
+
+This layer adds one field: $\sgPool[r]$, the set of processed round-$r$ SG
+votes.  Like $\gfPool$, it is timestamped and keeps at most two distinct
+votes per validator, which is all any rule reads; two distinct confirmed
+blocks from one validator in one round are an equivocation.  An SG vote is
+resolved when the store holds its confirmed block, with resolution time the
+later of the two timestamps; an empty confirmed block resolves at receipt.  SG votes travel only on the
+wire.  Blocks do not carry them, and they never enter a Goldfish vote set.
+
+\subsection{Latest votes and majority root}\label{sec:sg-fork-choice}
+
+\begin{definition}[Latest vote, support, and majority root]
+\label{def:majority-fork-choice}
+Fix an expiry window $\eta_{\rm SG}\geq1$ in rounds.  For validator~$v$ and
+round~$r$, $\Call{latest}{\Sigma,v,r}$ is the greatest round
+$k\in[\max\{0,r-\eta_{\rm SG}\},\,r)$ in which $\sgPool[k]$ holds a
+resolved vote by~$v$, or~$\bot$ when there is none.  A validator with a latest round is
+\emph{represented}: it counts in the denominator whatever its votes say.  It
+\emph{supports} a block only when its latest round holds exactly one
+vote, for a descendant of it.
+
+$\Call{sg\_support}{\Sigma,r,B}$ is the weight supporting~$B$.
+The entire represented weight is
+$W_r=w(\{v\in V:\Call{latest}{\Sigma,v,r}\neq\bot\})$.
+Ancestry is read in the live tree~$\T$, so a confirmed block outside a restricted child
+tree still supports the child through which it descends.
+$\Call{majority\_fork\_choice}{}$ runs the walk with this score, requiring
+from each child a strict majority of~$W_r$.  Because an equivocator supplies no support but
+stays in the denominator, and conflicting children have disjoint supporter
+sets, two conflicting children cannot both pass: the descent is uniquely
+determined, and equivocating weight can only raise the bar.
+\end{definition}
+
+The composed head runs Goldfish from the majority root instead of genesis
+(Figure~\ref{alg:sg-fork-choice}): the SG walk selects the anchor, and the
+Goldfish walk selects a descendant of it.  The two walks are the same
+function with different scores and eligibility conditions.
+
+\captionof{figure}{SG fork choice}\label{alg:sg-fork-choice}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{latest}{$\Sigma,v,r$}
+  \State $\mathit{eligible}\gets\{r':\max\{0,r-\eta_{\rm SG}\}\leq r'<r,\
+    \sgPool[r']\text{ holds a resolved vote by }v\}$
+  \If{$\mathit{eligible}=\emptyset$} \State \Return $\bot$ \EndIf
+  \State \Return $\max\mathit{eligible}$
+\EndFunction
+\vspace{1pt}
+\Function{sg\_support}{$\Sigma,r,B$}
+  \State $\mathit{supporters}\gets\emptyset$
+  \ForAll{$v\in V$ with $\Call{latest}{\Sigma,v,r}\neq\bot$}
+    \State $r^*\gets\Call{latest}{\Sigma,v,r}$
+    \If{$\sgPool[r^*]$ holds a unique vote $(v,r^*,C)$ by $v$, with
+        $C\neq\bot$ and $B\preceq C$}
+      \State $\mathit{supporters}\gets\mathit{supporters}\cup\{v\}$
+    \EndIf
+  \EndFor
+  \State \Return $w(\mathit{supporters})$
+\EndFunction
+\vspace{1pt}
+\Function{majority\_fork\_choice}{$\Sigma,\mathit{anchor},\mathit{tree},r$}
+  \State $\mathit{total}\gets
+    w(\{v\in V:\Call{latest}{\Sigma,v,r}\neq\bot\})$
+  \State define $\mathit{eligible}(B)$ as
+    $2\,\Call{sg\_support}{\Sigma,r,B}>\mathit{total}$
+  \State \Return $\Call{ghost}{\mathit{anchor},\mathit{tree},
+    \fname{sg\_support}(\Sigma,r,\cdot),\mathit{eligible}}$
+\EndFunction
+\vspace{1pt}
+\Function{get\_head}{$\Sigma,\mathit{votes},s$}
+  \State $\mathit{anchor}\gets\Call{majority\_fork\_choice}{\Sigma,\genesis,
+    \Sigma.\T,\round(\Sigma.s)}$
+  \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,\mathit{anchor},
+    \Sigma.\T,\mathit{votes},s}$
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{Duty and handler}\label{sec:sg-handlers}
+
+$\Call{on\_tick}{}$ gains one line: at $t=a_r$ for the current round~$r$, run
+$\Call{sg\_vote}{}$.  The proposer and voter of
+Figure~\ref{alg:goldfish-store} call the $\Call{get\_head}{}$ of
+Figure~\ref{alg:sg-fork-choice}; nothing else in their duties changes.
+Available confirmation is unchanged.
+
+\captionof{figure}{SG duty and store handler}\label{alg:sg-store}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{sg\_vote}{$\Sigma$}
+  \Comment{runs at $a_r$}
+  \State $\mathit{vote}\gets(\ell,\round(\Sigma.s),\Sigma.\liveConfirmed)$
+  \State broadcast $\mathit{vote}$;
+    \Call{process\_sg\_vote}{$\Sigma,\mathit{vote}$}
+\EndFunction
+\vspace{1pt}
+\Function{process\_sg\_vote}{$\Sigma,\mathit{vote}$}
+  \If{$\mathit{vote}.\round>\round(\Sigma.s)$ or
+    $\mathit{vote}\in\sgPool[\mathit{vote}.\round]$} \State \Return \EndIf
+  \If{$\sgPool[\mathit{vote}.\round]$ holds two distinct votes by
+    $\mathit{vote}.\validator$}
+    \State \Return
+    \Comment{two witness the equivocation; nothing reads a third}
+  \EndIf
+  \State add $\mathit{vote}$ to $\sgPool[\mathit{vote}.\round]$;
+    $\timestamp(\mathit{vote})\gets\Sigma.t$
+\EndFunction
+\end{algorithmic}
+}
+
+\section{Finality-gadget state transition}\label{sec:state-machine}
+
+The finality gadget extends each non-genesis block with a list of combined
+attestations and a post-state root.  It also defines the
+weighted quorum threshold
+\[
+ q=\left\lceil\frac{2W}{3}\right\rceil.
+\]
+A quorum is a set of validators whose total weight is at least~$q$.
+
+\subsection{Combined attestations}
+
+Height is a finality counter and is separate from slot.  Genesis is justified
+and finalized at height~$0$, and every chain starts at height~$1$.  A
+justification or a progress event increments height by one.
+
+We extend the attestation to
+\[
+ a=(\validator,\round,\confirmedf,
+     \height,\target,\mathsf{finalize\_height},
+     \mathsf{finalize\_target}),
+\]
+adding the finality relevant fields $\height$,
+$\target, \mathsf{finalize\_height}, \mathsf{finalize\_target}$ to the SG vote. The height pair is a target vote $(h,T)$ with $T\neq\bot$, an empty-target vote
+$(h,\bot)$, or the empty pair $(\bot,\bot)$.  The finality pair is
+$(h_f,T_f)$ with $T_f\neq\bot$, or the empty pair $(\bot,\bot)$.
+ 
+
+Two pair occurrences from one validator are slashable under either
+condition:
+\begin{description}
+ \item[E1:] one finality pair is $(h,T)$ with $T\neq\bot$, and one height
+   pair is $(h,T')$ with $T'\neq T$, including $T'=\bot$;
+ \item[E2:] two height pairs are $(h,T)$ and $(h,T')$ with
+   $T,T'\neq\bot$ and $T\neq T'$.
+\end{description}
+The conflicting occurrences can be in one attestation.  An empty height pair
+has height~$\bot$ and triggers neither condition.
+
+An honest validator emits at most one proposal per slot, one Goldfish vote
+per slot, and one combined attestation per round.
+
+\subsection{Chain state and transition}
+
+Every block is evaluated from its parent's immutable post-state:
+\[
+ \sigma[B]=\Call{state\_transition}{\sigma[B.\parent],B}.
+\]
+The result is a deterministic function of the chain ending at~$B$.
+
+\begin{definition}[Chain state]\label{def:chain-state}
+A chain state is
+\[
+ \sigma=(L,s,h,T_h,\nj,
+  \targetParticipation,\progressBit,\finalityBit,
+  J,h_j,F,h_F).
+\]
+$L$ is the latest block, $s=L.\slot$, $h$ is the current height, and $T_h$
+is the block that carried the transition into height~$h$.  The Boolean
+$\nj$ is computed when the chain enters~$h$ and remains fixed until the height
+changes.
+
+The arrays $\targetParticipation$, $\progressBit$, and $\finalityBit$ contain
+one Boolean value per validator.  Their quorum sets are derived when used:
+\[
+ \begin{aligned}
+  \Qtarget(\sigma)&=\{i:\sigma.\targetParticipation[i]\},&
+  \Qprog(\sigma)&=\{i:\sigma.\progressBit[i]\},\\
+  \Qfin(\sigma)&=\{i:\sigma.\finalityBit[i]\}.&&
+ \end{aligned}
+\]
+The pair $(J,h_j)$ is the latest justification on the chain, and $(F,h_F)$
+is its latest finalization.  Initially
+\[
+ L=T_h=J=F=\genesis,\quad s=0,\quad h=1,\quad h_j=h_F=0,
+ \quad\nj=\mathsf{false},
+\]
+and every array entry is false.
+\end{definition}
+
+Fix constants $K\geq2$ and $D\geq1$.  On entry into a new height~$h$, after
+the same transition has applied any finalization, set
+\[
+ \nj\gets(K\mid h)\wedge(h-h_F>D).
+\]
+
+\begin{figure}[H]
+\caption{Deterministic finality-gadget state transition}
+\label{alg:state-transition}
+\begin{center}
+\begin{boxedminipage}{\textwidth}
+\small
+\begin{algorithmic}[1]
+\Function{state\_transition}{$\sigma,B$}
+  \State $\sigma.s\gets B.\slot$
+  \ForAll{$a\in B.\mathsf{attestations}$}
+    \State $\sigma\gets\Call{process\_attestation}{\sigma,a}$
+  \EndFor
+  \State $\sigma.L\gets B$
+  \State \Return $\Call{process\_height\_events}{\sigma}$
+\EndFunction
+\vspace{2pt}
+\Function{process\_attestation}{$\sigma,a$}
+  \State $i\gets a.\validator$
+  \If{$\sigma.h_j>\sigma.h_F$ \textbf{and} $\sigma.F\preceq\sigma.J$
+      \textbf{and} $a$'s finality pair $=(\sigma.h_j,\sigma.J)$}
+    \State $\sigma.\finalityBit[i]\gets\mathsf{true}$
+  \EndIf
+  \If{$a$'s height pair $=(\sigma.h,\sigma.T_h)$}
+    \State $\sigma.\targetParticipation[i]\gets\mathsf{true}$
+    \State $\sigma.\progressBit[i]\gets\mathsf{true}$
+  \ElsIf{$a$'s height pair $=(\sigma.h,\bot)$}
+    \State $\sigma.\progressBit[i]\gets\mathsf{true}$
+  \EndIf
+  \State \Return $\sigma$
+\EndFunction
+\vspace{2pt}
+\Function{process\_height\_events}{$\sigma$}
+  \If{$\sigma.h_j>\sigma.h_F$ \textbf{and} $\sigma.F\preceq\sigma.J$
+      \textbf{and} $w(\Qfin(\sigma))\geq q$}
+    \State $(\sigma.F,\sigma.h_F)\gets(\sigma.J,\sigma.h_j)$
+  \EndIf
+  \If{$\neg\sigma.\nj$ \textbf{and} $w(\Qtarget(\sigma))\geq q$}
+    \State $(\sigma.J,\sigma.h_j)\gets(\sigma.T_h,\sigma.h)$
+    \State $\sigma.\finalityBit\gets\mathsf{false}^{V}$
+    \State \Return $\Call{advance\_height}{\sigma}$
+  \EndIf
+  \If{$w(\Qprog(\sigma))\geq q$}
+    \State \Return $\Call{advance\_height}{\sigma}$
+  \EndIf
+  \State \Return $\sigma$
+\EndFunction
+\vspace{2pt}
+\Function{advance\_height}{$\sigma$}
+  \State $\sigma.h\gets\sigma.h+1$; \quad $\sigma.T_h\gets\sigma.L$
+  \State $\sigma.\nj\gets(K\mid\sigma.h)\wedge
+    (\sigma.h-\sigma.h_F>D)$
+  \State $\sigma.\targetParticipation,
+    \sigma.\progressBit\gets\mathsf{false}^{V}$
+  \State \Return $\sigma$
+\EndFunction
+\end{algorithmic}
+\end{boxedminipage}
+\end{center}
+\end{figure}
+
+\section{Finality gadget in the fork-choice}\label{sec:fg-fork-choice}
+
+\subsection{Stored states and finality updates}
+
+The store adds a block state map $\Sigma.\sigma[\cdot]$ and finality state
+$(\Sigma.F,\Sigma.h_F,\Sigma.J,\Sigma.h_j,\Sigma.\hmax)$.  It retains every
+processed block; the live tree is derived below the finalized block,
+\[
+ \liveTree(\Sigma)=\{B\in\Sigma.\T:\Sigma.F\preceq B\}.
+\]
+Figure~\ref{alg:fg-store} extends the block handler: it computes and stores
+the post-state, then folds it into the finality caches with
+$\Call{update\_finality}{\Sigma,\sigma}$.  The pair
+$(\Sigma.J,\Sigma.h_j)$ tracks the lex-greatest justification event
+compatible with the finalized block.  $\Sigma.F$ advances
+only to a viable proper descendant of itself below~$\Sigma.J$, so
+$\Sigma.F\preceq\Sigma.J$ always holds and finalization never reverts.  When
+it advances, $\Sigma.\hmax$ is recomputed inside the new live tree; it
+otherwise only grows.  The figure follows the viability definitions it
+uses. The processed finality evidence is the derived set
+\[
+ \processedFinality(\Sigma)=
+ \{(\Sigma.\sigma[B].F,\Sigma.\sigma[B].h_F):B\in\Sigma.\T\}.
+\]
+
+\subsection{Fork choice}
+
+\begin{definition}[Viability]
+\label{def:fg-candidate-tree}
+A live block is viable when it has a live descendant whose state height is at
+most one below the current maximum:
+\[
+ \viableTree(\Sigma)=
+ \{B\in\liveTree(\Sigma):
+   \exists W\in\liveTree(\Sigma),\ B\preceq W,\
+   \Sigma.\sigma[W].h\geq\Sigma.\hmax-1\}.
+\]
+\end{definition}
+
+Fork choice uses two derived views (Figure~\ref{alg:fg-store}):
+$\Call{fork\_choice\_root}{\Sigma}$, the block the walk starts from, and
+$\Call{get\_filtered\_block\_tree}{\Sigma}$, the viable blocks below it,
+which limit the selectable children.  Goldfish starts at the root even if
+the root is not in the filtered tree.
+
+At this layer $\Call{goldfish\_eligible}{}$ gains one clause: a child
+whose state height is below $\Sigma.\hmax-1$ is eligible without a
+majority.  Figure~\ref{alg:fg-store} shows the extended store handler, the
+extended eligibility condition, and the redefined $\Call{get\_head}{}$.  Available confirmation runs its own walk
+from~$\Sigma.F$ over $\liveTree(\Sigma)$; it uses neither the candidate tree,
+the SG root, nor the height filter.
+
+\captionof{figure}{FG store and fork choice}\label{alg:fg-store}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{process\_block}{$\Sigma,B$}
+  \If{$B.\slot>\Sigma.s$} \State \Return \EndIf
+  \State $\Sigma.\sigma[B]\gets
+    \Call{state\_transition}{\Sigma.\sigma[B.\parent],B}$
+  \Comment{new at this layer}
+  \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
+  \ForAll{$\mathit{vote}\in B.\gfPool$}
+    \State \Call{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \EndFor
+  \State \Call{update\_finality}{$\Sigma,\Sigma.\sigma[B]$}
+  \Comment{new at this layer}
+\EndFunction
+\vspace{1pt}
+\Function{update\_finality}{$\Sigma,\sigma$}
+  \State $\Sigma.\hmax\gets\max(\Sigma.\hmax,\sigma.h)$
+  \If{$\Sigma.F\preceq\sigma.J$ \textbf{and}
+      $(\sigma.h_j,\sigma.J.\rootf)>(\Sigma.h_j,\Sigma.J.\rootf)$}
+    \Comment{lex order}
+    \State $(\Sigma.J,\Sigma.h_j)\gets(\sigma.J,\sigma.h_j)$
+  \EndIf
+  \If{$\Sigma.F\prec\sigma.F$ \textbf{and} $\sigma.F\preceq\Sigma.J$
+      \textbf{and} $\sigma.F\in\viableTree(\Sigma)$}
+    \State $(\Sigma.F,\Sigma.h_F)\gets(\sigma.F,\sigma.h_F)$
+    \State $\Sigma.\hmax\gets
+      \max\{\Sigma.\sigma[B].h:B\in\liveTree(\Sigma)\}$
+    \Comment{the live tree just shrank}
+  \EndIf
+\EndFunction
+\vspace{1pt}
+\Function{fork\_choice\_root}{$\Sigma$}
+  \If{$\Sigma.\hmax=\Sigma.h_j+1$} \State \Return $\Sigma.J$ \EndIf
+  \State \Return $\Sigma.F$
+\EndFunction
+\vspace{1pt}
+\Function{get\_filtered\_block\_tree}{$\Sigma$}
+  \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$
+  \State \Return $\{B\in\viableTree(\Sigma):\mathit{root}\preceq B\}$
+\EndFunction
+\vspace{1pt}
+\Function{goldfish\_eligible}{$\Sigma,\mathit{votes},s,B$}
+  \State $\mathit{voters\_count}\gets
+    |\{v\in\committee_s:\mathit{votes}\text{ holds a vote by }v\}|$
+  \State \Return $\Sigma.\sigma[B].h<\Sigma.\hmax-1$
+    or $2\,\Call{goldfish\_score}{\mathit{votes},s,B}>\mathit{voters\_count}$
+    or $B.\slot=\Sigma.s$
+\EndFunction
+\vspace{1pt}
+\Function{get\_head}{$\Sigma,\mathit{votes},k$}
+  \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$;\quad
+    $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+  \State $\mathit{anchor}\gets\Call{majority\_fork\_choice}
+    {\Sigma,\mathit{root},\mathit{tree},\round(\Sigma.s)}$
+  \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,\mathit{anchor},
+    \mathit{tree},\mathit{votes},k}$
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{SG/FG attestation}
+
+\begin{definition}[Anti-slashing record]\label{def:antislashing}
+The record $\Lambda$ holds, for every height~$h$, the validator's first
+target $\Lambda.\mathsf{saved}[h]$, whether it emitted an empty-target
+vote $\Lambda.\mathsf{timeout}[h]$, and the target of its first finality
+pair $\Lambda.\mathsf{lock}[h]$; initially
+$(\bot,\mathsf{false},\bot)$.  It belongs to the validator, not to the store,
+and $\Call{record\_attestation}{}$ is the only place that writes it.  Together,
+$\Sigma$ and $\Lambda$ determine the combined attestation.  This is modeled
+after the anti-slashing database of today's validators: a minimal, hardened
+component of the validator client, separate from the beacon client that
+keeps~$\Sigma$.  $\Call{create\_attestation}{}$ is its whole interface:
+it takes the record and the vote information, produces the attestation,
+and updates the record before releasing it; it never reads the store.
+\end{definition}
+
+The height pair is built from a confirmed block's height fields: a target
+vote can create a justification, and
+only confirmed blocks may be justified.  The finality pair is built from
+the head's finality fields: its subject is
+already justified, so it may read an unconfirmed chain, and the head
+chain state carries the freshest justification.  Here
+$C=\Sigma.\liveConfirmed$
+and $H$ is the fork-choice head; the graded action passes its own
+confirmed block and head.
+$\Call{attest}{\Sigma,\Lambda}$ is the beacon-client side: it derives
+the confirmed block, the head, and their chain-state fields from the
+store, and
+broadcasts what $\Call{create\_attestation}{}$ releases.  The pair rules
+only read the record; $\Call{record\_attestation}{\Lambda,a}$ folds the
+emitted attestation into it before release, and
+$\Call{height\_pair}{}$ receives the same attestation's finality pair as
+the lock at its height, so one attestation never forms E1 evidence.
+$\Call{on\_tick}{}$ gains the record argument and, at~$a_r$, runs
+$\Call{attest}{}$ in place of $\Call{sg\_vote}{}$.
+
+\captionof{figure}{FG attestation}\label{alg:pair-rules}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{finality\_pair}{$\Lambda,h_j,J,h_F$}
+  \If{$h_j>h_F$}
+    \Comment{a justification not yet finalized}
+    \If{$\Lambda.\mathsf{saved}[h_j]=J$ and
+        not $\Lambda.\mathsf{timeout}[h_j]$ and
+        $\Lambda.\mathsf{lock}[h_j]\in\{\bot,J\}$}
+      \Comment{the record allows it}
+      \State \Return $(h_j,J)$
+    \EndIf
+  \EndIf
+  \State \Return $(\bot,\bot)$
+\EndFunction
+\vspace{1pt}
+\Function{height\_pair}{$\Lambda,h_c,T_c,\nu,h_f,T_f$}
+  \If{$h_c=\bot$} \State \Return $(\bot,\bot)$ \EndIf
+  \State $\mathit{lock}\gets\Lambda.\mathsf{lock}[h_c]$;\quad
+    \textbf{if} $h_c=h_f$ \textbf{then} $\mathit{lock}\gets T_f$
+  \Comment{this attestation's own lock}
+  \If{$\Lambda.\mathsf{timeout}[h_c]$}
+    \State \Return $(h_c,\bot)$
+    \Comment{a timeout repeats}
+  \EndIf
+  \If{$\mathit{lock}\neq\bot$}
+    \Comment{a lock repeats}
+    \If{$\mathit{lock}=T_c$}
+      \State \Return $(h_c,T_c)$
+    \EndIf
+    \State \Return $(\bot,\bot)$
+    \Comment{locked elsewhere: wait out the height}
+  \EndIf
+  \If{$\Lambda.\mathsf{saved}[h_c]\neq\bot$}
+    \Comment{a saved target repeats}
+    \If{$\Lambda.\mathsf{saved}[h_c]=T_c$}
+      \State \Return $(h_c,T_c)$
+    \EndIf
+  \ElsIf{not $\nu$}
+    \State \Return $(h_c,T_c)$
+    \Comment{no history: adopt the chain's target}
+  \EndIf
+  \State \Return $(h_c,\bot)$
+  \Comment{otherwise time out at $h_c$}
+\EndFunction
+\vspace{1pt}
+\Function{create\_attestation}{$\Lambda,r,\mathit{confirmed},
+  h_c,T_c,\nu,h_j,J,h_F$}
+  \Comment{validator-client side: no store access}
+  \State $(h_f,T_f)\gets\Call{finality\_pair}{\Lambda,h_j,J,h_F}$
+  \State $(h,T)\gets\Call{height\_pair}{\Lambda,h_c,T_c,\nu,h_f,T_f}$
+  \State $a\gets(\ell,r,\mathit{confirmed},h,T,h_f,T_f)$
+  \State \Call{record\_attestation}{$\Lambda,a$}; \Return $a$
+  \Comment{record, then release}
+\EndFunction
+\vspace{1pt}
+\Function{record\_attestation}{$\Lambda,a$}
+  \Comment{the only writer of $\Lambda$}
+  \State $(h,T,h_f,T_f)\gets a$'s height and finality pairs
+  \If{$T_f\neq\bot$} \State $\Lambda.\mathsf{lock}[h_f]\gets T_f$ \EndIf
+  \If{$h\neq\bot$}
+    \If{$T\neq\bot$ and $\Lambda.\mathsf{saved}[h]=\bot$}
+      \State $\Lambda.\mathsf{saved}[h]\gets T$
+    \EndIf
+    \If{$T=\bot$}
+      \State $\Lambda.\mathsf{timeout}[h]\gets\mathsf{true}$
+    \EndIf
+  \EndIf
+\EndFunction
+\vspace{1pt}
+\Function{attest}{$\Sigma,\Lambda$}
+  \State $r\gets\round(\Sigma.s)$;\quad $C\gets\Sigma.\liveConfirmed$
+  \Comment{runs at $a_r$}
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\Sigma.\gfPool[\Sigma.s]:
+    \mathit{vote}\text{ is resolved}\}$
+  \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},\Sigma.s}$
+  \Comment{current-slot votes have arrived by $a_r$}
+  \State $(h_c,T_c,\nu)\gets(\Sigma.\sigma[C].h,\Sigma.\sigma[C].T_h,
+    \Sigma.\sigma[C].\nj)$
+  \State $(h_j,J,h_F)\gets(\Sigma.\sigma[H].h_j,\Sigma.\sigma[H].J,
+    \Sigma.\sigma[H].h_F)$
+  \State $a\gets\Call{create\_attestation}{\Lambda,r,C,h_c,T_c,\nu,
+    h_j,J,h_F}$
+  \State broadcast $a$;
+    \Call{process\_sg\_vote}{$\Sigma,(\ell,r,C)$}
+  \Comment{the SG-vote projection}
+\EndFunction
+\vspace{1pt}
+\Function{on\_tick}{$\Sigma,\Lambda,t$}
+  \State $s\gets\lfloor t/(4\Delta)\rfloor$; $(\Sigma.t,\Sigma.s)\gets(t,s)$
+  \If{$s>0$ and $t=t_s$ and $\ell$ is the slot-$s$ proposer}
+    \State \Call{propose\_block}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+\Delta$}
+    \State \Call{goldfish\_vote}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+2\Delta$}
+    \State \Call{update\_confirmation}{$\Sigma,s-1$}
+  \EndIf
+  \If{$t=a_r$ for the current round $r$}
+    \State \Call{attest}{$\Sigma,\Lambda$}
+    \Comment{in place of $\Call{sg\_vote}{}$}
+  \EndIf
+\EndFunction
+\end{algorithmic}
+}
+
+\section{Graded SG healing}\label{sec:healing}
+
+Healing gives a block with fresh absolute majority support precedence over
+the relative-majority anchor, where fresh means that we only consider
+votes from the previous round, not all latest votes. In particular, round~$r$
+grades blocks by the support of round-$(r-1)$ SG votes at four cutoffs around the opening slot.
+An opening proposer may propose a graded root; a receiver decides whether to adopt it based
+on its own grade check, or falls back to a graded root of its own, and
+otherwise to the relative-majority anchor. Moreover, validators avoid attesting to
+a block when a conflicting block in their filtered tree, processed before the
+round's grade-0 freeze, has grade~0, even if the block
+would otherwise be confirmed. When no block holds a grade from round~$r-1$, every rule of this section reduces to the protocol of Sections~\ref{sec:goldfish}--\ref{sec:fg-fork-choice}.
+
+\subsection{Round schedule}\label{sec:healing-schedule}
+
+Assume $R\geq2$ slots per round.  The four grade cutoffs bracket the
+opening slot's proposal and vote times:
+\[
+ \Gamma_r^{-1}=t_{rR}-\Delta,\qquad
+ \Gamma_r^0=t_{rR},\qquad
+ \Gamma_r^1=t_{rR}+\Delta,\qquad
+ \Gamma_r^2=t_{rR}+2\Delta.
+\]
+The action time is $a_r=t_{rR}+6\Delta$, the opening slot's confirmation
+evaluation: $\Call{on\_tick}{}$ evaluates that confirmation and then runs
+$\Call{attest}{}$ in the same tick.
+
+\subsection{Grades}\label{sec:grades}
+
+\begin{definition}[Grade supports and grades]\label{def:grades}
+The absolute-majority threshold is $m=\lfloor W/2\rfloor+1$.  Round~$r$
+grades read only $\Sigma.\sgPool[r-1]$, the fresh SG votes.  For
+validator~$v$: $C_v$ is the confirmed block of $v$'s first resolved vote
+naming one, in resolution-time order, and $t_v$ that resolution time, or
+$(\bot,+\infty)$; $e_v$ is the time at which the pool first holds two of
+$v$'s votes with distinct confirmed blocks, an empty value included ---
+the receipt timestamp of the second --- or~$+\infty$ when it never does.
+Direct support deletes equivocators, as $\fname{sg\_support}$ does;
+favorable support credits them, as $\fname{goldfish\_score}$ does:
+\[
+ \begin{aligned}
+  \Call{direct\_support}{\Sigma,r,\Gamma_h,\Gamma_e,B}
+   &=w(\{v\in V:t_v<\Gamma_h,\ B\preceq C_v,\ e_v\geq\Gamma_e\}),\\
+  \Call{favorable\_support}{\Sigma,r,\Gamma,B}
+   &=w(\{v\in V:t_v<\Gamma,\ B\preceq C_v\}\cup\{v\in V:e_v<\Gamma\}).
+ \end{aligned}
+\]
+The grades of round~$r$ are
+\[
+ \begin{aligned}
+  \Gthree(B)&\iff\Call{direct\_support}{\Sigma,r,\Gamma_r^{-1},\Gamma_r^1,B}\geq m,\\
+  \Gtwo(B)&\iff\Call{direct\_support}{\Sigma,r,\Gamma_r^0,\Gamma_r^0,B}\geq m,\\
+  \Gone(B)&\iff\Call{favorable\_support}{\Sigma,r,\Gamma_r^1,B}\geq m,\\
+  \Gzero(B)&\iff\Call{favorable\_support}{\Sigma,r,\Gamma_r^2,B}\geq m.
+ \end{aligned}
+\]
+Each grade is eligible only in its own round; round~$0$ has an empty
+batch and no grades.
+Conflicting blocks cannot both hold a direct
+grade, so the grade-2 and grade-3 selections below are unique; favorable
+grades can conflict, because equivocators are credited on every branch.
+In one validator's store, each grade implies the next: $\Gthree(B)\implies \Gtwo(B) \implies \Gone(B) \implies \Gzero(B)$.  Across validators, the same holds 
+due to network synchrony. We call this \emph{graded delivery}: a vote counted at one cutoff reaches every
+validator by the next, so a grade at one honest validator implies the
+next-lower grade at every honest validator.
+\end{definition}
+
+A grade is \emph{active} when its block is in the filtered block tree of
+Section~\ref{sec:fg-fork-choice}: it descends the fork-choice root and is
+viable, so only blocks the fork choice can use carry active grades.  The
+grade-0 veto reads only blocks processed before the
+freeze~$\Gamma_r^2$: a block learned after the freeze never becomes a
+veto.
+
+\captionof{figure}{Grade-0 veto}\label{alg:grades}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{g0\_clear}{$\Sigma,r,B$}
+  \State $\mathit{vetoes}\gets
+    \{B'\in\Call{get\_filtered\_block\_tree}{\Sigma}:
+    \Sigma.\timestamp(B')<\Gamma_r^2,$
+  \Statex \hspace{4.35em} $B'\text{ conflicts with }B,\ \Gzero(B')\}$
+  \State \Return $\mathit{vetoes}=\emptyset$
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{Round proposal and decision}\label{sec:round-decision}
+
+Blocks gain a $\proposalRoot$ field.  An honest opening proposer sets it
+exactly when it holds a graded root; every other honest block carries the
+empty value, and a receiver relies only on the validation below.
+$\Call{round\_proposal}{\Sigma,r}$ is the unique slot-$rR$ block
+timestamped before~$\Gamma_r^1$, or~$\bot$.
+
+At~$\Gamma_r^0$, the opening proposer selects the deepest strict
+descendant of its fork-choice root with active grade~2 in its filtered
+tree.  If one exists, it runs Goldfish from that root and records the root
+in $\proposalRoot$; otherwise it proposes exactly as in
+Section~\ref{sec:goldfish-handlers}.  The proposal carries no support
+witness: a vote the proposer counted at~$\Gamma_r^0$ reaches every
+validator by~$\Gamma_r^1$, so the receiver's own grade-1 test replaces it.
+
+At~$\Gamma_r^1$, before its Goldfish vote, each validator runs
+$\Call{set\_fresh\_root}{\Sigma,r}$
+(Figure~\ref{alg:round-decision}).  The receiver's own floor is the
+deepest strict descendant~$L$ of its fork-choice root with active
+grade~3, when one exists.  It adopts a proposed root~$R$ only when the
+proposal is unique and in the filtered tree, $R$ lies strictly between
+the fork-choice root and the proposal, $R$ is at least the floor, and $R$
+has active grade~1; a grade-3 floor needs no proposal.  The store records
+the result once in $\Sigma.\freshRoot[r]$, a block or~$\bot$; an unset
+entry reads~$\bot$.
+
+\captionof{figure}{Opening proposal and round decision}
+\label{alg:round-decision}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{propose\_block}{$\Sigma$}
+  \State $s\gets\Sigma.s$;\quad $\mathit{votes}\gets
+    \{\mathit{vote}\in\Sigma.\gfPool[s-1]:\mathit{vote}\text{ is resolved}\}$
+  \Comment{runs at $t_s$}
+  \State $A\gets\bot$
+  \If{$s=rR$ for a round $r$}
+    \Comment{new at this layer: the grade-2 root}
+    \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$;\quad
+      $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+    \State $A\gets$ the deepest $B$ with $\mathit{root}\prec B$,
+      $B\in\viableTree(\Sigma)$, and $\Gtwo(B)$, else $\bot$
+  \EndIf
+  \If{$A\neq\bot$}
+    \State $H\gets\Call{goldfish\_fork\_choice}{\Sigma,A,\mathit{tree},
+      \mathit{votes},s-1}$
+  \Else
+    \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},s-1}$
+  \EndIf
+  \State $B\gets$ a block with $B.\parent=H$, $B.\slot=s$,
+    $B.\gfPool=\mathit{votes}$, $B.\proposalRoot=A$
+  \State broadcast $B$; \Call{process\_block}{$\Sigma,B$}
+\EndFunction
+\vspace{1pt}
+\Function{round\_proposal}{$\Sigma,r$}
+  \State $\mathit{proposals}\gets\{B\in\Sigma.\T:B.\slot=rR,\
+    \Sigma.\timestamp(B)<\Gamma_r^1\}$
+  \If{$\mathit{proposals}=\{P\}$ for some $P$}
+    \State \Return $P$
+  \EndIf
+  \State \Return $\bot$
+  \Comment{two proposals distinguish neither}
+\EndFunction
+\vspace{1pt}
+\Function{set\_fresh\_root}{$\Sigma,r$}
+  \Comment{runs at $\Gamma_r^1$}
+  \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$;\quad
+    $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+  \State $L\gets$ the deepest $B$ with $\mathit{root}\prec B$,
+    $B\in\viableTree(\Sigma)$, and $\Gthree(B)$, else $\bot$
+  \State $\Sigma.\freshRoot[r]\gets L$
+  \Comment{$\bot$ when no grade is in play}
+  \State $P\gets\Call{round\_proposal}{\Sigma,r}$
+  \If{$P\neq\bot$ and $P\in\mathit{tree}$ and $P.\proposalRoot\neq\bot$}
+    \State $R\gets P.\proposalRoot$
+    \If{$\mathit{root}\prec R\preceq P.\parent$ and
+        ($L=\bot$ or $L\preceq R$) and
+        $\Gone(R)$}
+      \State $\Sigma.\freshRoot[r]\gets R$
+    \EndIf
+  \EndIf
+\EndFunction
+\vspace{1pt}
+\Function{fresh\_anchor}{$\Sigma,r$}
+  \State $R\gets\Sigma.\freshRoot[r]$
+  \If{$R\neq\bot$ and $R\in\Call{get\_filtered\_block\_tree}{\Sigma}$
+      and $\Gone(R)$}
+    \State \Return $R$
+  \EndIf
+  \State \Return $\bot$
+\EndFunction
+\end{algorithmic}
+}
+
+$\Call{fresh\_anchor}{}$ re-runs the activity test at every use, against
+the live store: the stored root anchors only while the filtered tree
+holds it.  A grade-3 root passes the grade-1 test,
+since grade~3 implies grade~1.  The stored root is never carried past
+its round.
+
+\subsection{Fork choice}\label{sec:healing-fork-choice}
+
+In $\Call{get\_head}{}$, a valid fresh root replaces
+the relative-majority anchor, and Goldfish runs as usual from whichever is selected.
+
+\captionof{figure}{Fork choice with a fresh root}\label{alg:healing-head}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{get\_head}{$\Sigma,\mathit{votes},k$}
+  \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$;\quad
+    $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+  \State $A\gets\Call{fresh\_anchor}{\Sigma,\round(\Sigma.s)}$
+  \If{$A=\bot$}
+    \State $A\gets\Call{majority\_fork\_choice}
+      {\Sigma,\mathit{root},\mathit{tree},\round(\Sigma.s)}$
+  \EndIf
+  \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,A,
+    \mathit{tree},\mathit{votes},k}$
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{The round action}\label{sec:healing-action}
+
+$\Call{attest}{}$ is redefined to prevent attesting to blocks that might be someone else's fresh anchor. In particular, these are blocks such that a conflicting block is output with grade~0, which we call a veto. For the purpose of attesting, we therefore defined the confirmed block~$Q$ as the deepest veto-free confirmed block above the fork-choice root. Without a fresh root, the only
+change from Section~\ref{sec:fg-fork-choice} is the veto: the vote
+moves to the deepest veto-free ancestor of the confirmed block, which
+is the confirmed block itself whenever no grade-0 block conflicts.  An
+empty value is the SG timeout vote of Section~\ref{sec:sg-schedule}: it
+represents the validator and silences its older votes.  A root adopted by
+an honest validator holds a grade-0 veto at every honest validator
+by~$\Gamma_r^2$, or falls outside its filtered tree, so a
+validator on the relative path still protects a fresh quorum it did not
+adopt.
+
+\captionof{figure}{Round action}\label{alg:round-action}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{attest}{$\Sigma,\Lambda$}
+  \State $r\gets\round(\Sigma.s)$;\quad $C\gets\Sigma.\liveConfirmed$
+  \Comment{runs at $a_r$}
+  \State $A\gets\Call{fresh\_anchor}{\Sigma,r}$
+  \If{$A\neq\bot$}
+    \Comment{a fresh root is in play}
+    \State $\mathit{root}\gets\Call{fork\_choice\_root}{\Sigma}$
+    \State $Q\gets$ the deepest $B$ with
+      $\mathit{root}\preceq B\preceq C$ and $\Call{g0\_clear}{\Sigma,r,B}$,
+      else $\bot$
+    \State $\mathit{confirmed}\gets Q$
+    \If{$Q=\bot$}
+      \State $\mathit{confirmed}\gets$ the deepest such $B$ with
+        $\mathit{root}\preceq B\preceq A$ instead, else $\bot$
+      \Comment{backs the fresh path; the height pair stays empty}
+    \EndIf
+  \Else
+    \State $Q\gets$ the deepest $B\preceq C$ with
+      $\Call{g0\_clear}{\Sigma,r,B}$
+    \Comment{$=C$ with no conflicting grade~0; genesis is always clear}
+    \State $\mathit{confirmed}\gets Q$
+  \EndIf
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\Sigma.\gfPool[\Sigma.s]:
+    \mathit{vote}\text{ is resolved}\}$
+  \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},\Sigma.s}$
+  \State $(h_c,T_c,\nu)\gets(\Sigma.\sigma[Q].h,
+    \Sigma.\sigma[Q].T_h,\Sigma.\sigma[Q].\nj)$,
+    or $(\bot,\bot,\bot)$ when $Q=\bot$
+  \State $(h_j,J,h_F)\gets(\Sigma.\sigma[H].h_j,\Sigma.\sigma[H].J,
+    \Sigma.\sigma[H].h_F)$
+  \State $a\gets\Call{create\_attestation}{\Lambda,r,\mathit{confirmed},
+    h_c,T_c,\nu,h_j,J,h_F}$
+  \State broadcast $a$; \Call{process\_sg\_vote}{$\Sigma,a$}
+\EndFunction
+\end{algorithmic}
+}
+
+\subsection{Nonjustifiable heights}\label{sec:nonjustifiable}
+
+The flag $\nj$ of Section~\ref{sec:state-machine} disables justification
+at every $K$-th height under finality debt, while exact and empty-target
+votes still advance the height.  Healing therefore never waits on a
+justification that the debt rule forbids.
+
+\section{Complete protocol}\label{sec:complete-protocol}
+
+\subsection{Cumulative node store}\label{sec:complete-store}
+
+The final store is one cumulative object:
+\[
+\begin{split}
+ \Sigma=(&t,s,\T,\timestamp[\cdot],\sigma[\cdot],
+ \gfPool[\cdot],\sgPool[\cdot],\\
+ &F,h_F,J,h_j,\hmax,\freshRoot[\cdot],
+ \liveConfirmed,\latestConfirmed).
+\end{split}
+\]
+The validator running the node is again~$\ell$; it also keeps its
+anti-slashing record~$\Lambda$ (\S\ref{sec:fg-fork-choice}), which belongs
+to the validator, not to the store.
+
+$\Sigma.\sgPool[r]$ holds the processed round-$r$ combined attestations.
+An SG vote is an attestation's $(\validator,\round,\confirmedf)$ projection,
+and every SG rule and grade reads only this projection; the
+pool keeps at most two attestations with distinct confirmed blocks per validator,
+and attestations differing only in their pair fields are one vote.
+Attestations reach the pool on the wire and through the node's own
+$\Call{attest}{}$; an attestation's resolution time reads its confirmed
+block's timestamp---an empty confirmed block resolves at receipt---and the
+pair fields never take part.
+Attestations carried in a block are read by the state
+transition alone and never enter the pool: Section~\ref{sec:sg-store}'s
+rule that SG votes travel only on the wire is unchanged.
+
+At initialization,
+\[
+ \begin{gathered}
+ t=s=0,\quad \T=\{\genesis\},\quad
+ \timestamp(\genesis)=-\infty,\quad \hmax=1,\\
+ (F,h_F)=(J,h_j)=(\genesis,0),\quad
+ \liveConfirmed=\latestConfirmed=\genesis,
+ \end{gathered}
+\]
+and every pool and $\freshRoot$ entry is empty or~$\bot$.
+
+The store does not cache a view, a quorum set, a support score, a grade,
+a live tree, a viable tree, or a filtered tree: each is derived when
+used, from timestamps compared against past instants.
+$\freshRoot[r]$ is the one recorded decision, because its tests read the
+live tree and it has readers for the rest of the round.
+
+\subsection{Duties and handlers}\label{sec:public-handlers}
+
+The fork choice is Figure~\ref{alg:healing-head}; at slot~$0$ the head is
+genesis.  The voter of Section~\ref{sec:goldfish-handlers} calls it
+unchanged.  The proposer runs the extended $\Call{propose\_block}{}$ of
+Figure~\ref{alg:round-decision}, with one further line at this layer:
+$B.\mathsf{attestations}\gets$ every resolved attestation not on $H$'s
+chain.  The public times of the schedule, the view freeze included, are
+the only tick times; the tick at a public time runs once, before the
+objects processed at that time, so an object processed between two public
+times carries the earlier one's stamp.
+Figure~\ref{alg:store} lists the final handlers: the tick gains the round
+decision, block processing gains the state transition, the finality
+update, and a guard against reprocessing, and available confirmation is
+anchored at the finalized block.
+
+\captionof{figure}{Cumulative node-store handlers}\label{alg:store}
+\nopagebreak
+{\footnotesize
+\begin{algorithmic}[1]
+\Function{on\_tick}{$\Sigma,\Lambda,t$}
+  \State $s\gets\lfloor t/(4\Delta)\rfloor$; $(\Sigma.t,\Sigma.s)\gets(t,s)$
+  \If{$s>0$ and $t=t_s$ and $\ell$ is the slot-$s$ proposer}
+    \State \Call{propose\_block}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+\Delta$}
+    \If{$s=rR$ for a round $r$}
+      \State \Call{set\_fresh\_root}{$\Sigma,r$}
+      \Comment{$\Gamma_r^1$: before the vote}
+    \EndIf
+    \State \Call{goldfish\_vote}{$\Sigma$}
+  \EndIf
+  \If{$s>0$ and $t=t_s+2\Delta$}
+    \State \Call{update\_confirmation}{$\Sigma,s-1$}
+  \EndIf
+  \If{$t=a_r$ for the current round $r$}
+    \State \Call{attest}{$\Sigma,\Lambda$}
+  \EndIf
+\EndFunction
+\vspace{1pt}
+\Function{process\_block}{$\Sigma,B$}
+  \If{$B.\slot>\Sigma.s$ or $B\in\Sigma.\T$} \State \Return \EndIf
+  \State $\Sigma.\sigma[B]\gets
+    \Call{state\_transition}{\Sigma.\sigma[B.\parent],B}$
+  \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
+  \ForAll{$\mathit{vote}\in B.\gfPool$}
+    \State \Call{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \EndFor
+  \State \Call{update\_finality}{$\Sigma,\Sigma.\sigma[B]$}
+\EndFunction
+\vspace{1pt}
+\Function{process\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
+  \If{$\mathit{vote}.\slot>\Sigma.s$ or
+    $\mathit{vote}\in\Sigma.\gfPool[\mathit{vote}.\slot]$}
+    \State \Return \EndIf
+  \If{$\Sigma.\gfPool[\mathit{vote}.\slot]$ holds two distinct votes by
+    $\mathit{vote}.\validator$}
+    \State \Return \EndIf
+  \State add $\mathit{vote}$ to $\Sigma.\gfPool[\mathit{vote}.\slot]$;
+    $\Sigma.\timestamp(\mathit{vote})\gets\Sigma.t$
+\EndFunction
+\vspace{1pt}
+\Function{process\_sg\_vote}{$\Sigma,\mathit{vote}$}
+  \If{$\mathit{vote}.\round>\round(\Sigma.s)$ or
+    $\Sigma.\sgPool[\mathit{vote}.\round]$ holds a vote by
+    $\mathit{vote}.\validator$ with $\mathit{vote}$'s confirmed block}
+    \State \Return \EndIf
+  \If{$\Sigma.\sgPool[\mathit{vote}.\round]$ holds two votes with distinct
+    confirmed blocks by $\mathit{vote}.\validator$}
+    \State \Return \EndIf
+  \State add $\mathit{vote}$ to $\Sigma.\sgPool[\mathit{vote}.\round]$;
+    $\Sigma.\timestamp(\mathit{vote})\gets\Sigma.t$
+\EndFunction
+\vspace{1pt}
+\Function{update\_confirmation}{$\Sigma,s$}
+  \Comment{at $t_s+6\Delta$}
+  \State $\mathit{early}\gets\{\mathit{vote}\in\Sigma.\gfPool[s]:
+    \tau(\mathit{vote})<t_s+2\Delta\}$
+  \State $\mathit{late}\gets\{\mathit{vote}\in\Sigma.\gfPool[s]:
+    \Sigma.\timestamp(\mathit{vote})<t_s+6\Delta\}$
+  \State $\mathit{votes}\gets\{\mathit{vote}\in\mathit{early}:
+    \mathit{late}\text{ holds no second distinct vote by }
+    \mathit{vote}.\validator\}$
+  \State $\mathit{voters\_count}\gets
+    |\{v\in\committee_s:\mathit{late}\text{ holds a vote by }v\}|$
+  \State define $\mathit{eligible}(B)$ as
+    $2\,\Call{goldfish\_score}{\mathit{votes},s,B}>\mathit{voters\_count}$
+  \State $H\gets\Call{ghost}{\Sigma.F,\liveTree(\Sigma),
+    \fname{goldfish\_score}(\mathit{votes},s,\cdot),\mathit{eligible}}$
+  \State $\Sigma.\liveConfirmed\gets H$
+  \If{$\Sigma.\latestConfirmed\preceq H$}
+    \State $\Sigma.\latestConfirmed\gets H$
+  \EndIf
+\EndFunction
+\end{algorithmic}
+}
+
+\end{document}
