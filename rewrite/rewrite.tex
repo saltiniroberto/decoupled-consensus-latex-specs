@@ -126,11 +126,16 @@ action of slot~$s+1$.
 A Goldfish vote is a tuple $(\valindex,s,B)$ from validator
 $\valindex\in\committee_s$ with
 head~$B$, where $B.\slot\leq s$.  A block~$B$ carries $B.\parent$,
-$B.\slot$, $B.\proposer$, and a set $B.\gfPool$ of slot-$(B.\slot-1)$
-Goldfish votes.  A slot-$s$ block is valid only when
+$B.\slot$, $B.\proposer$, a set $B.\mathsf{votes}$ of
+slot-$(B.\slot-1)$ Goldfish votes, and a subset
+$B.\mathsf{support\_votes}\subseteq B.\mathsf{votes}$.
+An honest proposer puts every previous-slot vote it holds in
+$B.\mathsf{votes}$ and puts exactly the members resolved at proposal time in
+$B.\mathsf{support\_votes}$.  A slot-$s$ block is valid only when
 $B.\proposer=\operatorname{proposer}(s)$.  There is no proposal envelope:
-the block is the only wire object a proposer emits, and $B.\gfPool$ is the
-channel by which a proposal forwards votes.
+the block is the only wire object a proposer emits, and $B.\mathsf{votes}$ is
+the channel by which a proposal forwards votes.  The support subset records
+the proposer's view; it is not a second set of votes to process.
 
 \subsection{Store}\label{sec:goldfish-store}
 
@@ -144,8 +149,8 @@ The store is
 \]
 $\Sigma.\T$ is the tree of processed blocks and $\Sigma.\gfPool[k]$ the set
 of processed slot-$k$ votes.  Both are timestamped.
-$\Sigma.\gfPool[k]$ keeps at most two distinct votes per validator, which is
-all any rule reads.  $\Sigma.\liveConfirmed$ is the block the last evaluated
+$\Sigma.\gfPool[k]$ keeps at most two distinct votes per validator; no rule
+needs a third pool entry.  $\Sigma.\liveConfirmed$ is the block the last evaluated
 slot confirmed. $\Sigma.\latestConfirmed$ is the
 monotone record the node exposes; no rule in this protocol reads it.
 
@@ -191,11 +196,20 @@ To run the Goldfish fork choice in slot~$s$, a voter at $t_s+\Delta$ forms
 two sets.  The set $\mathit{votes}$ contains each slot-$(s-1)$ vote that the
 store received before $t_{s-1}+3\Delta$, together with every slot-$(s-1)$
 vote included in an admitted slot-$s$ proposal.  The subset
-$\mathit{support\_votes}$ contains only resolved votes, either resolved before the
-freeze time $t_{s-1}+3\Delta$ or votes included in a block and resolved by voting time. Participation and equivocation are determined by $\mathit{votes}$ (a voter is considered to be participating if they sent a vote, regardless of whether resolved, and similarly for equivocation), while $\mathit{support\_votes}$ determines the direct support for a specific block (or more precisely subtree).
+$\mathit{support\_votes}$ contains local votes resolved before the freeze time
+$t_{s-1}+3\Delta$, together with each vote in the proposal's
+$B.\mathsf{support\_votes}$ whose head is in $\Sigma.\T$ by voting time.  This
+proposal arm does not require the vote to have entered $\Sigma.\gfPool$ or to
+have a local receipt timestamp.  For a proposal~$B$, a vote in
+$B.\mathsf{votes}\setminus B.\mathsf{support\_votes}$ remains
+outside $\mathit{support\_votes}$ even if it resolves before the voter runs.  Participation
+and equivocation are determined by $\mathit{votes}$, regardless of resolution,
+while $\mathit{support\_votes}$ determines direct subtree support.
 
-The proposer does not apply the freeze, it simply uses all votes it has received at the time of building its block. In particular, it uses all previous-slot votes as $\mathit{votes}$ and the resolved subset as
-$\mathit{support\_votes}$.
+The proposer does not apply the freeze.  It uses all previous-slot votes it
+holds when it builds the block as $\mathit{votes}$ and their resolved subset as
+$\mathit{support\_votes}$, and carries both sets in the proposal.  Voters do
+not derive the proposal's support subset again from their later stores.
 
 \subsection{Goldfish fork-choice}\label{sec:one-slot-ghost}
 
@@ -329,7 +343,7 @@ later.  A node with no duty for the slot does not run the duty.
   \If{$B.\slot>\Sigma.s$ or $B\in\Sigma.\T$ or
       $B.\parent\notin\Sigma.\T$} \State \Return \EndIf
   \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
-  \ForAll{$\mathit{vote}\in B.\gfPool$}
+  \ForAll{$\mathit{vote}\in B.\mathsf{votes}$}
     \State \Call{on\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
   \EndFor
 \EndFunction
@@ -342,7 +356,7 @@ later.  A node with no duty for the slot does not run the duty.
   \If{$\Sigma.\gfPool[\mathit{vote}.\slot]$ holds two distinct votes by
     $\mathit{vote}.\valindex$}
     \State \Return
-    \Comment{two witness the equivocation; nothing reads a third}
+    \Comment{two witness the equivocation; no rule needs a third pool entry}
   \EndIf
   \State add $\mathit{vote}$ to $\Sigma.\gfPool[\mathit{vote}.\slot]$;
     $\Sigma.\timestamp(\mathit{vote})\gets\Sigma.t$
@@ -359,8 +373,10 @@ later.  A node with no duty for the slot does not run the duty.
     \mathit{support\_votes},s-1}$
   \State $B\gets$ a block with $B.\parent=H$, $B.\slot=s$,
     $B.\proposer=\valindex$
-  \State $B.\gfPool\gets\mathit{votes}$
+  \State $B.\mathsf{votes}\gets\mathit{votes}$
     \Comment{everything, not only the pre-freeze part}
+  \State $B.\mathsf{support\_votes}\gets\mathit{support\_votes}$
+    \Comment{the proposal-time support subset}
   \State broadcast $B$; \Call{on\_block}{$\Sigma,B$}
 \EndFunction
 \vspace{1pt}
@@ -374,12 +390,11 @@ later.  A node with no duty for the slot does not run the duty.
     \Sigma.\resolutionTime(\mathit{vote})<t_{s-1}+3\Delta\}$
   \ForAll{$B\in\Sigma.\T$ with $B.\slot=s$}
     \State $\mathit{included\_votes}\gets
-      \{\mathit{vote}\in B.\gfPool:\mathit{vote}.\slot=s-1\}$
+      \{\mathit{vote}\in B.\mathsf{votes}:\mathit{vote}.\slot=s-1\}$
     \State $\mathit{votes}\gets\mathit{votes}\cup\mathit{included\_votes}$
     \State $\mathit{support\_votes}\gets\mathit{support\_votes}\cup
-      \{\mathit{vote}\in\mathit{included\_votes}:
-        \Sigma.\resolutionTime(\mathit{vote})<+\infty\}$
-    \Comment{view merge}
+      \{(v,s-1,H)\in B.\mathsf{support\_votes}:H\in\Sigma.\T\}$
+    \Comment{fixed proposal support}
   \EndFor
   \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},
     \mathit{support\_votes},s-1}$
@@ -836,7 +851,7 @@ filtered block tree, with the FG root as the fallback value.
     \Call{state\_transition}{\Sigma.\sigma[B.\parent],B}$
   \Comment{new at this layer}
   \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
-  \ForAll{$\mathit{vote}\in B.\gfPool$}
+  \ForAll{$\mathit{vote}\in B.\mathsf{votes}$}
     \State \Call{on\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
   \EndFor
   \State \Call{update\_finality}{$\Sigma,\Sigma.\sigma[B]$}
@@ -1243,7 +1258,7 @@ interval is empty the vote falls back to~$\Agtwo$, even though
 it sits at or behind the anchor: the grade-2 block stays canonical ---
 under the graded-delivery conditions above, every honest anchor whose
 filtered tree holds it is at least as
-deep --- while the anchor alone has no such guarantee.  The raw anchor is the last resort, and only it
+deep --- while the anchor alone has no such guarantee.  The anchor is the last resort, and only it
 keeps voting total; the veto operates only above it, and neither
 fallback takes a clearance test.  The height pair is enabled only when
 $\Agtwo$ exists; its source is the deepest veto-free block between
@@ -1276,7 +1291,7 @@ votes.
     \Comment{the grade-2 block stays canonical}
   \EndIf
   \State \Return $A$
-  \Comment{the raw anchor keeps voting total}
+  \Comment{the anchor fallback keeps voting total}
 \EndFunction
 \vspace{1pt}
 \Function{get\_fg\_vote}{$\Sigma,r,\Agtwo$}
@@ -1457,7 +1472,7 @@ lands on the grade-2 and anchor fallbacks there.
   \State $\Sigma.\sigma[B]\gets
     \Call{state\_transition}{\Sigma.\sigma[B.\parent],B}$
   \State add $B$ to $\Sigma.\T$; $\Sigma.\timestamp(B)\gets\Sigma.t$
-  \ForAll{$\mathit{vote}\in B.\gfPool$}
+  \ForAll{$\mathit{vote}\in B.\mathsf{votes}$}
     \State \Call{on\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
   \EndFor
   \State \Call{update\_finality}{$\Sigma,\Sigma.\sigma[B]$}
@@ -1719,7 +1734,9 @@ lands on the grade-2 and anchor fallbacks there.
     \mathit{support\_votes},s-1}$
   \State $B\gets$ a block with $B.\parent=H$, $B.\slot=s$,
     $B.\proposer=\valindex$
-  \State $B.\gfPool\gets\mathit{votes}$
+  \State $B.\mathsf{votes}\gets\mathit{votes}$
+  \State $B.\mathsf{support\_votes}\gets\mathit{support\_votes}$
+    \Comment{the proposal-time support subset}
   \State $B.\mathsf{attestations}\gets$ every attestation~$a$ with
     $\Sigma.\resolutionTime(a)<+\infty$ that is not on $H$'s chain
   \State broadcast $B$; \Call{on\_block}{$\Sigma,B$}
@@ -1736,12 +1753,10 @@ lands on the grade-2 and anchor fallbacks there.
     \Sigma.\resolutionTime(\mathit{vote})<t_{s-1}+3\Delta\}$
   \ForAll{$B\in\Sigma.\T$ with $B.\slot=s$}
     \State $\mathit{included\_votes}\gets
-      \{\mathit{vote}\in B.\gfPool:\mathit{vote}.\slot=s-1\}$
+      \{\mathit{vote}\in B.\mathsf{votes}:\mathit{vote}.\slot=s-1\}$
     \State $\mathit{votes}\gets\mathit{votes}\cup\mathit{included\_votes}$
     \State $\mathit{support\_votes}\gets\mathit{support\_votes}\cup
-      \{\mathit{vote}\in\mathit{included\_votes}:
-        \Sigma.\resolutionTime(\mathit{vote})<+\infty\}$
-    \Comment{view merge}
+      \{(v,s-1,H)\in B.\mathsf{support\_votes}:H\in\Sigma.\T\}$
   \EndFor
   \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},
     \mathit{support\_votes},s-1}$
@@ -1780,7 +1795,7 @@ lands on the grade-2 and anchor fallbacks there.
     \Comment{the grade-2 block stays canonical}
   \EndIf
   \State \Return $A$
-  \Comment{the raw anchor keeps voting total}
+  \Comment{the anchor fallback keeps voting total}
 \EndFunction
 \vspace{1pt}
 \Function{get\_fg\_vote}{$\Sigma,r,\Agtwo$}
