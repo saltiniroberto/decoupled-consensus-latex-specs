@@ -714,7 +714,7 @@ and $(\sigma.F,\sigma.h_F)$ is its latest finalization.  Initially
 and every array entry is false.
 \end{definition}
 
-Fix constants $K\geq3$ and $D\geq2$; $K$ is meant large and $D$ minimal.
+Fix constants $K\geq3$, $D\geq2$ and a timeout delay $\delta_{\mathrm{t}}\geq0$ in slots; $K$ is meant large, $D$ minimal, and \S\ref{sec:healing} sets $\delta_{\mathrm{t}}=2R$, two rounds. Timeout rows are recorded in $\progressBit$ as soon as they are folded, but a progress quorum that needs them is consumed only by a block whose slot is at least $\sigma.T_h.\slot+\delta_{\mathrm{t}}$, where $\sigma.T_h$ is the block that entered the height; an exact target quorum is consumed immediately: attestations are synchronous at the scale of rounds, so a timeout may not be used to leave a height before the target votes cast at that height have had time to arrive. Without the delay, faulty timeouts released right after an honest block that folded a partial honest target batch can cross the height without justifying it.
 The steady pipeline enters heights at debt $\sigma.h-\sigma.h_F=2$, so $D\geq2$;
 $K\geq3$ avoids a skip cadence that regenerates itself at $K=2$.
 On entry into a new height~$\sigma.h$, after
@@ -761,12 +761,16 @@ the same transition has applied any finalization, set
       \textbf{and} $w(\Qfin(\sigma))\geq q$}
     \State $(\sigma.F,\sigma.h_F)\gets(\sigma.J,\sigma.h_j)$
   \EndIf
-  \If{$\neg\sigma.\nj$ \textbf{and} $w(\Qtarget(\sigma))\geq q$}
-    \State $(\sigma.J,\sigma.h_j)\gets(\sigma.T_h,\sigma.h)$
-    \State $\sigma.\finalityBit\gets\mathsf{false}^{V}$
+  \If{$w(\Qtarget(\sigma))\geq q$}
+    \If{$\neg\sigma.\nj$}
+      \State $(\sigma.J,\sigma.h_j)\gets(\sigma.T_h,\sigma.h)$
+      \State $\sigma.\finalityBit\gets\mathsf{false}^{V}$
+    \EndIf
     \State \Return $\Call{advance\_height}{\sigma}$
   \EndIf
-  \If{$w(\Qprog(\sigma))\geq q$}
+  \If{$w(\Qprog(\sigma))\geq q$ \textbf{and}
+      $\sigma.s\geq\sigma.T_h.\slot+\delta_{\mathrm{t}}$}
+    \Comment{timeouts count only after the delay}
     \State \Return $\Call{advance\_height}{\sigma}$
   \EndIf
   \State \Return $\sigma$
@@ -812,21 +816,29 @@ The figure follows the viability definitions it uses.
 \begin{definition}[Viability]
 \label{def:fg-candidate-tree}
 A descendant of the finalized block is viable when one of its
-descendants has state height at most one below the current maximum;
-Figure~\ref{alg:fg-store} defines the viable tree
-$\Call{viable\_tree}{\Sigma}$, and in prose $\viableTree(\Sigma)$
-abbreviates it.
+descendants has state height at most one below the current maximum.
+Figure~\ref{alg:fg-store} defines
+$\Call{viable\_tree\_from}{\Sigma,\mathit{blocks}}$ over an explicit
+processed-block view.  The ordinary
+$\Call{viable\_tree}{\Sigma}$ uses $\Sigma.\T$, and in prose
+$\viableTree(\Sigma)$ abbreviates it.
 \end{definition}
 
 Fork choice uses two derived views (Figure~\ref{alg:fg-store}):
 $\Call{get\_fg\_root}{\Sigma}$, the FG root --- the block the walk
 starts from --- and
-$\Call{get\_filtered\_block\_tree}{\Sigma}$, the viable blocks below it,
-which limit the selectable children.  Goldfish starts at the root even if
-the root is not in the filtered tree.
+$\Call{get\_filtered\_block\_tree\_from}{\Sigma,\mathit{blocks}}$,
+the viable blocks below it in an explicit processed-block view.
+$\Call{get\_filtered\_block\_tree}{\Sigma}$ uses the full
+$\Sigma.\T$.  Goldfish starts at the root even if the root is not in
+the filtered tree.
 
 At this layer $\Call{goldfish\_eligible}{}$ gains one clause: a child
-whose state height is below $\Sigma.\hmax-1$ is eligible without a
+of a block whose state height is below $\Sigma.\hmax-1$ is eligible
+without a majority.  The majority gate thus applies exactly while the walk
+stands inside the band $\{\Sigma.\hmax-1,\Sigma.\hmax\}$: every viable
+block below the band has a viable child, so the walk always reaches
+height $\Sigma.\hmax-1$, and it never passes through the band without a
 majority.  Figure~\ref{alg:fg-store} shows the extended store handler, the
 extended eligibility condition, and the redefined $\Call{get\_head}{}$.  Available confirmation is unchanged at
 this layer; the complete protocol re-anchors it at the SG root over the
@@ -836,10 +848,14 @@ filtered block tree, with the FG root as the fallback value.
 \nopagebreak
 {\footnotesize
 \begin{algorithmic}[1]
-\Function{viable\_tree}{$\Sigma$}
-  \State \Return $\{B\in\Sigma.\T:\Sigma.F\preceq B,\
-    \exists B'\in\Sigma.\T,\ B\preceq B',\
+\Function{viable\_tree\_from}{$\Sigma,\mathit{blocks}$}
+  \State \Return $\{B\in\mathit{blocks}:\Sigma.F\preceq B,\
+    \exists B'\in\mathit{blocks},\ B\preceq B',\
     \Sigma.\sigma[B'].h\geq\Sigma.\hmax-1\}$
+\EndFunction
+\vspace{1pt}
+\Function{viable\_tree}{$\Sigma$}
+  \State \Return $\Call{viable\_tree\_from}{\Sigma,\Sigma.\T}$
 \EndFunction
 \vspace{1pt}
 \Function{on\_block}{$\Sigma,B$}
@@ -876,16 +892,23 @@ filtered block tree, with the FG root as the fallback value.
   \State \Return $\Sigma.F$
 \EndFunction
 \vspace{1pt}
-\Function{get\_filtered\_block\_tree}{$\Sigma$}
+\Function{get\_filtered\_block\_tree\_from}{$\Sigma,\mathit{blocks}$}
   \State $\mathit{root}\gets\Call{get\_fg\_root}{\Sigma}$
-  \State \Return $\{B\in\Call{viable\_tree}{\Sigma}:\mathit{root}\preceq B\}$
+  \State \Return
+    $\{B\in\Call{viable\_tree\_from}{\Sigma,\mathit{blocks}}:
+      \mathit{root}\preceq B\}$
+\EndFunction
+\vspace{1pt}
+\Function{get\_filtered\_block\_tree}{$\Sigma$}
+  \State \Return
+    $\Call{get\_filtered\_block\_tree\_from}{\Sigma,\Sigma.\T}$
 \EndFunction
 \vspace{1pt}
 \Function{goldfish\_eligible}{$\Sigma,\mathit{votes},
   \mathit{support\_votes},s,B$}
   \State $\mathit{voters\_count}\gets
     |\{v:\mathit{votes}\text{ holds a vote by }v\}|$
-  \State \Return $\Sigma.\sigma[B].h<\Sigma.\hmax-1$
+  \State \Return $\Sigma.\sigma[B.\parent].h<\Sigma.\hmax-1$
     or $2\,\Call{goldfish\_score}{\mathit{votes},
       \mathit{support\_votes},s,B}>\mathit{voters\_count}$
     or $B.\slot=\Sigma.s$
@@ -897,11 +920,17 @@ filtered block tree, with the FG root as the fallback value.
     \fname{get\_fg\_root}(\Sigma),\mathit{tree},r}$
 \EndFunction
 \vspace{1pt}
-\Function{get\_head}{$\Sigma,\mathit{votes},\mathit{support\_votes},k$}
-  \State $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+\Function{get\_head\_in\_tree}{$\Sigma,\mathit{tree},
+  \mathit{votes},\mathit{support\_votes},k$}
   \State $A\gets\Call{get\_sg\_root}{\Sigma,\round(\Sigma.s)}$
   \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,A,
     \mathit{tree},\mathit{votes},\mathit{support\_votes},k}$
+\EndFunction
+\vspace{1pt}
+\Function{get\_head}{$\Sigma,\mathit{votes},\mathit{support\_votes},k$}
+  \State $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+  \State \Return $\Call{get\_head\_in\_tree}{\Sigma,\mathit{tree},
+    \mathit{votes},\mathit{support\_votes},k}$
 \EndFunction
 \end{algorithmic}
 }
@@ -914,7 +943,7 @@ target $\Lambda.\mathsf{target}[h]$, whether it emitted an empty-target
 vote $\Lambda.\mathsf{timeout}[h]$, and the target of its first finality
 pair $\Lambda.\mathsf{lock}[h]$; initially
 $(\bot,\mathsf{false},\bot)$.  It belongs to the validator, not to the store,
-and $\Call{record\_attestation}{}$ is the only place that writes it.  Together,
+and $\Call{record\_attestation}{}$ is the only place that writes it. A validator that never voted at height~$h_j$ may still emit a finality pair for $(h_j,J)$: the pair writes $\Lambda.\mathsf{lock}[h_j]\gets J$ before release, so from then on its height pair at $h_j$ is either $(h_j,J)$ or empty, never a timeout or another target; only a recorded timeout or a different first target at $h_j$ refuses the pair.  Together,
 $\Sigma$ and $\Lambda$ determine the combined attestation.  This is modeled
 after the anti-slashing database of today's validators: a minimal, hardened
 component of the validator client, separate from the beacon client that
@@ -951,7 +980,7 @@ $\Call{attest}{}$ in place of $\Call{sg\_vote}{}$.
 \Function{finality\_pair}{$\Lambda,h_j,J,h_F$}
   \If{$h_j>h_F$}
     \Comment{a justification not yet finalized}
-    \If{$\Lambda.\mathsf{target}[h_j]=J$ and
+    \If{$\Lambda.\mathsf{target}[h_j]\in\{\bot,J\}$ and
         not $\Lambda.\mathsf{timeout}[h_j]$ and
         $\Lambda.\mathsf{lock}[h_j]\in\{\bot,J\}$}
       \Comment{the record allows it}
@@ -1073,7 +1102,7 @@ attestation carries an empty height pair.
 
 \subsection{Round schedule}\label{sec:healing-schedule}
 
-Assume $R\geq2$ slots per round.  The four grade cutoffs bracket the
+Assume $R\geq2$ slots per round, and set the timeout delay of \S\ref{sec:state-machine} to $\delta_{\mathrm{t}}=2R$: a timeout at a height is counted only from the second round after the round in which the height was entered, because target votes of one round are assumed to reach every honest store by the end of the next round.  The four grade cutoffs bracket the
 opening slot's proposal and vote times:
 \[
  \Gamma_r^{-1}=t_{rR}-\Delta,\qquad
@@ -1117,25 +1146,29 @@ validator's store, each grade implies the next,
 $t_v<\Gamma_r^{-1}<\Gamma_r^0$ and $e_v\geq\Gamma_r^2>\Gamma_r^0$, and a
 grade-1 supporter satisfies the first favorable arm.
 
-Across validators, \emph{graded delivery} is conditional on
-filtered-tree membership.
+Across validators, \emph{graded delivery} is conditional on admission.
 Under synchrony, a vote or evidence item counted at one cutoff reaches
-every validator by the next.  A grade at one honest validator therefore
-implies the next-lower grade at every honest validator whose filtered tree
-contains the graded block; at every other store, that block is inactive.
+every validator by the next, and a supporting vote resolves at the
+receiver once the receiver admits its head, that is, once that head
+extends the receiver's finalized block.  A grade at one honest validator
+therefore implies the next-lower grade at every honest validator that
+admits the supporting heads; a store that refuses them has finalized a
+block conflicting with those heads, so the graded block lies below that
+finalized block or conflicts with it.
 From grade~2 here to grade~1 there, the supporting vote reaches the other
 store before~$\Gamma_r^0$; a different first vote, or equivocation visible
 there before~$\Gamma_r^0$, reaches this store before~$\Gamma_r^2$ and would
 sweep that supporter from grade~2.  From grade~1 there to grade~0 here,
 each supporter either counts in the first favorable arm or supplies
-$e_v<\Gamma_r^1$.
+$e_v<\Gamma_r^1$; the graded block itself, an ancestor of a resolved head,
+is processed here before~$\Gamma_r^1$.
 
 Under the same conditions, grade-2 blocks across honest stores lie on one
-chain.  A grade-2 block is also never vetoed in an honest store whose
-filtered tree contains it: a conflicting favorable majority before
-$\Gamma_r^1$ and a direct majority clean through~$\Gamma_r^2$ would share
-a validator, since $2m>W$, whose conflicting vote or evidence reaches the
-grade-2 store by $\Gamma_r^1+\Delta=\Gamma_r^2$.
+chain.  A grade-2 block is also never vetoed in any honest store: a
+conflicting favorable majority before $\Gamma_r^1$ and a direct majority
+clean through~$\Gamma_r^2$ would share a validator, since $2m>W$, whose
+conflicting vote or evidence reaches the grade-2 store by
+$\Gamma_r^1+\Delta=\Gamma_r^2$.
 
 The protocol uses each grade only after its defining cutoffs have closed:
 grade~1 from~$\Gamma_r^0$, grade~0 from~$\Gamma_r^1$, and grade~2
@@ -1143,8 +1176,14 @@ from~$\Gamma_r^2$.
 
 A grade is \emph{active} when its block is in the filtered block tree of
 Section~\ref{sec:fg-fork-choice}: it descends the FG root and is
-viable, so only blocks the fork choice can use carry active grades.  The
-grade-0 veto reads only blocks processed before the
+viable, so only blocks the fork choice can use carry active grades.
+Grades~2 and~1 are used positively, as a source and as an anchor, and
+only when active.  Grade~0 is used only negatively, as a veto, and it is
+read on every processed block: a fresh favorable majority vetoes the
+blocks its block conflicts with even when that block has left the band
+or the root has passed it.  Such a majority shows that the previous round
+did not settle on the confirmed block, whatever the position of its own
+block.  The grade-0 veto reads only blocks processed before the
 freeze~$\Gamma_r^1$: a block learned after the freeze never becomes a
 veto.
 
@@ -1204,10 +1243,11 @@ veto.
 \vspace{1pt}
 \Function{G0\_conflict\_free}{$\Sigma,r,B$}
   \State $\mathit{vetoes}\gets
-    \{B'\in\Call{get\_filtered\_block\_tree}{\Sigma}:
+    \{B'\in\Sigma.T:
     \Sigma.\timestamp(B')<\Gamma_r^1,$
   \Statex \hspace{4.35em} $B'\text{ conflicts with }B,\
     \Call{G0}{\Sigma,r,B'}\}$
+  \Comment{every processed block, active or not}
   \State \Return $\mathit{vetoes}=\emptyset$
 \EndFunction
 \end{algorithmic}
@@ -1216,17 +1256,25 @@ veto.
 \subsection{The SG root}\label{sec:fresh-anchor}
 
 The SG root is the \emph{fresh SG root} when one exists --- the deepest
-block of the filtered tree with grade~1 ---
-and the relative-majority anchor otherwise; in walk position the SG
-root is the anchor, and the prose calls it that.  The selection is derived
+block of the filtered tree with grade~1 ---, the fork-choice root when
+some block holds grade~1 but none of them is in the filtered tree, and the
+relative-majority anchor otherwise, that is, only when no block holds
+grade~1 at all; in walk position the SG root is the anchor, and the prose
+calls it that.  The middle case is a fresh finalization: the fork-choice
+root has advanced past every grade-1 block, and the root itself is then
+canonical, so it is the anchor.  The relative-majority walk is thus
+reserved for rounds without an absolute quorum.  The selection is derived
 at every use, from the current store; nothing is stored.  For each fixed
 block, its grade-1 predicate is fixed from~$\Gamma_r^0$ through the rest
 of round~$r$.
 Conflicting blocks cannot both hold grade~1 in one store, so ``deepest''
 is well defined.  A fresh SG root in use at an honest validator is a
 grade-1 block of its store.  Under the graded-delivery
-conditions above, by~$\Gamma_r^1$ it holds grade~0 in every honest store
-whose filtered tree contains it; at every other store it is inactive.
+conditions above, by~$\Gamma_r^1$ it holds grade~0, timestamped before
+the freeze, in every honest store that admits its supporting heads, and
+it is a veto there whether or not that store's filtered tree contains it;
+a store that refuses those heads has finalized a block they conflict
+with.
 
 \captionof{figure}{The SG root}\label{alg:fresh-anchor}
 \nopagebreak
@@ -1239,6 +1287,10 @@ whose filtered tree contains it; at every other store it is inactive.
       $\Call{G1}{\Sigma,r,B}$}
     \State \Return the deepest such $B$
     \Comment{the fresh SG root}
+  \ElsIf{some $B\in\Sigma.T$ and
+      $\Call{G1}{\Sigma,r,B}$}
+    \State \Return $\fname{get\_fg\_root}(\Sigma)$
+    \Comment{grade~1 exists, but the root has passed it}
   \EndIf
   \State \Return $\Call{majority\_fork\_choice}{\Sigma,
     \fname{get\_fg\_root}(\Sigma),\mathit{tree},r}$
@@ -1258,9 +1310,14 @@ interval is empty the vote falls back to~$\Agtwo$, even though
 it sits at or behind the anchor: the grade-2 block stays canonical ---
 under the graded-delivery conditions above, every honest anchor whose
 filtered tree holds it is at least as
-deep --- while the anchor alone has no such guarantee.  The anchor is the last resort, and only it
-keeps voting total; the veto operates only above it, and neither
-fallback takes a clearance test.  The height pair is enabled only when
+deep --- while the anchor alone has no such guarantee.  When a grade-2
+block exists but none is active --- the root has passed every grade-2
+block, or conflicts them --- the vote is the FG root itself, which still
+covers every grade-2 block below it; an absolute quorum is present, so
+the untested anchor is never used.  The anchor is the last resort,
+reserved for rounds with no grade-2 block at all, and only it keeps
+voting total under dynamic participation; the veto operates only above
+it, and none of the fallbacks takes a clearance test.  The height pair is enabled only when
 $\Agtwo$ exists; its source is the deepest veto-free block between
 $\Agtwo$ and the confirmed block, or $\Agtwo$ itself when that
 walk is empty.  Starting there loses nothing: a block that
@@ -1268,10 +1325,11 @@ conflicts~$B$ conflicts every descendant of~$B$, and no grade-0 block
 conflicts the grade-2 block or its ancestors.  Under the same conditions,
 grade~2 here places grade~1 at every honest validator whose filtered tree
 contains it.  An
-anchor with grade~1 at an honest store either lies outside this store's
-filtered tree or holds grade~0 here, timestamped before the freeze; in
-the latter case it is a veto, and the height-pair source conflicts with
-no such anchor.  An empty confirmed value appears only
+anchor with grade~1 at an honest store holds grade~0 here, timestamped
+before the freeze, whenever this store admits its supporting heads; it is
+then a veto, in or out of this store's filtered tree, and the height-pair
+source conflicts with no such anchor.  Only a store that has finalized a
+block conflicting with those heads lacks that veto.  An empty confirmed value appears only
 in adversarial votes: it represents the validator and silences its older
 votes.
 
@@ -1289,6 +1347,9 @@ votes.
   \If{$\Agtwo\neq\bot$}
     \State \Return $\Agtwo$
     \Comment{the grade-2 block stays canonical}
+  \ElsIf{some $B\in\Sigma.T$ and $\Call{G2}{\Sigma,r,B}$}
+    \State \Return $\Call{get\_fg\_root}{\Sigma}$
+    \Comment{grade~2 exists, but the root has passed it}
   \EndIf
   \State \Return $A$
   \Comment{the anchor fallback keeps voting total}
@@ -1525,11 +1586,16 @@ lands on the grade-2 and anchor fallbacks there.
 \nopagebreak
 {\footnotesize
 \begin{algorithmic}[1]
+\Function{viable\_tree\_from}{$\Sigma,\mathit{blocks}$}
+  \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
+  \State \Return $\{B\in\mathit{blocks}:\Sigma.F\preceq B,\
+    \exists B'\in\mathit{blocks},\ B\preceq B',\
+    \Sigma.\sigma[B'].h\geq\Sigma.\hmax-1\}$
+\EndFunction
+\vspace{1pt}
 \Function{viable\_tree}{$\Sigma$}
   \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
-  \State \Return $\{B\in\Sigma.\T:\Sigma.F\preceq B,\
-    \exists B'\in\Sigma.\T,\ B\preceq B',\
-    \Sigma.\sigma[B'].h\geq\Sigma.\hmax-1\}$
+  \State \Return $\Call{viable\_tree\_from}{\Sigma,\Sigma.\T}$
 \EndFunction
 \vspace{1pt}
 \Function{goldfish\_score}{$\mathit{votes},\mathit{support\_votes},s,B$}
@@ -1561,7 +1627,7 @@ lands on the grade-2 and anchor fallbacks there.
   \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
   \State $\mathit{voters\_count}\gets
     |\{v:\mathit{votes}\text{ holds a vote by }v\}|$
-  \State \Return $\Sigma.\sigma[B].h<\Sigma.\hmax-1$
+  \State \Return $\Sigma.\sigma[B.\parent].h<\Sigma.\hmax-1$
     or $2\,\Call{goldfish\_score}{\mathit{votes},
       \mathit{support\_votes},s,B}>\mathit{voters\_count}$
     or $B.\slot=\Sigma.s$
@@ -1623,10 +1689,18 @@ lands on the grade-2 and anchor fallbacks there.
   \State \Return $\Sigma.F$
 \EndFunction
 \vspace{1pt}
-\Function{get\_filtered\_block\_tree}{$\Sigma$}
+\Function{get\_filtered\_block\_tree\_from}{$\Sigma,\mathit{blocks}$}
   \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
   \State $\mathit{root}\gets\Call{get\_fg\_root}{\Sigma}$
-  \State \Return $\{B\in\Call{viable\_tree}{\Sigma}:\mathit{root}\preceq B\}$
+  \State \Return
+    $\{B\in\Call{viable\_tree\_from}{\Sigma,\mathit{blocks}}:
+      \mathit{root}\preceq B\}$
+\EndFunction
+\vspace{1pt}
+\Function{get\_filtered\_block\_tree}{$\Sigma$}
+  \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
+  \State \Return
+    $\Call{get\_filtered\_block\_tree\_from}{\Sigma,\Sigma.\T}$
 \EndFunction
 \vspace{1pt}
 \Function{grade\_summary}{$\Sigma,r,v$}
@@ -1689,7 +1763,7 @@ lands on the grade-2 and anchor fallbacks there.
 \Function{G0\_conflict\_free}{$\Sigma,r,B$}
   \Comment{\S\ref{sec:healing}, unchanged}
   \State $\mathit{vetoes}\gets
-    \{B'\in\Call{get\_filtered\_block\_tree}{\Sigma}:
+    \{B'\in\Sigma.T:
     \Sigma.\timestamp(B')<\Gamma_r^1,$
   \Statex \hspace{4.35em} $B'\text{ conflicts with }B,\
     \Call{G0}{\Sigma,r,B'}\}$
@@ -1703,25 +1777,60 @@ lands on the grade-2 and anchor fallbacks there.
       $\Call{G1}{\Sigma,r,B}$}
     \State \Return the deepest such $B$
     \Comment{the fresh SG root}
+  \ElsIf{some $B\in\Sigma.T$ and
+      $\Call{G1}{\Sigma,r,B}$}
+    \State \Return $\fname{get\_fg\_root}(\Sigma)$
+    \Comment{grade~1 exists, but the root has passed it}
   \EndIf
   \State \Return $\Call{majority\_fork\_choice}{\Sigma,
     \fname{get\_fg\_root}(\Sigma),\mathit{tree},r}$
 \EndFunction
 \vspace{1pt}
-\Function{get\_head}{$\Sigma,\mathit{votes},\mathit{support\_votes},k$}
+\Function{get\_head\_in\_tree}{$\Sigma,\mathit{tree},
+  \mathit{votes},\mathit{support\_votes},k$}
   \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
-  \State $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
   \State $A\gets\Call{get\_sg\_root}{\Sigma,\round(\Sigma.s)}$
   \State \Return $\Call{goldfish\_fork\_choice}{\Sigma,A,
     \mathit{tree},\mathit{votes},\mathit{support\_votes},k}$
 \EndFunction
+\vspace{1pt}
+\Function{get\_head}{$\Sigma,\mathit{votes},\mathit{support\_votes},k$}
+  \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
+  \State $\mathit{tree}\gets\Call{get\_filtered\_block\_tree}{\Sigma}$
+  \State \Return $\Call{get\_head\_in\_tree}{\Sigma,\mathit{tree},
+    \mathit{votes},\mathit{support\_votes},k}$
+\EndFunction
 \end{algorithmic}
 }
+
+The vote duty uses a block-domain merge analogous to its vote merge.
+It first forms a processed-block view from blocks received before the
+previous-slot freeze and every ancestor of a current-slot proposal, then
+recomputes viability and the filtered block tree inside that view.  In
+particular, it does not filter the current viable tree after the fact: a
+late witness cannot make an old pre-freeze child enter this vote's walk.
+The proposer and the other protocol duties keep the ordinary full-tree
+$\Call{get\_head}{}$.
 
 \captionof{figure}{Complete protocol: validator duties}\label{alg:duties}
 \nopagebreak
 {\footnotesize
 \begin{algorithmic}[1]
+\Function{voter\_processed\_block\_tree}{$\Sigma,s$}
+  \State $\mathit{freeze}\gets t_{s-1}+3\Delta$
+  \State $\mathit{proposals}\gets\{P\in\Sigma.\T:P.\slot=s\}$
+  \State \Return $\{B\in\Sigma.\T:
+    \Sigma.\timestamp(B)<\mathit{freeze}\ \textbf{or}\
+    \exists P\in\mathit{proposals},\ B\preceq P\}$
+\EndFunction
+\vspace{1pt}
+\Function{voter\_filtered\_block\_tree}{$\Sigma,s$}
+  \State $\mathit{blocks}\gets
+    \Call{voter\_processed\_block\_tree}{\Sigma,s}$
+  \State \Return
+    $\Call{get\_filtered\_block\_tree\_from}{\Sigma,\mathit{blocks}}$
+\EndFunction
+\vspace{1pt}
 \Function{propose\_block}{$\Sigma$}
   \Comment{\S\ref{sec:goldfish}, extended at this layer}
   \State $s\gets\Sigma.s$
@@ -1758,8 +1867,10 @@ lands on the grade-2 and anchor fallbacks there.
     \State $\mathit{support\_votes}\gets\mathit{support\_votes}\cup
       \{(v,s-1,H)\in B.\mathsf{support\_votes}:H\in\Sigma.\T\}$
   \EndFor
-  \State $H\gets\Call{get\_head}{\Sigma,\mathit{votes},
-    \mathit{support\_votes},s-1}$
+  \State $\mathit{tree}\gets
+    \Call{voter\_filtered\_block\_tree}{\Sigma,s}$
+  \State $H\gets\Call{get\_head\_in\_tree}{\Sigma,\mathit{tree},
+    \mathit{votes},\mathit{support\_votes},s-1}$
   \If{$\valindex\in\committee_s$}
     \State $\mathit{vote}\gets(\valindex,s,H)$; broadcast $\mathit{vote}$;
       \Call{on\_goldfish\_vote}{$\Sigma,\mathit{vote}$}
@@ -1793,6 +1904,9 @@ lands on the grade-2 and anchor fallbacks there.
   \If{$\Agtwo\neq\bot$}
     \State \Return $\Agtwo$
     \Comment{the grade-2 block stays canonical}
+  \ElsIf{some $B\in\Sigma.T$ and $\Call{G2}{\Sigma,r,B}$}
+    \State \Return $\Call{get\_fg\_root}{\Sigma}$
+    \Comment{grade~2 exists, but the root has passed it}
   \EndIf
   \State \Return $A$
   \Comment{the anchor fallback keeps voting total}
@@ -1828,7 +1942,7 @@ lands on the grade-2 and anchor fallbacks there.
   \Comment{\S\ref{sec:fg-fork-choice}, unchanged}
   \If{$h_j>h_F$}
     \Comment{a justification not yet finalized}
-    \If{$\Lambda.\mathsf{target}[h_j]=J$ and
+    \If{$\Lambda.\mathsf{target}[h_j]\in\{\bot,J\}$ and
         not $\Lambda.\mathsf{timeout}[h_j]$ and
         $\Lambda.\mathsf{lock}[h_j]\in\{\bot,J\}$}
       \Comment{the record allows it}
@@ -1935,12 +2049,16 @@ lands on the grade-2 and anchor fallbacks there.
       \textbf{and} $w(\Qfin(\sigma))\geq q$}
     \State $(\sigma.F,\sigma.h_F)\gets(\sigma.J,\sigma.h_j)$
   \EndIf
-  \If{$\neg\sigma.\nj$ \textbf{and} $w(\Qtarget(\sigma))\geq q$}
-    \State $(\sigma.J,\sigma.h_j)\gets(\sigma.T_h,\sigma.h)$
-    \State $\sigma.\finalityBit\gets\mathsf{false}^{V}$
+  \If{$w(\Qtarget(\sigma))\geq q$}
+    \If{$\neg\sigma.\nj$}
+      \State $(\sigma.J,\sigma.h_j)\gets(\sigma.T_h,\sigma.h)$
+      \State $\sigma.\finalityBit\gets\mathsf{false}^{V}$
+    \EndIf
     \State \Return $\Call{advance\_height}{\sigma}$
   \EndIf
-  \If{$w(\Qprog(\sigma))\geq q$}
+  \If{$w(\Qprog(\sigma))\geq q$ \textbf{and}
+      $\sigma.s\geq\sigma.T_h.\slot+\delta_{\mathrm{t}}$}
+    \Comment{timeouts count only after the delay}
     \State \Return $\Call{advance\_height}{\sigma}$
   \EndIf
   \State \Return $\sigma$
